@@ -1,0 +1,23 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Archivos sensibles
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Archivos innecesarios del proyecto
+duma_cookbook.txt
+schema.md
+test_aoao_assistant.py
+test_SQL.py
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
