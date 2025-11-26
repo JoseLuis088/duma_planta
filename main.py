@@ -1,4 +1,5 @@
 import os
+import io
 import uuid
 import json
 import time
@@ -19,22 +20,19 @@ from dotenv import load_dotenv
 
 from openai import AzureOpenAI
 
-# ---------- Carga de variables de entorno ----------
+# ---------- Carga de variables ----------
 load_dotenv()
 
 AZURE_OPENAI_ENDPOINT = os.environ["AZURE_OPENAI_ENDPOINT"]
 AZURE_OPENAI_API_KEY = os.environ["AZURE_OPENAI_API_KEY"]
-AZURE_OPENAI_API_VERSION = os.environ.get(
-    "AZURE_OPENAI_API_VERSION",
-    "2024-12-01-preview",
-)
+AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
 ASSISTANT_ID = os.environ["ASSISTANT_ID"]
 
-SQL_SERVER = os.getenv("SQL_SERVER")
-SQL_DB = os.getenv("SQL_DB")
-SQL_USER = os.getenv("SQL_USER")
-SQL_PASS = os.getenv("SQL_PASS")
-SQL_DRIVER = os.getenv("SQL_ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
+SQL_SERVER   = os.getenv("SQL_SERVER")
+SQL_DB       = os.getenv("SQL_DB")
+SQL_USER     = os.getenv("SQL_USER")
+SQL_PASS     = os.getenv("SQL_PASS")
+SQL_DRIVER   = os.getenv("SQL_ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
 
 CONN_STR = (
     f"DRIVER={{{SQL_DRIVER}}};"
@@ -45,7 +43,7 @@ CONN_STR = (
     "TrustServerCertificate=yes;"
 )
 
-# ---------- Cliente Azure OpenAI ----------
+# ---------- Cliente Azure ----------
 client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     api_key=AZURE_OPENAI_API_KEY,
@@ -53,30 +51,29 @@ client = AzureOpenAI(
 )
 
 # ---------- App FastAPI ----------
-app = FastAPI(title="Duma Planta Backend", version="1.1.0")
+app = FastAPI(title="Duma Planta Backend", version="1.0.2")
 
+# CORS si vas a servir desde otro origen
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-# Carpeta de estáticos (index.html, imágenes, gráficos)
+# Montar estáticos (sirve index.html, imágenes y gráficos)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ---------- Helper SQL ----------
+# ---------- Helpers SQL ----------
 def run_sql(select_sql: str):
     """
     Ejecuta un SELECT y regresa (rows, columns).
-    rows es lista de listas serializable a JSON (datetime/Decimal→str, binario→base64).
+    rows es lista de listas JSON-serializable (convierte tipos a str).
     """
     with pyodbc.connect(CONN_STR) as conn:
         cur = conn.cursor()
         cur.execute(select_sql)
         rows_raw = cur.fetchall()
         cols = [c[0] for c in cur.description]
-
+        # Convertir cualquier tipo no JSON (datetime, Decimal, etc.) a str
         rows = []
         for r in rows_raw:
             out_row = []
@@ -85,28 +82,26 @@ def run_sql(select_sql: str):
                     out_row.append(base64.b64encode(v).decode("utf-8"))
                 else:
                     try:
-                        json.dumps(v)
+                        json.dumps(v)  # test rápido
                         out_row.append(v)
                     except Exception:
                         out_row.append(str(v))
             rows.append(out_row)
-
         return rows, cols
 
-# ---------- Helper gráficos ----------
+# ---------- Helpers gráficos ----------
 PLOTS_DIR = os.path.join("static", "plots")
 os.makedirs(PLOTS_DIR, exist_ok=True)
-
 
 def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     """
     Genera un gráfico (line, bar, heatmap, corr) desde un DataFrame
-    y retorna la URL pública bajo /static/plots/...
+    y retorna la ruta pública bajo /static/plots/...
     """
     import numpy as np
     from matplotlib.ticker import PercentFormatter
 
-    spec = spec or {}
+    spec = (spec or {})
     chart = spec.get("chart", "line")
     title = spec.get("title") or ""
     x = spec.get("x")
@@ -115,20 +110,21 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     width = style.get("width", 900)
     height = style.get("height", 500)
 
-    # Opciones para eje Y / orden del X
-    y_format = spec.get("y_format")  # "percent" | None
-    y_min = spec.get("y_min")
-    y_max = spec.get("y_max")
-    sort_x = spec.get("sort_x", True)
+    # Nuevas opciones (opcionales) para controlar el eje Y y el orden del X
+    y_format = spec.get("y_format")       # "percent" | None
+    y_min = spec.get("y_min")             # num | None
+    y_max = spec.get("y_max")             # num | None
+    sort_x = spec.get("sort_x", True)     # por defecto ordena el eje X
 
-    # Convertir Y a numérico
+    # Coerción a numérico para todas las series Y
     for y in ys:
         if y in df.columns:
             df[y] = pd.to_numeric(df[y], errors="coerce")
 
-    # Ordenar X si aplica
+    # Si el X es fecha/tiempo o string de fecha, intenta parsear y ordenar
     if x:
         if np.issubdtype(df[x].dtype, np.number) is False:
+            # intenta parsear fechas sin romper si falla
             try:
                 df[x] = pd.to_datetime(df[x], errors="ignore")
             except Exception:
@@ -136,11 +132,11 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
         if sort_x:
             df = df.sort_values(by=x)
 
-    fig, ax = plt.subplots(figsize=(width / 100.0, height / 100.0))
+    fig, ax = plt.subplots(figsize=(width/100.0, height/100.0))
 
     if chart in ("line", "bar"):
         if not (x and ys):
-            raise ValueError("Para line/bar especifica 'x' y 'ys'.")
+            raise ValueError("Para line/bar especifica 'x' y 'ys'")
         for y in ys:
             if chart == "line":
                 ax.plot(df[x], df[y], label=y, marker="o")
@@ -169,21 +165,21 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     else:
         raise ValueError(f"Tipo de gráfico no soportado: {chart}")
 
-    # Eje Y como porcentaje 0–100 opcional
+    # —— NUEVO: formateo del eje Y como porcentaje y límites 0–100 ——
     if y_format == "percent":
+        # Si tus KPIs vienen 0–1, conviértelos a 0–100 automáticamente
         if ys and df[ys].max(numeric_only=True).max() <= 1.0:
             for y in ys:
                 df[y] = df[y] * 100.0
         ax.yaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
+        # Si no se pasan límites, fuerza 0–100 para que el eje quede limpio
         if y_min is None and y_max is None:
             ax.set_ylim(0, 100)
 
-    # Límites manuales de Y
+    # Límites manuales si se pasaron
     if y_min is not None or y_max is not None:
-        ax.set_ylim(
-            bottom=y_min if y_min is not None else ax.get_ylim()[0],
-            top=y_max if y_max is not None else ax.get_ylim()[1],
-        )
+        ax.set_ylim(bottom=y_min if y_min is not None else ax.get_ylim()[0],
+                    top=y_max if y_max is not None else ax.get_ylim()[1])
 
     if title:
         ax.set_title(title)
@@ -197,27 +193,31 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     return f"/static/plots/{fname}"
 
 
-# ---------- Núcleo de orquestación con el asistente ----------
+# ---------- Core assistant step ----------
 def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
     """
-    Crea/usa un thread, envía el mensaje y resuelve tool calls (sql_query, viz_render),
-    devolviendo el último texto y los recursos generados.
-    La lógica de negocio (tiempo real, turnos, KPIs) vive en el system prompt,
-    schema.md y duma_cookbook.txt del asistente de Azure.
+    Crea/usa un thread, envía el mensaje y resuelve tool calls (sql_query y viz_render),
+    devolviendo el último texto + recursos. Incluye:
+      - timeout y reintentos
+      - guardrails de tablas permitidas
+      - instrucciones para forzar uso de sql_query y no mostrar SQL
+      - reintento forzado si el asistente no usa tools en preguntas de KPIs/turnos/fechas
+      - reintento forzado si el asistente devuelve SQL como texto o usa tablas inválidas
     """
-    import logging
-    import re
-
+    import logging, time, json, re
     logging.basicConfig(level=logging.INFO)
 
+    # Siempre inicializa para evitar NameError en retornos/errores
     images_out: List[str] = []
     captions_out: List[str] = []
     last_text = ""
 
+    # Parámetros de control del ciclo
     MAX_WAIT_SECONDS = 45
     POLL_INTERVAL_SEC = 0.5
+    TOOL_SUBMIT_RETRIES = 2
 
-    # Tablas permitidas como guardrail (coincide con tu schema.md)
+    # Tablas permitidas (normalizadas a minúsculas, incluir esquema)
     ALLOWED_TABLES = {
         "dbo.productionlineintervals",
         "dbo.productionlines",
@@ -226,31 +226,44 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
         "ind.workshiftexecutionsummaries",
     }
 
-    def handle_run(t_id: str, run_id: str):
-        """Sondea el run y atiende las tool calls hasta que termine."""
-        nonlocal images_out, captions_out
+    # Palabras clave que indican preguntas que DEBEN ir a SQL
+    KPI_KEYWORDS = [
+        "oee", "disponibilidad", "desempeño", "desempeno", "calidad",
+        "turno", "ayer", "hoy", "fecha", "rango", "intervalo",
+        "actual", "ahora", "último", "ultimo", "snapshot", "estado"
+    ]
+
+    # Flag para saber si el asistente realmente usó tools
+    tool_used = False
+
+    # --- Helper: manejador del ciclo de un run (poll + tools) ----------------
+    def handle_run(thread_id: str, run_id: str) -> bool:
+        """Sondea el run y atiende tool calls hasta completar o fallar. Devuelve True si se usó alguna tool."""
+        nonlocal tool_used, images_out, captions_out
         start_time = time.time()
 
         while True:
-            r = client.beta.threads.runs.retrieve(thread_id=t_id, run_id=run_id)
+            r = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
             status = r.status or "unknown"
 
             if status in ("completed", "failed", "expired", "cancelled", "incomplete"):
                 break
 
+            # Timeout para evitar ciclos infinitos
             if time.time() - start_time > MAX_WAIT_SECONDS:
                 logging.warning("⏳ Timeout esperando respuesta del asistente.")
                 try:
-                    client.beta.threads.runs.cancel(thread_id=t_id, run_id=run_id)
+                    client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run_id)
                 except Exception:
                     pass
                 break
 
             if status == "requires_action":
                 tool_outputs = []
-
                 for tool in r.required_action.submit_tool_outputs.tool_calls:
                     name = tool.function.name
+                    tool_used = True  # <<-- ¡Se usó una herramienta!
+
                     try:
                         args = json.loads(tool.function.arguments or "{}")
                     except Exception:
@@ -260,19 +273,20 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                         if name == "sql_query":
                             select_sql = (args.get("select_sql") or "").strip()
 
-                            # Seguridad básica: sólo SELECT
+                            # Seguridad básica: SOLO SELECT
                             if not select_sql.lower().startswith("select"):
                                 raise ValueError("Solo se permiten consultas SELECT.")
 
-                            # Guardrail de tablas (esquema.tabla)
+                            # Guardrail: NO tablas inventadas. Extrae esquema.tabla (ej. dbo.Tabla, ind.Tabla)
                             tables_found = {
                                 f"{schema.lower()}.{table.lower()}"
                                 for (schema, table) in re.findall(
                                     r"(?:\b\[?([A-Za-z0-9_]+)\]?)\.\[?([A-Za-z0-9_]+)\]?",
                                     select_sql,
-                                    flags=re.IGNORECASE,
+                                    flags=re.IGNORECASE
                                 )
                             }
+
                             if tables_found and not tables_found.issubset(ALLOWED_TABLES):
                                 unknown = ", ".join(sorted(tables_found - ALLOWED_TABLES))
                                 allowed = ", ".join(sorted(ALLOWED_TABLES))
@@ -285,16 +299,13 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                                 )
 
                             rows, columns = run_sql(select_sql)
-                            tool_outputs.append(
-                                {
-                                    "tool_call_id": tool.id,
-                                    "output": json.dumps(
-                                        {"columns": columns, "rows": rows},
-                                        ensure_ascii=False,
-                                        default=str,
-                                    ),
-                                }
-                            )
+                            tool_outputs.append({
+                                "tool_call_id": tool.id,
+                                "output": json.dumps(
+                                    {"columns": columns, "rows": rows},
+                                    ensure_ascii=False, default=str
+                                )
+                            })
 
                         elif name == "viz_render":
                             rows = args.get("rows")
@@ -302,57 +313,56 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                             select_sql = args.get("select_sql")
                             spec = args.get("spec", {}) or {}
 
+                            import pandas as pd
                             if rows and columns:
                                 df = pd.DataFrame(rows, columns=columns)
                             elif select_sql:
                                 rws, cols = run_sql(select_sql)
                                 df = pd.DataFrame(rws, columns=cols)
                             else:
-                                raise ValueError(
-                                    "Para viz_render proporciona 'rows/columns' o 'select_sql'."
-                                )
+                                raise ValueError("Proporciona 'rows/columns' o 'select_sql'.")
 
                             img_url = render_chart_from_df(df, spec)
                             images_out.append(img_url)
                             captions_out.append(spec.get("title") or "Gráfico")
 
-                            tool_outputs.append(
-                                {
-                                    "tool_call_id": tool.id,
-                                    "output": json.dumps(
-                                        {"image_url": img_url}, ensure_ascii=False
-                                    ),
-                                }
-                            )
+                            tool_outputs.append({
+                                "tool_call_id": tool.id,
+                                "output": json.dumps({"image_url": img_url}, ensure_ascii=False)
+                            })
 
                         else:
-                            tool_outputs.append(
-                                {
-                                    "tool_call_id": tool.id,
-                                    "output": json.dumps(
-                                        {"error": f"Función no reconocida: {name}"},
-                                        ensure_ascii=False,
-                                    ),
-                                }
-                            )
+                            tool_outputs.append({
+                                "tool_call_id": tool.id,
+                                "output": json.dumps({"error": f"Función no reconocida: {name}"}, ensure_ascii=False)
+                            })
 
                     except Exception as ex:
-                        tool_outputs.append(
-                            {
-                                "tool_call_id": tool.id,
-                                "output": json.dumps(
-                                    {"error": str(ex)}, ensure_ascii=False
-                                ),
-                            }
-                        )
+                        tool_outputs.append({
+                            "tool_call_id": tool.id,
+                            "output": json.dumps({"error": str(ex)}, ensure_ascii=False)
+                        })
 
-                client.beta.threads.runs.submit_tool_outputs(
-                    thread_id=t_id, run_id=run_id, tool_outputs=tool_outputs
-                )
+                # Enviar outputs con pequeños reintentos defensivos
+                last_err = None
+                for _ in range(1 + TOOL_SUBMIT_RETRIES):
+                    try:
+                        client.beta.threads.runs.submit_tool_outputs(
+                            thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs
+                        )
+                        last_err = None
+                        break
+                    except Exception as e:
+                        last_err = e
+                        time.sleep(0.4)
+                if last_err:
+                    logging.error(f"Error enviando tool_outputs: {last_err}")
 
             time.sleep(POLL_INTERVAL_SEC)
 
-    # ---------------- Lógica principal ----------------
+        return tool_used
+
+    # ------------------------ Cuerpo principal -------------------------------
     try:
         # 1) Thread
         if thread_id:
@@ -365,55 +375,69 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
         client.beta.threads.messages.create(
             thread_id=t_id,
             role="user",
-            content=user_text,
+            content=user_text
         )
 
-        # 3) Instrucciones ligeras a nivel de run
-        msg_low = (user_text or "").strip().lower()
+        # 3) Instrucciones base (saludo mínimo + uso de tools + reglas SQL por turno sin horarios fijos)
+        msg = user_text.strip().lower()
         greeting_set = {
-            "hola",
-            "holi",
-            "buenos días",
-            "buenas",
-            "buenas tardes",
-            "buenas noches",
-            "qué tal",
-            "que tal",
-            "hi",
-            "hello",
-            "hey",
+            "hola", "holi", "buenos días", "buenas", "buenas tardes", "buenas noches",
+            "qué tal", "que tal", "hi", "hello", "hey"
         }
-        is_pure_greeting = msg_low in greeting_set or msg_low.rstrip("!.?") in greeting_set
+        is_pure_greeting = msg in greeting_set or msg.rstrip("!.?") in greeting_set
 
         extra_instructions = (
-            "Responde siempre en español. "
-            "No muestres consultas SQL en la respuesta final salvo que el usuario lo pida explícitamente. "
-            "Cuando necesites datos de la base, utiliza las herramientas definidas (por ejemplo sql_query y viz_render) "
-            "siguiendo exactamente las reglas descritas en tu system prompt, en schema.md y en duma_cookbook.txt. "
-            "Esos archivos contienen toda la lógica de tiempo real, turnos, KPIs y formato de respuesta; "
-            "síguelos al pie de la letra."
+            "Responde en español. "
+            "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
+            "NO muestres consultas SQL en la respuesta final (salvo que el usuario lo pida explícitamente). "
+            "Cuando la pregunta requiera datos de la base, DEBES llamar a la función sql_query con UNA sola SELECT. "
+            "Consulta los documentos adjuntos (schema/cookbook) y CONFÍA en ellos. "
+            "Tablas disponibles (con esquema): dbo.ProductionLineIntervals, dbo.ProductionLines, "
+            "dbo.WorkShiftExecutions, dbo.WorkShiftTemplates, ind.WorkShiftExecutionSummaries. "
+            "No pidas confirmación de nombres de columnas: úsalos tal cual. "
+            "Si una consulta falla por nombre inválido, corrígelo tú mismo según el esquema y reintenta. "
+            "REGLAS POR TURNO (OBLIGATORIO si el usuario dice 'turno' o da una fecha): "
+            "1) Obtén el turno desde dbo.WorkShiftExecutions (StartDate/EndDate en hora local). "
+            "2) Obtén el nombre del turno desde dbo.WorkShiftTemplates (por WorkShiftTemplateId). "
+            "3) Si el usuario solicita el resumen/resultado del turno, usa ind.WorkShiftExecutionSummaries "
+            "(filtra por WorkShiftExecutionId) para OEE, Availability, Performance y Quality. "
+            "4) Si el usuario solicita detalle minuto a minuto dentro del turno, usa dbo.ProductionLineIntervals "
+            "limitado al rango [StartDate, EndDate) del turno. "
+            "Para **tiempo real / actual**, **PROHIBIDO** usar `ind.WorkShiftExecutionSummaries`. Usa SIEMPRE `dbo.ProductionLineIntervals` y trae **un solo registro** con: `ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC` para desempatar. "
+            "Tras ejecutar sql_query, resume OEE, Disponibilidad, Desempeño y Calidad en % (2 decimales) y "
+            "menciona el nombre del turno (Primer/Segundo/Tercero) con la hora local de referencia. "
+            "Usa viz_render sólo si el usuario pide comparaciones o tendencias."
         )
 
-        if is_pure_greeting:
+                # Detección explícita de consultas de tiempo real
+        # Detección explícita de consultas de tiempo real
+        is_realtime = any(k in msg for k in ["actual", "ahora", "último", "ultimo", "snapshot", "estado actual", "oee actual"]) \
+              and not any(k in msg for k in ["turno", "ayer", "semana", "mes"])
+
+        if is_realtime:
             extra_instructions += (
-                " El mensaje del usuario parece ser un saludo; responde con un saludo breve "
-                "y una pregunta sobre en qué puedes ayudarle con la línea de producción."
+                " En esta petición de TIEMPO REAL debes llamar a sql_query sobre dbo.ProductionLineIntervals "
+                "con una única SELECT: SELECT TOP(1) ... FROM dbo.ProductionLineIntervals AS pli "
+                "ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC. "
+                "Mapea KPIs: OEE→pli.OEE, Disponibilidad→pli.OEEAvailability, Desempeño→pli.OEEPerformance, "
+                "Calidad→pli.OEEQuality."
             )
 
-        # 4) Crear run
+        # saludo breve si el usuario solo saludó
+        if is_pure_greeting:
+            extra_instructions += " Puedes incluir un solo saludo breve en este turno."
+
+        # 4) Primer run
         run = client.beta.threads.runs.create(
             thread_id=t_id,
             assistant_id=ASSISTANT_ID,
-            instructions=extra_instructions,
+            instructions=extra_instructions
         )
-
         handle_run(t_id, run.id)
 
-        # 5) Leer último mensaje del asistente
+        # 5) Leer último mensaje de asistente
         try:
-            msgs = client.beta.threads.messages.list(
-                thread_id=t_id, order="desc", limit=10
-            )
+            msgs = client.beta.threads.messages.list(thread_id=t_id, order="desc", limit=10)
             for m in msgs.data:
                 if m.role == "assistant":
                     chunks = []
@@ -424,7 +448,82 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                     if last_text:
                         break
         except Exception as e:
-            logging.error(f"Error leyendo mensajes del hilo: {e}")  # type: ignore[name-defined]
+            logging.error(f"Error leyendo mensajes del hilo: {e}")
+
+        # 6) Paracaídas A: si NO usó tools y la pregunta amerita SQL, forzar segundo run
+        msg_low = (user_text or "").lower()
+        asks_for_kpis = any(k in msg_low for k in KPI_KEYWORDS)
+        if (not tool_used) and asks_for_kpis:
+            forced_instructions = (
+                "Debes responder ejecutando SIEMPRE una consulta con la función sql_query. "
+                "Si es por turno/fecha: "
+                " - Identifica el turno en dbo.WorkShiftExecutions (hora local) y su nombre en dbo.WorkShiftTemplates. "
+                " - Para el resumen del turno, consulta ind.WorkShiftExecutionSummaries por WorkShiftExecutionId. "
+                " - Para detalle minuto a minuto, consulta dbo.ProductionLineIntervals limitado a [StartDate, EndDate). "
+                "Si el usuario pide ACTUAL/AHORA, usa EXCLUSIVAMENTE dbo.ProductionLineIntervals con TOP(1) y ORDER BY IntervalBegin DESC, CreatedAt DESC (no uses Summaries). "
+                "Entrega OEE, Availability, Performance y Quality en % (2 decimales) y el nombre del turno si aplica. "
+                "NO muestres la consulta en el mensaje final."
+            )
+            run2 = client.beta.threads.runs.create(
+                thread_id=t_id,
+                assistant_id=ASSISTANT_ID,
+                instructions=forced_instructions
+            )
+            handle_run(t_id, run2.id)
+
+            # releer mensaje después del run forzado
+            try:
+                msgs = client.beta.threads.messages.list(thread_id=t_id, order="desc", limit=10)
+                for m in msgs.data:
+                    if m.role == "assistant":
+                        chunks = []
+                        for c in m.content:
+                            if getattr(c, "type", "") == "text":
+                                chunks.append(c.text.value)
+                        last_text = "\n".join(chunks).strip()
+                        if last_text:
+                            break
+            except Exception as e:
+                logging.error(f"Error leyendo mensajes del hilo (run2 forzado por no usar tools): {e}")
+
+        # 7) Paracaídas B: si devolvió SQL literal o error de objeto inválido, forzar otro run
+        text_low = (last_text or "").lower()
+        looks_like_sql = "```sql" in text_low or ("select " in text_low and " from " in text_low)
+        mentions_invalid_object = ("invalid object name" in text_low) or ("no existe" in text_low and "tabla" in text_low)
+
+        if looks_like_sql or mentions_invalid_object:
+            allowed = ", ".join(sorted(ALLOWED_TABLES))
+            forced_instructions_2 = (
+                "NO devuelvas consultas SQL como texto. "
+                "EJECUTA la consulta mediante la función sql_query con UNA sola sentencia SELECT. "
+                "Usa exclusivamente tablas de la lista permitida: " + allowed + ". "
+                "Para preguntas por turno: identifica el turno con dbo.WorkShiftExecutions, "
+                "obtén su nombre con dbo.WorkShiftTemplates, y trae el resumen desde ind.WorkShiftExecutionSummaries; "
+                "para detalle dentro del turno usa dbo.ProductionLineIntervals en [StartDate, EndDate); si es ACTUAL/AHORA usa TOP(1) en dbo.ProductionLineIntervals ordenado por IntervalBegin DESC, CreatedAt DESC. "
+                "Finalmente responde con KPIs en % (2 decimales) y menciona el nombre del turno."
+            )
+
+            run3 = client.beta.threads.runs.create(
+                thread_id=t_id,
+                assistant_id=ASSISTANT_ID,
+                instructions=forced_instructions_2
+            )
+            handle_run(t_id, run3.id)
+
+            # volver a leer
+            try:
+                msgs = client.beta.threads.messages.list(thread_id=t_id, order="desc", limit=10)
+                for m in msgs.data:
+                    if m.role == "assistant":
+                        chunks = []
+                        for c in m.content:
+                            if getattr(c, "type", "") == "text":
+                                chunks.append(c.text.value)
+                        last_text = "\n".join(chunks).strip()
+                        if last_text:
+                            break
+            except Exception as e:
+                logging.error(f"Error leyendo mensajes del hilo (run3 por SQL literal/error): {e}")
 
         if not last_text:
             last_text = "No se recibió respuesta del asistente."
@@ -433,18 +532,17 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
             "thread_id": t_id,
             "message": last_text,
             "images": images_out,
-            "captions": captions_out,
+            "captions": captions_out
         }
 
     except Exception as e:
-        logging.exception("Error en run_assistant_cycle")  # type: ignore[name-defined]
+        logging.exception("Error en run_assistant_cycle")
         return {
             "thread_id": thread_id or "",
             "message": f"⚠️ Ocurrió un error al procesar tu solicitud: {e}",
             "images": images_out,
-            "captions": captions_out,
+            "captions": captions_out
         }
-
 
 # ---------- Rutas HTTP ----------
 
@@ -485,5 +583,3 @@ async def chat_bafar(request: Request):
 
 # Para correr local:
 # uvicorn main:app --host 0.0.0.0 --port 8000 --env-file .env
-
-
