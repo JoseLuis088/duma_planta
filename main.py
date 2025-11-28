@@ -544,6 +544,21 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
             "captions": captions_out
         }
 
+# ---------------------------------------------------------
+#  Página web del chat (sirve static/index.html)
+#   - GET /        -> index
+#   - GET /Bafar   -> index
+#   - GET /Bafar/  -> index
+# ---------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return FileResponse("static/index.html")
+
+
+@app.get("/Bafar", response_class=HTMLResponse)
+@app.get("/Bafar/", response_class=HTMLResponse)
+async def bafar_page():
+    return FileResponse("static/index.html")
 
 
 @app.post("/chat")
