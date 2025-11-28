@@ -387,27 +387,20 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
         is_pure_greeting = msg in greeting_set or msg.rstrip("!.?") in greeting_set
 
         extra_instructions = (
-            "Responde en español. "
+            "Responde siempre en español. "
             "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
             "NO muestres consultas SQL en la respuesta final (salvo que el usuario lo pida explícitamente). "
-            "Cuando la pregunta requiera datos de la base, DEBES llamar a la función sql_query con UNA sola SELECT. "
-            "Consulta los documentos adjuntos (schema/cookbook) y CONFÍA en ellos. "
-            "Tablas disponibles (con esquema): dbo.ProductionLineIntervals, dbo.ProductionLines, "
-            "dbo.WorkShiftExecutions, dbo.WorkShiftTemplates, ind.WorkShiftExecutionSummaries. "
-            "No pidas confirmación de nombres de columnas: úsalos tal cual. "
-            "Si una consulta falla por nombre inválido, corrígelo tú mismo según el esquema y reintenta. "
-            "REGLAS POR TURNO (OBLIGATORIO si el usuario dice 'turno' o da una fecha): "
-            "1) Obtén el turno desde dbo.WorkShiftExecutions (StartDate/EndDate en hora local). "
-            "2) Obtén el nombre del turno desde dbo.WorkShiftTemplates (por WorkShiftTemplateId). "
-            "3) Si el usuario solicita el resumen/resultado del turno, usa ind.WorkShiftExecutionSummaries "
-            "(filtra por WorkShiftExecutionId) para OEE, Availability, Performance y Quality. "
-            "4) Si el usuario solicita detalle minuto a minuto dentro del turno, usa dbo.ProductionLineIntervals "
-            "limitado al rango [StartDate, EndDate) del turno. "
-            "Para **tiempo real / actual**, **PROHIBIDO** usar `ind.WorkShiftExecutionSummaries`. Usa SIEMPRE `dbo.ProductionLineIntervals` y trae **un solo registro** con: `ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC` para desempatar. "
-            "Tras ejecutar sql_query, resume OEE, Disponibilidad, Desempeño y Calidad en % (2 decimales) y "
-            "menciona el nombre del turno (Primer/Segundo/Tercero) con la hora local de referencia. "
-            "Usa viz_render sólo si el usuario pide comparaciones o tendencias."
+            "Cuando la pregunta requiera indicadores (OEE, disponibilidad, desempeño, calidad, producción, tiempos), "
+            "DEBES llamar a la función sql_query con UNA sola sentencia SELECT. "
+            "Tu comportamiento está definido por el system prompt: "
+            "solo debes usar tres consultas ya definidas: "
+            "1) RT.1 para indicadores ACTUALES/EN TIEMPO REAL, "
+            "2) H1.AYER para indicadores de AYER por los tres turnos, "
+            "3) H1.DIA para indicadores de una FECHA ESPECÍFICA por los tres turnos. "
+            "No inventes nuevas consultas ni estructuras distintas: elige la receta adecuada según la intención "
+            "y ejecútala con sql_query. "
         )
+
 
                 # Detección explícita de consultas de tiempo real
         # Detección explícita de consultas de tiempo real
@@ -416,12 +409,13 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
         if is_realtime:
             extra_instructions += (
-                " En esta petición de TIEMPO REAL debes llamar a sql_query sobre dbo.ProductionLineIntervals "
-                "con una única SELECT: SELECT TOP(1) ... FROM dbo.ProductionLineIntervals AS pli "
-                "ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC. "
-                "Mapea KPIs: OEE→pli.OEE, Disponibilidad→pli.OEEAvailability, Desempeño→pli.OEEPerformance, "
-                "Calidad→pli.OEEQuality."
+                " Esta petición es de TIEMPO REAL / ACTUAL. "
+                "Debes usar EXCLUSIVAMENTE la consulta RT.1 definida en tu system prompt "
+                "(la que hace SELECT TOP(1) ... FROM dbo.ProductionLineIntervals AS pli "
+                "WHERE pli.Active = 1 ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC). "
+                "No construyas otra consulta diferente para tiempo real."
             )
+
 
         # saludo breve si el usuario solo saludó
         if is_pure_greeting:
@@ -456,14 +450,13 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
         if (not tool_used) and asks_for_kpis:
             forced_instructions = (
                 "Debes responder ejecutando SIEMPRE una consulta con la función sql_query. "
-                "Si es por turno/fecha: "
-                " - Identifica el turno en dbo.WorkShiftExecutions (hora local) y su nombre en dbo.WorkShiftTemplates. "
-                " - Para el resumen del turno, consulta ind.WorkShiftExecutionSummaries por WorkShiftExecutionId. "
-                " - Para detalle minuto a minuto, consulta dbo.ProductionLineIntervals limitado a [StartDate, EndDate). "
-                "Si el usuario pide ACTUAL/AHORA, usa EXCLUSIVAMENTE dbo.ProductionLineIntervals con TOP(1) y ORDER BY IntervalBegin DESC, CreatedAt DESC (no uses Summaries). "
-                "Entrega OEE, Availability, Performance y Quality en % (2 decimales) y el nombre del turno si aplica. "
-                "NO muestres la consulta en el mensaje final."
+                "No inventes nuevas consultas: usa únicamente las tres recetas ya definidas en tu system prompt: "
+                "RT.1 para indicadores actuales, H1.AYER para indicadores de ayer por turno "
+                "y H1.DIA para indicadores de una fecha específica por turno. "
+                "Elige la que corresponda según el mensaje del usuario y vuelve a intentarlo. "
+                "No muestres la consulta SQL en la respuesta final."
             )
+
             run2 = client.beta.threads.runs.create(
                 thread_id=t_id,
                 assistant_id=ASSISTANT_ID,
@@ -495,13 +488,15 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
             allowed = ", ".join(sorted(ALLOWED_TABLES))
             forced_instructions_2 = (
                 "NO devuelvas consultas SQL como texto. "
-                "EJECUTA la consulta mediante la función sql_query con UNA sola sentencia SELECT. "
-                "Usa exclusivamente tablas de la lista permitida: " + allowed + ". "
-                "Para preguntas por turno: identifica el turno con dbo.WorkShiftExecutions, "
-                "obtén su nombre con dbo.WorkShiftTemplates, y trae el resumen desde ind.WorkShiftExecutionSummaries; "
-                "para detalle dentro del turno usa dbo.ProductionLineIntervals en [StartDate, EndDate); si es ACTUAL/AHORA usa TOP(1) en dbo.ProductionLineIntervals ordenado por IntervalBegin DESC, CreatedAt DESC. "
-                "Finalmente responde con KPIs en % (2 decimales) y menciona el nombre del turno."
+                "Ejecuta la consulta mediante la función sql_query con UNA sola sentencia SELECT. "
+                "Solo puedes usar las tres recetas definidas en tu system prompt: "
+                "RT.1 (tiempo real), H1.AYER (ayer por turno) y H1.DIA (día específico por turno). "
+                "Si antes intentaste otra consulta con tablas o columnas incorrectas, ignórala y vuelve a intentar "
+                "usando estrictamente una de esas tres recetas. "
+                "En la respuesta final, solo describe los resultados (OEE, disponibilidad, desempeño, calidad, "
+                "producción, etc.) sin mostrar el SQL."
             )
+
 
             run3 = client.beta.threads.runs.create(
                 thread_id=t_id,

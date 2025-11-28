@@ -15,6 +15,7 @@ duma_cookbook.txt
 schema.md
 test_aoao_assistant.py
 test_SQL.py
+System prompt.txt
 
 # VS Code
 .vscode/
