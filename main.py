@@ -416,12 +416,42 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
         if is_realtime:
             extra_instructions += (
-                " En esta petición de TIEMPO REAL debes llamar a sql_query sobre dbo.ProductionLineIntervals "
-                "con una única SELECT: SELECT TOP(1) ... FROM dbo.ProductionLineIntervals AS pli "
-                "ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC. "
-                "Mapea KPIs: OEE→pli.OEE, Disponibilidad→pli.OEEAvailability, Desempeño→pli.OEEPerformance, "
-                "Calidad→pli.OEEQuality."
-            )
+                " En esta petición de TIEMPO REAL debes llamar a sql_query sobre la tabla "
+                "dbo.ProductionLineIntervals para obtener el último registro de la línea.\n"
+                " Usa una única SELECT como:\n"
+                "   SELECT TOP(1) *\n"
+                "   FROM dbo.ProductionLineIntervals AS pli\n"
+                "   ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;\n"
+                " Los campos importantes de ese registro significan lo siguiente:\n"
+                "   - TimeSinceLastStatusChange: duración que la línea lleva en el estatus actual.\n"
+                "   - TimeSinceLastWorkshiftBegin: tiempo natural transcurrido desde que inició el turno.\n"
+                "   - EffectiveAvailableTime: TIEMPO PRODUCTIVO (minutos u horas según la columna).\n"
+                "   - ScheduledStopageTime: tiempo NO productivo PROGRAMADO.\n"
+                "   - UnscheduledStopageTime: tiempo NO productivo NO programado.\n"
+                "   - CurrentRate: velocidad actual (kg/h).\n"
+                "   - ExpectedRate: velocidad esperada (kg/h).\n"
+                "   - CurrentShiftProduction: producción real del turno actual (kg).\n"
+                "   - ExpectedShiftProduction: producción estimada del turno a la hora actual (kg).\n"
+                "   - CurrentProduction: producción actual del día (kg).\n"
+                "   - ExpectedDayProduction: producción planificada del día (kg).\n"
+                "   - IntervalProductionLineStatus: estado actual de la línea.\n"
+                "   - OEE: indicador OEE global.\n"
+                "   - OEEAvailability: disponibilidad.\n"
+                "   - OEEPerformance: desempeño.\n"
+                "   - OEEQuality: calidad / producto conforme.\n"
+                " Cuando el usuario pregunte por 'tiempo productivo', responde usando EffectiveAvailableTime.\n"
+                " Cuando pregunte por 'tiempo no productivo programado', usa ScheduledStopageTime.\n"
+                " Cuando pregunte por 'tiempo no productivo no programado', usa UnscheduledStopageTime.\n"
+                " Si pide 'tiempo no productivo' en general, puedes explicar que es la suma de los tiempos "
+                "no productivos programados y no programados, e indicar ambos valores por separado.\n"
+                " Si el usuario pregunta 'qué es' un indicador (por ejemplo: 'qué es tiempo productivo'), "
+                "explica su definición usando estas descripciones sin llamar a sql_query.\n"
+                " Si el usuario pregunta 'cuánto es' un indicador (por ejemplo: 'cuál es el tiempo productivo'), "
+                "llama a sql_query con la SELECT indicada, toma el valor del último registro y devuelve el "
+                "resultado de forma clara (incluyendo la unidad de medida si está disponible).\n"
+    )
+
+
 
         # saludo breve si el usuario solo saludó
         if is_pure_greeting:
