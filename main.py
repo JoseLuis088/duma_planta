@@ -416,12 +416,10 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
         if is_realtime:
             extra_instructions += (
-                " En esta petición de TIEMPO REAL debes llamar a sql_query sobre la tabla "
-                "dbo.ProductionLineIntervals para obtener el último registro de la línea.\n"
-                " Usa una única SELECT como:\n"
-                "   SELECT TOP(1) *\n"
-                "   FROM dbo.ProductionLineIntervals AS pli\n"
-                "   ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;\n"
+                " En esta petición de TIEMPO REAL debes usar la RECETA RT.1 del archivo duma_cookbook.txt "
+                "para consultar dbo.ProductionLineIntervals (último snapshot de la línea). "
+                "No inventes otra consulta: usa RT.1 tal cual está definida en el cookbook. "
+                "Después interpreta los campos según el system prompt (estatus, tiempos, velocidades, producción, OEE y sus componentes)."
                 " Los campos importantes de ese registro significan lo siguiente:\n"
                 "   - TimeSinceLastStatusChange: duración que la línea lleva en el estatus actual.\n"
                 "   - TimeSinceLastWorkshiftBegin: tiempo natural transcurrido desde que inició el turno.\n"
@@ -485,15 +483,21 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
         asks_for_kpis = any(k in msg_low for k in KPI_KEYWORDS)
         if (not tool_used) and asks_for_kpis:
             forced_instructions = (
-                "Debes responder ejecutando SIEMPRE una consulta con la función sql_query. "
-                "Si es por turno/fecha: "
-                " - Identifica el turno en dbo.WorkShiftExecutions (hora local) y su nombre en dbo.WorkShiftTemplates. "
-                " - Para el resumen del turno, consulta ind.WorkShiftExecutionSummaries por WorkShiftExecutionId. "
-                " - Para detalle minuto a minuto, consulta dbo.ProductionLineIntervals limitado a [StartDate, EndDate). "
-                "Si el usuario pide ACTUAL/AHORA, usa EXCLUSIVAMENTE dbo.ProductionLineIntervals con TOP(1) y ORDER BY IntervalBegin DESC, CreatedAt DESC (no uses Summaries). "
-                "Entrega OEE, Availability, Performance y Quality en % (2 decimales) y el nombre del turno si aplica. "
-                "NO muestres la consulta en el mensaje final."
+                "Debes responder ejecutando SIEMPRE una consulta con la función sql_query.\n"
+                "Si la pregunta es de TIEMPO REAL / ACTUAL / AHORA, usa la receta RT.1 del archivo duma_cookbook.txt "
+                "sobre dbo.ProductionLineIntervals para obtener el último snapshot.\n"
+                "Si la pregunta es por TURNOS o FECHAS (día específico, rango de fechas, ayer, último turno, etc.), "
+                "usa EXCLUSIVAMENTE las recetas H1.x del duma_cookbook.txt basadas en "
+                "dbo.WorkShiftExecutions + dbo.WorkShiftTemplates + ind.WorkShiftExecutionSummaries "
+                "(por ejemplo H1.1 para un solo día por turno, H1.2 para rangos de fechas).\n"
+                "No inventes nuevas consultas SQL: copia la receta que corresponda, ajusta solo las fechas o filtros necesarios, "
+                "y pásala a sql_query.\n"
+                "En la respuesta, entrega OEE, disponibilidad, desempeño y calidad en % (1–2 decimales), "
+                "producción estimada vs real, velocidades promedio estimada y real (si están en la receta), "
+                "y tiempos productivos vs no productivos.\n"
+                "NO muestres la consulta SQL en el mensaje final."
             )
+
             run2 = client.beta.threads.runs.create(
                 thread_id=t_id,
                 assistant_id=ASSISTANT_ID,
