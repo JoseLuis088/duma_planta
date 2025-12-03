@@ -68,12 +68,17 @@ def run_sql(select_sql: str):
     Ejecuta un SELECT y regresa (rows, columns).
     rows es lista de listas JSON-serializable (convierte tipos a str).
     """
+    print("\n====== EJECUTANDO EN SQL SERVER ======")
+    print(select_sql)
+    print("======================================")
+
     with pyodbc.connect(CONN_STR) as conn:
         cur = conn.cursor()
         cur.execute(select_sql)
         rows_raw = cur.fetchall()
         cols = [c[0] for c in cur.description]
-        # Convertir cualquier tipo no JSON (datetime, Decimal, etc.) a str
+
+        # Convertir tipos a algo serializable
         rows = []
         for r in rows_raw:
             out_row = []
@@ -82,12 +87,21 @@ def run_sql(select_sql: str):
                     out_row.append(base64.b64encode(v).decode("utf-8"))
                 else:
                     try:
-                        json.dumps(v)  # test rápido
+                        json.dumps(v)
                         out_row.append(v)
                     except Exception:
                         out_row.append(str(v))
             rows.append(out_row)
+
+        # 🔍 DEBUG: ver cuántas filas regresó y un ejemplo
+        print(f"--> Filas devueltas: {len(rows)}")
+        if rows:
+            print(f"--> Primera fila: {rows[0]}")
+        else:
+            print("--> SIN filas (resultado vacío)")
+
         return rows, cols
+
 
 # ---------- Helpers gráficos ----------
 PLOTS_DIR = os.path.join("static", "plots")
@@ -273,9 +287,17 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                         if name == "sql_query":
                             select_sql = (args.get("select_sql") or "").strip()
 
-                            # Seguridad básica: SOLO SELECT
-                            if not select_sql.lower().startswith("select"):
-                                raise ValueError("Solo se permiten consultas SELECT.")
+                            # 🔍 DEBUG: mostrar la consulta que está mandando el assistant
+                            print("\n========== SQL FROM ASSISTANT ==========")
+                            print(select_sql)
+                            print("========================================\n")
+
+                            # 🔒 Seguridad básica: solo lectura (DECLARE + SELECT permitido)
+                            normalized = select_sql.lstrip().lower()
+                            if not (normalized.startswith("select") or normalized.startswith("declare")):
+                                raise ValueError(
+                                    "Solo se permiten consultas de solo lectura (DECLARE + SELECT)."
+                                )
 
                             # Guardrail: NO tablas inventadas. Extrae esquema.tabla (ej. dbo.Tabla, ind.Tabla)
                             tables_found = {
@@ -396,18 +418,17 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
             "dbo.WorkShiftExecutions, dbo.WorkShiftTemplates, ind.WorkShiftExecutionSummaries. "
             "No pidas confirmación de nombres de columnas: úsalos tal cual. "
             "Si una consulta falla por nombre inválido, corrígelo tú mismo según el esquema y reintenta. "
-            "REGLAS POR TURNO (OBLIGATORIO si el usuario dice 'turno' o da una fecha): "
-            "1) Obtén el turno desde dbo.WorkShiftExecutions (StartDate/EndDate en hora local). "
-            "2) Obtén el nombre del turno desde dbo.WorkShiftTemplates (por WorkShiftTemplateId). "
-            "3) Si el usuario solicita el resumen/resultado del turno, usa ind.WorkShiftExecutionSummaries "
-            "(filtra por WorkShiftExecutionId) para OEE, Availability, Performance y Quality. "
-            "4) Si el usuario solicita detalle minuto a minuto dentro del turno, usa dbo.ProductionLineIntervals "
-            "limitado al rango [StartDate, EndDate) del turno. "
-            "Para **tiempo real / actual**, **PROHIBIDO** usar `ind.WorkShiftExecutionSummaries`. Usa SIEMPRE `dbo.ProductionLineIntervals` y trae **un solo registro** con: `ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC` para desempatar. "
+            "Para TIEMPO REAL / ACTUAL debes usar SIEMPRE la receta RT.1 del archivo duma_cookbook.txt "
+            "sobre dbo.ProductionLineIntervals (TOP 1 ordenado por IntervalBegin DESC, CreatedAt DESC). "
+            "Para cualquier pregunta de TURNOS o FECHAS (día específico, rango de fechas, 'ayer', 'primer turno del 27 al 30', etc.), "
+            "usa EXCLUSIVAMENTE las recetas H1.x del duma_cookbook.txt (H1.1, H1.2, H1.3), "
+            "basadas en dbo.WorkShiftExecutions + dbo.WorkShiftTemplates + ind.WorkShiftExecutionSummaries. "
+            "No inventes nuevas consultas: copia la receta que corresponda y solo ajusta @day, @fromDay, @toDay y @shiftName. "
             "Tras ejecutar sql_query, resume OEE, Disponibilidad, Desempeño y Calidad en % (2 decimales) y "
-            "menciona el nombre del turno (Primer/Segundo/Tercero) con la hora local de referencia. "
-            "Usa viz_render sólo si el usuario pide comparaciones o tendencias."
+            "menciona el nombre del turno (Primer/Segundo/Tercero) y la fecha local correspondiente. "
+            "Usa viz_render sólo si el usuario pide comparaciones, tendencias o gráficas."
         )
+
 
                 # Detección explícita de consultas de tiempo real
         # Detección explícita de consultas de tiempo real
