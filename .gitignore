@@ -16,6 +16,7 @@ schema.md
 test_aoao_assistant.py
 test_SQL.py
 System prompt.txt
+sql_query.json
 
 # VS Code
 .vscode/

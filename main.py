@@ -5,6 +5,8 @@ import json
 import time
 import base64
 from typing import List, Optional
+from datetime import datetime, date, timedelta
+
 
 import pyodbc
 import pandas as pd
@@ -285,47 +287,160 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
                     try:
                         if name == "sql_query":
-                            select_sql = (args.get("select_sql") or "").strip()
+                            mode = args.get("mode")
+                            day = args.get("day")
+                            shift_name = args.get("shift_name")
 
-                            # 🔍 DEBUG: mostrar la consulta que está mandando el assistant
-                            print("\n========== SQL FROM ASSISTANT ==========")
+                            if mode not in ("realtime", "hist_turno_dia"):
+                                raise ValueError("Parámetro 'mode' inválido para sql_query.")
+
+                            # ------------------------------------------------------------------
+                            # 1) TIEMPO REAL (RT.1)
+                            # ------------------------------------------------------------------
+                            if mode == "realtime":
+                                select_sql = """
+DECLARE @linePattern NVARCHAR(100) = NULL;
+
+SELECT TOP (1)
+    pl.Name                           AS LineName,
+    pli.IntervalBegin                 AS SnapshotAtLocal,
+
+    -- KPIs
+    ROUND(pli.OEE,2)                  AS OEE,
+    ROUND(pli.OEEAvailability,2)      AS Availability,
+    ROUND(pli.OEEPerformance,2)       AS Performance,
+    ROUND(pli.OEEQuality,2)           AS Quality,
+
+    -- Estado de la línea
+    pli.ProductionLineStatus          AS StatusCode,
+
+    -- Tiempos (calculados desde HH:MM:SS reales o minutos sueltos)
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    -- Velocidades
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    -- Producción
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+
+WHERE
+    (@linePattern IS NULL
+        OR pl.Name LIKE N'%' + @linePattern + N'%')
+
+ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
+
+"""
+
+                            # ------------------------------------------------------------------
+                            # 2) HISTÓRICO POR TURNO / DÍA (H1.1)
+                            # ------------------------------------------------------------------
+                            else:  # mode == "hist_turno_dia"
+                                # ----------------------------------------------------------
+                                # Cálculo de la fecha lógica (@day) con ajuste a 3er turno
+                                # ----------------------------------------------------------
+
+                                # Fecha base según lo que mandó el asistente
+                                if day:
+                                    # Fecha explícita "YYYY-MM-DD"
+                                    base_day_sql = f"CONVERT(date, '{day}')"
+                                else:
+                                    # Sin fecha explícita -> asumimos AYER
+                                    base_day_sql = "CAST(GETDATE()-1 AS date)"
+
+                                normalized_shift = (shift_name or "").strip().lower()
+
+                                if normalized_shift == "tercer turno":
+                                    # Caso A: "tercer turno de ayer" (sin day)
+                                    if not day:
+                                        # Queremos el turno que TERMINÓ HOY a las 07:00,
+                                        # por lo tanto usamos HOY como día técnico.
+                                        day_sql = "CAST(GETDATE() AS date)"
+                                    else:
+                                        # Caso B: "tercer turno del 2025-12-02"
+                                        # Interpretamos esa fecha como la de FIN del turno,
+                                        # así que usamos X+1 en el filtro de StartDate.
+                                        day_sql = f"DATEADD(DAY, 1, {base_day_sql})"
+                                else:
+                                    # Para primer/segundo turno o sin turno específico
+                                    # usamos la fecha base tal cual.
+                                    day_sql = base_day_sql
+
+                                # Filtro opcional por nombre de turno
+                                shift_filter = ""
+                                if shift_name:
+                                    safe_shift = str(shift_name).replace("'", "''")
+                                    shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+
+                                select_sql = f"""
+DECLARE @day DATE = {day_sql};
+
+SELECT
+    wst.Name                              AS Turno,
+    CONVERT(date, wse.StartDate)          AS Fecha,
+    wses.Oee                              AS OEE,
+    wses.Availability                     AS Disponibilidad,
+    wses.Performance                      AS Desempeno,
+    wses.Quality                          AS Calidad,
+    wses.WorkshiftDurationMin             AS DuracionTurnoMin,
+    wses.AvailableTimeMin                 AS TiempoDisponibleMin,
+    wses.ProductiveTimeMin                AS TiempoProductivoMin,
+    wses.ScheduledStopageMin              AS TiempoNoProdProgramadoMin,
+    wses.UnscheduledStopageMin            AS TiempoNoProdNoProgramadoMin,
+    wses.ExpectedProductionSummary        AS ProduccionEstimadaKg,
+    wses.CurrentProductionSummary         AS ProduccionRealKg,
+    wses.AvgExpectedVelocity              AS VelocidadPromedioEstimadaKgHr,
+    wses.AvgCurrentVelocity               AS VelocidadPromedioRealKgHr
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions      AS wse
+    ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates       AS wst
+    ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE
+    wse.Status = 'closed'
+    AND wse.Active = 1
+    AND wses.Active = 1
+    AND wst.Active = 1
+    AND wse.StartDate >= @day
+    AND wse.StartDate < DATEADD(DAY, 1, @day){shift_filter}
+ORDER BY
+    wse.StartDate,
+    wst.StartTime;
+"""
+
+                            # 🔍 DEBUG: ver qué SQL se está ejecutando
+                            print("\n========== SQL GENERADO POR BACKEND ==========")
                             print(select_sql)
-                            print("========================================\n")
-
-                            # 🔒 Seguridad básica: solo lectura (DECLARE + SELECT permitido)
-                            normalized = select_sql.lstrip().lower()
-                            if not (normalized.startswith("select") or normalized.startswith("declare")):
-                                raise ValueError(
-                                    "Solo se permiten consultas de solo lectura (DECLARE + SELECT)."
-                                )
-
-                            # Guardrail: NO tablas inventadas. Extrae esquema.tabla (ej. dbo.Tabla, ind.Tabla)
-                            tables_found = {
-                                f"{schema.lower()}.{table.lower()}"
-                                for (schema, table) in re.findall(
-                                    r"(?:\b\[?([A-Za-z0-9_]+)\]?)\.\[?([A-Za-z0-9_]+)\]?",
-                                    select_sql,
-                                    flags=re.IGNORECASE
-                                )
-                            }
-
-                            if tables_found and not tables_found.issubset(ALLOWED_TABLES):
-                                unknown = ", ".join(sorted(tables_found - ALLOWED_TABLES))
-                                allowed = ", ".join(sorted(ALLOWED_TABLES))
-                                raise ValueError(
-                                    "Tablas desconocidas: "
-                                    + unknown
-                                    + ". Usa exclusivamente: "
-                                    + allowed
-                                    + "."
-                                )
+                            print("==============================================\n")
 
                             rows, columns = run_sql(select_sql)
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
                                 "output": json.dumps(
                                     {"columns": columns, "rows": rows},
-                                    ensure_ascii=False, default=str
+                                    ensure_ascii=False,
+                                    default=str
                                 )
                             })
 
@@ -384,6 +499,7 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
         return tool_used
 
+
     # ------------------------ Cuerpo principal -------------------------------
     try:
         # 1) Thread
@@ -393,12 +509,26 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
             t = client.beta.threads.create()
             t_id = t.id
 
-        # 2) Mensaje del usuario
+        # 2) Mensajes hacia el thread: primero una marca de fecha del backend, luego el mensaje real
+
+        # Fecha actual del backend en formato YYYY-MM-DD
+        system_date = date.today().isoformat()  # Ejemplo: "2025-12-05"
+        system_date_msg = f"[system_date={system_date}]"
+
+        # Enviar mensaje invisible/técnico con la fecha del backend
+        client.beta.threads.messages.create(
+            thread_id=t_id,
+            role="user",
+            content=system_date_msg
+        )
+
+        # Enviar luego el mensaje real del usuario
         client.beta.threads.messages.create(
             thread_id=t_id,
             role="user",
             content=user_text
         )
+
 
         # 3) Instrucciones base (saludo mínimo + uso de tools + reglas SQL por turno sin horarios fijos)
         msg = user_text.strip().lower()
@@ -513,7 +643,7 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                 "(por ejemplo H1.1 para un solo día por turno, H1.2 para rangos de fechas).\n"
                 "No inventes nuevas consultas SQL: copia la receta que corresponda, ajusta solo las fechas o filtros necesarios, "
                 "y pásala a sql_query.\n"
-                "En la respuesta, entrega OEE, disponibilidad, desempeño y calidad en % (1–2 decimales), "
+                "En la respuesta, entrega OEE, disponibilidad, desempeño y calidad en % (En la base de datos ya están en porcentaje, no multipliques por 100), "
                 "producción estimada vs real, velocidades promedio estimada y real (si están en la receta), "
                 "y tiempos productivos vs no productivos.\n"
                 "NO muestres la consulta SQL en el mensaje final."
