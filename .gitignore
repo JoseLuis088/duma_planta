@@ -23,3 +23,7 @@ sql_query.json
 
 # Logs
 *.log
+
+static/reports/
+static/plots/
+static/report_imgs/

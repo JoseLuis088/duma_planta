@@ -4,6 +4,7 @@ import uuid
 import json
 import time
 import base64
+import re
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 
@@ -14,13 +15,23 @@ import matplotlib
 matplotlib.use("Agg")  # backend sin pantalla
 import matplotlib.pyplot as plt
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from openai import AzureOpenAI
+
+# Reportes (PDF/Word)
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+
+from docx import Document
+from docx.shared import Pt
+import tempfile
 
 # ---------- Carga de variables ----------
 load_dotenv()
@@ -45,6 +56,10 @@ CONN_STR = (
     "TrustServerCertificate=yes;"
 )
 
+# Ruta absoluta al logo de DUMA (para PDF y Word)
+_LOGO_PATH = os.path.join("static", "images", "LOGO DUMA.png")
+
+
 # ---------- Cliente Azure ----------
 client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
@@ -52,8 +67,139 @@ client = AzureOpenAI(
     api_version=AZURE_OPENAI_API_VERSION,
 )
 
+import os
+import json
+from typing import Any, Optional
+
+AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
+
+def aoai_text(system_prompt: str, user_prompt: str, temperature: float = 0.2, max_tokens: int = 900) -> str:
+    """
+    Llama a Azure OpenAI (Chat Completions) y regresa texto.
+    Requiere AZURE_OPENAI_DEPLOYMENT definido en .env
+    """
+    if not AZURE_OPENAI_DEPLOYMENT:
+        return "⚠️ Falta AZURE_OPENAI_DEPLOYMENT en el .env (nombre del deployment del modelo)."
+
+    try:
+        resp = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        return f"⚠️ Error llamando a Azure OpenAI: {e}"
+    
+
+CONTROL_VARS_AI_SYSTEM = """\
+Eres Duma, un asistente en español para analítica de piso de producción.
+
+Te voy a dar métricas calculadas de variables de control para un DÍA COMPLETO (3 turnos).
+Tu tarea es generar un análisis EJECUTIVO y accionable.
+
+Requisitos:
+- Escribe en español, tono profesional (tipo CEO / gerente de planta).
+- Usa SIEMPRE viñetas de Markdown (`- `) para listar puntos. NO uses números (1., 2.).
+- Separa claramente los párrafos con doble salto de línea.
+- Estructura obligatoria (usa estos encabezados exactos con `### `):
+  ### Resumen ejecutivo
+  - (3-6 bullets de alto impacto)
+  ### Hallazgos clave
+  - (Top 3 a 5 variables más críticas, con números)
+  ### Interpretación operacional
+  - (Qué sugiere: sensor, setpoint, proceso, limpieza, carga térmica, etc.)
+  ### Recomendaciones
+  - (Acciones concretas, priorizadas: Alta/Media/Baja)
+  ### Próximos pasos
+  - (Qué medir/validar mañana y cómo)
+
+- NO inventes datos. Usa SOLO lo recibido.
+- Si detectas valores “100% fuera” o “0% fuera” dilo explícitamente y sugiere validaciones.
+"""
+
+def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
+    payload = {
+        "day": day,
+        "executive_summary_backend": executive_summary,
+        "metrics_by_variable": summary[:50],
+        "notes": [
+            "out_pct es porcentaje fuera de crítico.",
+            "out_points/points es conteo de puntos fuera de crítico.",
+        ],
+    }
+    user_prompt = (
+        "Estos son los resultados del backend.\n"
+        "Genera el análisis ejecutivo y recomendaciones.\n\n"
+        f"JSON:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+    )
+    return aoai_text(CONTROL_VARS_AI_SYSTEM, user_prompt, temperature=0.25, max_tokens=1100)
+
+
+# -----------------------------------------------------------------------------
+# IA (análisis ejecutivo) para OEE (tiempo real / por día-turno)
+# -----------------------------------------------------------------------------
+
+OEE_AI_SYSTEM = """
+Eres Duma, un asistente en español para analítica de piso de producción.
+
+Escribe SIEMPRE con estilo **ejecutivo** (Director de Operaciones / Planta):
+- Prioriza impacto, riesgo y acción.
+- Evita tecnicismos innecesarios.
+- Usa listas cortas.
+- Máximo 1 párrafo por sección.
+
+Estructura:
+1) Resumen ejecutivo (riesgo principal y urgencia)
+2) KPI limitante (el más bajo) y por qué importa
+3) Acciones recomendadas (hoy / 24h) — 3 a 6 bullets
+4) Riesgo si no se actúa (1-2 bullets)
+
+Notas:
+- Si el estatus de línea es US/SS/LP/AV, interpreta:
+  US=Paro No Programado, SS=Paro Programado, LP=Baja Producción, AV=Disponible.
+- Si faltan datos, dilo explícitamente y recomienda verificar fuente/sensores.
+""".strip()
+
+
+def ai_oee_realtime(snapshot: dict) -> str:
+    """Genera análisis ejecutivo para OEE en tiempo real (un snapshot)."""
+    user_prompt = (
+        "Analiza el siguiente SNAPSHOT de OEE en tiempo real y escribe el análisis con la estructura indicada.\n\n"
+        "SNAPSHOT (JSON):\n"
+        f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}\n\n"
+        "Reglas adicionales:\n"
+        "- Identifica el KPI limitante (Availability/Performance/Quality el más bajo).\n"
+        "- Si StatusCode indica paro, sugiere acciones acordes (mantenimiento, operación, planeación).\n"
+        "- No inventes valores que no estén en el JSON."
+    )
+    return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.2, max_tokens=700)
+
+
+def ai_oee_day_turn(day: str, rows: list[dict], shift_name: str | None = None) -> str:
+    """Genera análisis ejecutivo para OEE por día/turno(s)."""
+    user_prompt = (
+        "Analiza el siguiente resumen de OEE por turno para un día.\n"
+        "Devuelve un análisis ejecutivo con la estructura indicada.\n\n"
+        f"DIA: {day}\n"
+        f"TURNO_SOLICITADO: {shift_name or 'Todos'}\n\n"
+        "ROWS (JSON array):\n"
+        f"{json.dumps(rows, ensure_ascii=False, indent=2)}\n\n"
+        "Reglas adicionales:\n"
+        "- Ordena mentalmente turnos 1→2→3 si vienen varios.\n"
+        "- KPI limitante por turno y KPI limitante del día (peor caso).\n"
+        "- No inventes valores que no estén en el JSON."
+    )
+    return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.2, max_tokens=900)
+
+
+
 # ---------- App FastAPI ----------
-app = FastAPI(title="Duma Planta Backend", version="1.0.2")
+app = FastAPI(title="Duma Planta Backend", version="1.0.3")
 
 # CORS si vas a servir desde otro origen
 app.add_middleware(
@@ -289,10 +435,13 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
                         if name == "sql_query":
                             mode = args.get("mode")
                             day = args.get("day")
+                            from_day = args.get("from_day")
+                            to_day = args.get("to_day")
                             shift_name = args.get("shift_name")
 
-                            if mode not in ("realtime", "hist_turno_dia"):
+                            if mode not in ("realtime", "hist_turno_dia", "hist_turno_rango"):
                                 raise ValueError("Parámetro 'mode' inválido para sql_query.")
+
 
                             # ------------------------------------------------------------------
                             # 1) TIEMPO REAL (RT.1)
@@ -358,34 +507,14 @@ ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
                             # ------------------------------------------------------------------
                             else:  # mode == "hist_turno_dia"
                                 # ----------------------------------------------------------
-                                # Cálculo de la fecha lógica (@day) con ajuste a 3er turno
+                                # Fecha base (@day): si viene day la usamos; si no, asumimos AYER
+                                # ❗ NO se hace day+1 aquí. El ajuste del Tercer Turno
+                                # se resuelve 100% en SQL con la "fecha técnica".
                                 # ----------------------------------------------------------
-
-                                # Fecha base según lo que mandó el asistente
                                 if day:
-                                    # Fecha explícita "YYYY-MM-DD"
-                                    base_day_sql = f"CONVERT(date, '{day}')"
+                                    day_sql = f"CONVERT(date, '{day}')"
                                 else:
-                                    # Sin fecha explícita -> asumimos AYER
-                                    base_day_sql = "CAST(GETDATE()-1 AS date)"
-
-                                normalized_shift = (shift_name or "").strip().lower()
-
-                                if normalized_shift == "tercer turno":
-                                    # Caso A: "tercer turno de ayer" (sin day)
-                                    if not day:
-                                        # Queremos el turno que TERMINÓ HOY a las 07:00,
-                                        # por lo tanto usamos HOY como día técnico.
-                                        day_sql = "CAST(GETDATE() AS date)"
-                                    else:
-                                        # Caso B: "tercer turno del 2025-12-02"
-                                        # Interpretamos esa fecha como la de FIN del turno,
-                                        # así que usamos X+1 en el filtro de StartDate.
-                                        day_sql = f"DATEADD(DAY, 1, {base_day_sql})"
-                                else:
-                                    # Para primer/segundo turno o sin turno específico
-                                    # usamos la fecha base tal cual.
-                                    day_sql = base_day_sql
+                                    day_sql = "CAST(GETDATE()-1 AS date)"
 
                                 # Filtro opcional por nombre de turno
                                 shift_filter = ""
@@ -397,37 +526,60 @@ ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
 DECLARE @day DATE = {day_sql};
 
 SELECT
-    wst.Name                              AS Turno,
-    CONVERT(date, wse.StartDate)          AS Fecha,
-    wses.Oee                              AS OEE,
-    wses.Availability                     AS Disponibilidad,
-    wses.Performance                      AS Desempeno,
-    wses.Quality                          AS Calidad,
-    wses.WorkshiftDurationMin             AS DuracionTurnoMin,
-    wses.AvailableTimeMin                 AS TiempoDisponibleMin,
-    wses.ProductiveTimeMin                AS TiempoProductivoMin,
-    wses.ScheduledStopageMin              AS TiempoNoProdProgramadoMin,
-    wses.UnscheduledStopageMin            AS TiempoNoProdNoProgramadoMin,
-    wses.ExpectedProductionSummary        AS ProduccionEstimadaKg,
-    wses.CurrentProductionSummary         AS ProduccionRealKg,
-    wses.AvgExpectedVelocity              AS VelocidadPromedioEstimadaKgHr,
-    wses.AvgCurrentVelocity               AS VelocidadPromedioRealKgHr
+    wst.Name AS Turno,
+
+    -- ✅ Fecha técnica:
+    -- El Tercer Turno se asigna al día en que TERMINA (StartDate + 1)
+    CASE
+        WHEN wst.Name = N'Tercer Turno'
+            THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
+        ELSE CONVERT(date, wse.StartDate)
+    END AS Fecha,
+
+    wses.Oee                       AS OEE,
+    wses.Availability              AS Disponibilidad,
+    wses.Performance               AS Desempeno,
+    wses.Quality                   AS Calidad,
+    wses.WorkshiftDurationMin      AS DuracionTurnoMin,
+    wses.AvailableTimeMin          AS TiempoDisponibleMin,
+    wses.ProductiveTimeMin         AS TiempoProductivoMin,
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
+    wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
+    wses.CurrentProductionSummary  AS ProduccionRealKg,
+    wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
+    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
 FROM ind.WorkShiftExecutionSummaries AS wses
-INNER JOIN dbo.WorkShiftExecutions      AS wse
+INNER JOIN dbo.WorkShiftExecutions AS wse
     ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
-INNER JOIN dbo.WorkShiftTemplates       AS wst
+INNER JOIN dbo.WorkShiftTemplates AS wst
     ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
 WHERE
     wse.Status = 'closed'
     AND wse.Active = 1
     AND wses.Active = 1
     AND wst.Active = 1
-    AND wse.StartDate >= @day
-    AND wse.StartDate < DATEADD(DAY, 1, @day){shift_filter}
+
+    -- ✅ Filtro por FECHA TÉCNICA (NO por StartDate directo)
+    AND (
+        CASE
+            WHEN wst.Name = N'Tercer Turno'
+                THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
+            ELSE CONVERT(date, wse.StartDate)
+        END
+    ) = @day
+    {shift_filter}
 ORDER BY
-    wse.StartDate,
-    wst.StartTime;
+    Fecha,
+    CASE wst.Name
+        WHEN N'Primer Turno' THEN 1
+        WHEN N'Segundo Turno' THEN 2
+        WHEN N'Tercer Turno' THEN 3
+        ELSE 9
+    END;
 """
+
+
 
                             # 🔍 DEBUG: ver qué SQL se está ejecutando
                             print("\n========== SQL GENERADO POR BACKEND ==========")
@@ -735,6 +887,572 @@ ORDER BY
 #   - GET /Bafar   -> index
 #   - GET /Bafar/  -> index
 # ---------------------------------------------------------
+# =========================
+# Control Variables module (Critical variables: Parquet + Plotly)
+# =========================
+from typing import Literal
+
+try:
+    import duckdb  # type: ignore
+except Exception:
+    duckdb = None  # optional; will raise if used without installed
+
+import pandas as pd
+import plotly.graph_objects as go
+from azure.storage.blob import BlobServiceClient
+import tempfile
+
+ShiftName = Literal["Primer", "Segundo", "Tercer"]
+
+CRITICAL_VARS = {
+    "3AB4E612-5987-432C-8EF0-28EE3D74C313": {"name": "Temperatura del agua", "device": "Chiller", "min": 0.00, "max": 4.00, "crit_min": -1.00, "crit_max": 5.00},
+    "9057486C-3A01-417D-B5E0-33F848EB19FB": {"name": "Alertas", "device": "Detector de metales", "min": -1.00, "max": 1.00, "crit_min": -2.00, "crit_max": 1.00},
+    "11A4996C-FA1B-47D9-9A60-125D66F41F84": {"name": "Temperatura interna", "device": "IQF", "min": -42.00, "max": -20.00, "crit_min": -40.00, "crit_max": -18.00},
+    "F71768ED-3006-4880-A2FD-9F62344870CC": {"name": "Tiempo de permanencia del producto", "device": "IQF", "min": 31.00, "max": 90.00, "crit_min": 30.00, "crit_max": 95.00},
+    "AB2D10BC-B497-4049-AD39-554C2E4BCC24": {"name": "Temperatura del producto", "device": "Mezclador", "min": -4.50, "max": 4.00, "crit_min": -5.00, "crit_max": 5.00},
+    "5EF87231-BD89-41F1-B0D6-C5371B237684": {"name": "Temperatura del producto", "device": "Molino", "min": -18.00, "max": -10.00, "crit_min": -20.00, "crit_max": -8.00},
+    "D592EFE2-94FF-4DBF-95C8-C1C01FE37D4F": {"name": "Temperatura del agua", "device": "Volteador", "min": 0.00, "max": 25.00, "crit_min": -1.00, "crit_max": 26.00},
+    "7AA64D76-1AE9-41DA-85AA-F53A9B5F0162": {"name": "Tiempo de hidratación", "device": "Volteador", "min": -0.50, "max": 15.00, "crit_min": -1.00, "crit_max": 20.00},
+}
+CRITICAL_VAR_IDS = set(k.strip().lower() for k in CRITICAL_VARS.keys())
+
+def _normalize_shift(shift: str) -> ShiftName:
+    s = (shift or "").strip().lower()
+    if s.startswith("primer"):
+        return "Primer"
+    if s.startswith("segundo"):
+        return "Segundo"
+    if s.startswith("tercer"):
+        return "Tercer"
+    raise ValueError("shift inválido. Usa: Primer | Segundo | Tercer")
+
+def _get_blob_service_client() -> BlobServiceClient:
+    account_url = os.environ["ADLS_ACCOUNT_URL"].strip()
+    key = os.environ["ADLS_ACCOUNT_KEY"].strip()
+    return BlobServiceClient(account_url=account_url, credential=key)
+
+def download_turn_parquet(day: str, shift: ShiftName) -> str:
+    """Descarga el parquet correspondiente a un día y turno. Retorna path local."""
+    container_name = os.environ["ADLS_CONTAINER"].strip()
+    base_prefix = os.environ.get("ADLS_BASE_PREFIX", "control-variable-reads").strip().strip("/")
+
+    blob_service = _get_blob_service_client()
+    container_client = blob_service.get_container_client(container_name)
+
+    day_prefix = f"{base_prefix}/{day}/"
+
+    # Patrones aceptados (por si en ADLS no se llama exactamente "{shift}_Turno_...")
+    shift_l = shift.lower()
+    acceptable_prefixes = [
+        f"{shift}_Turno_".lower(),
+        f"{shift}_".lower(),
+        f"{shift}-".lower(),
+    ]
+
+    blobs = container_client.list_blobs(name_starts_with=day_prefix)
+
+    target_blob = None
+    for blob in blobs:
+        name_only = blob.name.split("/")[-1].lstrip()  # <-- IMPORTANTÍSIMO
+        name_l = name_only.lower()
+
+        if not name_l.endswith(".parquet"):
+            continue
+
+        # Match flexible
+        if any(name_l.startswith(p) for p in acceptable_prefixes) or (shift_l in name_l):
+            target_blob = blob.name  # guarda el nombre REAL del blob
+            break
+
+    if not target_blob:
+        raise FileNotFoundError(f"No se encontró archivo parquet para {shift} turno en {day} (prefijo: {day_prefix})")
+
+    tmp_dir = tempfile.mkdtemp()
+
+    # Para el nombre local, quita espacio inicial si lo trae
+    local_filename = os.path.basename(target_blob).lstrip()
+    local_path = os.path.join(tmp_dir, local_filename)
+
+    with open(local_path, "wb") as f:
+        blob_client = container_client.get_blob_client(target_blob)
+        f.write(blob_client.download_blob().readall())
+
+    return local_path
+
+
+def load_critical_reads_for_shift(day: str, shift: ShiftName) -> pd.DataFrame:
+    """Descarga el parquet de un día/turno y regresa SOLO lecturas de variables críticas."""
+    if duckdb is None:
+        raise RuntimeError("duckdb no está instalado. Agrega duckdb a requirements.txt")
+
+    parquet_path = download_turn_parquet(day, shift)
+
+    crit_ids = list(CRITICAL_VAR_IDS)
+    in_list = ", ".join([f"'{x}'" for x in crit_ids])
+
+    con = duckdb.connect()
+    df = con.execute(f"""
+        SELECT
+            lower(CAST(ProductionLineControlVariableId AS VARCHAR)) AS ProductionLineControlVariableId,
+            CAST(LocalTime AS TIMESTAMP) AS LocalTime,
+            CAST(Value AS DOUBLE) AS Value,
+            CAST(CriticalMinValue AS DOUBLE) AS CriticalMinValue,
+            CAST(CriticalMaxValue AS DOUBLE) AS CriticalMaxValue
+        FROM read_parquet('{parquet_path}')
+        WHERE lower(CAST(ProductionLineControlVariableId AS VARCHAR)) IN ({in_list})
+        ORDER BY ProductionLineControlVariableId, LocalTime
+    """).df()
+    df["Shift"] = shift
+    return df
+
+def load_critical_reads_for_day(day: str) -> pd.DataFrame:
+    frames = []
+    missing = []
+
+    for sh in ["Primer", "Segundo", "Tercer"]:
+        try:
+            frames.append(load_critical_reads_for_shift(day, sh))  # type: ignore[arg-type]
+        except FileNotFoundError:
+            missing.append(sh)
+            continue
+
+    if not frames:
+        # No devolvemos vacío silencioso: esto es justo lo que te está pasando
+        raise FileNotFoundError(f"No hubo parquets para el día {day}. Turnos faltantes: {', '.join(missing)}")
+
+    df = pd.concat(frames, ignore_index=True)
+    df["LocalTime"] = pd.to_datetime(df["LocalTime"], errors="coerce")
+    return df
+
+
+def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_path: str) -> str:
+    """Grafica una variable con los 3 turnos en un solo gráfico y guarda HTML."""
+    vid = var_id.strip().lower()
+    d = df_day[df_day["ProductionLineControlVariableId"].astype(str).str.lower() == vid].copy()
+    if d.empty:
+        raise ValueError(f"No hay datos para var_id={var_id} en este día")
+
+    d["LocalTime"] = pd.to_datetime(d["LocalTime"], errors="coerce")
+    d["Value"] = pd.to_numeric(d["Value"], errors="coerce")
+    d["CriticalMinValue"] = pd.to_numeric(d["CriticalMinValue"], errors="coerce")
+    d["CriticalMaxValue"] = pd.to_numeric(d["CriticalMaxValue"], errors="coerce")
+    d = d.sort_values("LocalTime")
+
+    crit_min = float(d["CriticalMinValue"].median())
+    crit_max = float(d["CriticalMaxValue"].median())
+    d["IsCriticalOut"] = (d["Value"] < crit_min) | (d["Value"] > crit_max)
+
+    meta = None
+    for kk, m in CRITICAL_VARS.items():
+        if kk.strip().lower() == vid:
+            meta = m
+            break
+
+    title = f"{meta.get('name','Variable')} — {meta.get('device','')}" if meta else "Serie de tiempo"
+
+    fig = go.Figure()
+
+    # Banda crítica
+    fig.add_trace(go.Scatter(
+        x=d["LocalTime"], y=[crit_max]*len(d),
+        mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"
+    ))
+    fig.add_trace(go.Scatter(
+        x=d["LocalTime"], y=[crit_min]*len(d),
+        mode="lines", line=dict(width=0),
+        fill="tonexty", fillcolor="rgba(255, 80, 80, 0.12)",
+        name="Banda crítica", hoverinfo="skip"
+    ))
+
+    # Serie principal
+    fig.add_trace(go.Scatter(
+        x=d["LocalTime"], y=d["Value"],
+        mode="lines",
+        name="Valor"
+    ))
+
+    out = d[d["IsCriticalOut"]]
+    if not out.empty:
+        fig.add_trace(go.Scatter(
+            x=out["LocalTime"], y=out["Value"],
+            mode="markers",
+            name="Fuera de crítico",
+            marker=dict(size=6)
+        ))
+
+    fig.update_layout(
+        title=dict(text=title, x=0.01, y=0.98, xanchor="left"),
+        xaxis_title="Hora local",
+        yaxis_title="Valor",
+        template="plotly_dark",
+        hovermode="x unified",
+        margin=dict(l=55, r=25, t=70, b=50),
+        legend=dict(orientation="h", yanchor="top", y=1.10, xanchor="left", x=0.01, font=dict(size=11))
+    )
+
+    os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
+    fig.write_html(out_html_path, include_plotlyjs="cdn")
+    return out_html_path
+
+def plot_critical_timeseries_day_png(
+    df_day: pd.DataFrame,
+    var_id: str,
+    out_png_path: str
+) -> str:
+    """Versión PNG (matplotlib) para reportes PDF/DOCX.
+    Dibuja:
+      - Serie Value
+      - Banda crítica (min..max)
+      - Puntos fuera de crítico
+    """
+    d = df_day[df_day["ProductionLineControlVariableId"].astype(str).str.lower() == var_id.strip().lower()].copy()
+    if d.empty:
+        return ""
+
+    d["LocalTime"] = pd.to_datetime(d["LocalTime"], errors="coerce")
+    for c in ["Value", "CriticalMinValue", "CriticalMaxValue"]:
+        d[c] = pd.to_numeric(d[c], errors="coerce")
+    d = d.sort_values("LocalTime")
+    d["IsOut"] = (d["Value"] < d["CriticalMinValue"]) | (d["Value"] > d["CriticalMaxValue"])
+
+    crit_min = float(d["CriticalMinValue"].median())
+    crit_max = float(d["CriticalMaxValue"].median())
+
+    meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.strip().lower() == var_id.strip().lower()), None)
+    title = f"{meta.get('name','Variable')} — {meta.get('device','')}" if meta else str(var_id)
+
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(10, 3.4), dpi=160)
+
+    ax.plot(d["LocalTime"], d["Value"], linewidth=1.2, label="Valor")
+    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.15, label="Rango crítico")
+    ax.axhline(crit_min, linestyle="--", linewidth=1, label="Crítico mín")
+    ax.axhline(crit_max, linestyle="--", linewidth=1, label="Crítico máx")
+
+    out = d[d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
+    if not out.empty:
+        ax.scatter(out["LocalTime"], out["Value"], s=8, label="Fuera de crítico")
+
+    ax.set_title(title)
+    ax.set_xlabel("Hora local")
+    ax.set_ylabel("Valor")
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper left", fontsize=7, ncol=2)
+
+    os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_png_path, bbox_inches="tight")
+    plt.close(fig)
+    return out_png_path
+
+def summarize_critical_day(df_day: pd.DataFrame) -> pd.DataFrame:
+    """Resumen por variable para TODO el día.
+    Devuelve: puntos, puntos fuera, %, promedio, min, max (ordenado por % fuera desc).
+    """
+    if df_day is None or df_day.empty:
+        return pd.DataFrame(columns=[
+            "var_id","name","device","points","out_points","out_pct","avg_value","min_value","max_value"
+        ])
+
+    d = df_day.copy()
+    d["var_id"] = d["ProductionLineControlVariableId"].astype(str).str.lower()
+    d["Value"] = pd.to_numeric(d["Value"], errors="coerce")
+
+    # Asegurar columna booleana para fuera de crítico
+    if "IsOut" not in d.columns:
+        d["CriticalMinValue"] = pd.to_numeric(d.get("CriticalMinValue"), errors="coerce")
+        d["CriticalMaxValue"] = pd.to_numeric(d.get("CriticalMaxValue"), errors="coerce")
+        d["IsOut"] = (d["Value"] < d["CriticalMinValue"]) | (d["Value"] > d["CriticalMaxValue"])
+
+    g = (d.groupby("var_id", dropna=False)
+         .agg(
+             points=("Value","count"),
+             out_points=("IsOut","sum"),
+             avg_value=("Value","mean"),
+             min_value=("Value","min"),
+             max_value=("Value","max"),
+         )
+         .reset_index())
+
+    g["out_pct"] = (g["out_points"] / g["points"] * 100.0).round(2)
+
+    # Enriquecer con catálogo
+    names, devices = [], []
+    for vid in g["var_id"].tolist():
+        meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.strip().lower() == str(vid).lower()), None)
+        names.append(meta.get("name") if meta else str(vid))
+        devices.append(meta.get("device") if meta else "")
+    g["name"] = names
+    g["device"] = devices
+
+    # Redondeo amigable
+    g["avg_value"] = g["avg_value"].round(3)
+
+    # Orden (más fuera primero)
+    g = g.sort_values(["out_pct","out_points"], ascending=[False,False]).reset_index(drop=True)
+
+    return g[["var_id","name","device","points","out_points","out_pct","avg_value","min_value","max_value"]]
+
+def normalize_day_str(day: str) -> str:
+    day = (day or "").strip()
+    if not day:
+        return day
+
+    # Ya viene ISO: 2026-01-06
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+        return day
+
+    # Viene DD/MM/YYYY: 01/06/2026
+    m = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", day)
+    if m:
+        dd, mm, yyyy = m.groups()
+        return f"{yyyy}-{mm}-{dd}"
+
+    # Último intento: parse flexible
+    try:
+        return pd.to_datetime(day, dayfirst=True).date().isoformat()
+    except Exception:
+        return day
+
+
+
+# =========================
+# Endpoints OEE (sin IA)
+# =========================
+
+def _sql_oee_realtime(line_pattern: str | None = None) -> str:
+    """
+    Último snapshot (RT.1). line_pattern opcional.
+    """
+    lp = "NULL" if not line_pattern else "N'" + str(line_pattern).replace("'", "''") + "'"
+    return f"""
+DECLARE @linePattern NVARCHAR(100) = {lp};
+
+SELECT TOP (1)
+    pl.Name                           AS LineName,
+    pli.IntervalBegin                 AS SnapshotAtLocal,
+
+    ROUND(pli.OEE,2)                  AS OEE,
+    ROUND(pli.OEEAvailability,2)      AS Availability,
+    ROUND(pli.OEEPerformance,2)       AS Performance,
+    ROUND(pli.OEEQuality,2)           AS Quality,
+
+    pli.ProductionLineStatus          AS StatusCode,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+WHERE
+    (@linePattern IS NULL OR pl.Name LIKE N'%' + @linePattern + N'%')
+ORDER BY
+    pli.IntervalBegin DESC,
+    pli.CreatedAt DESC;
+"""
+
+def _sql_oee_day_turn(day: str, shift_name: str | None = None) -> str:
+    """
+    Resumen por turno para un día (H1.1 con fecha técnica de Tercer Turno).
+    """
+    # Escapar comillas simples SIN backslashes dentro del f-string
+    day_safe = str(day).replace("'", "''")
+    day_sql = f"CONVERT(date, '{day_safe}')"
+
+    shift_filter = ""
+    if shift_name:
+        safe_shift = str(shift_name).replace("'", "''")
+        shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+
+    return f"""
+DECLARE @day DATE = {day_sql};
+
+SELECT
+    wst.Name AS Turno,
+
+    -- Fecha técnica: Tercer Turno cuenta para el día en que TERMINA (StartDate + 1)
+    CASE
+        WHEN wst.Name = N'Tercer Turno'
+            THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
+        ELSE CONVERT(date, wse.StartDate)
+    END AS Fecha,
+
+    wses.Oee                       AS OEE,
+    wses.Availability              AS Disponibilidad,
+    wses.Performance               AS Desempeno,
+    wses.Quality                   AS Calidad,
+    wses.WorkshiftDurationMin      AS DuracionTurnoMin,
+    wses.AvailableTimeMin          AS TiempoDisponibleMin,
+    wses.ProductiveTimeMin         AS TiempoProductivoMin,
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
+    wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
+    wses.CurrentProductionSummary  AS ProduccionRealKg,
+    wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
+    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse
+    ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates AS wst
+    ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE
+    wse.Status = 'closed'
+    AND wse.Active = 1
+    AND wses.Active = 1
+    AND wst.Active = 1
+
+    -- Filtro por FECHA TÉCNICA (no por StartDate directo)
+    AND (
+        CASE
+            WHEN wst.Name = N'Tercer Turno'
+                THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
+            ELSE CONVERT(date, wse.StartDate)
+        END
+    ) = @day
+    {shift_filter}
+ORDER BY
+    Fecha,
+    CASE wst.Name
+        WHEN N'Primer Turno' THEN 1
+        WHEN N'Segundo Turno' THEN 2
+        WHEN N'Tercer Turno' THEN 3
+        ELSE 9
+    END;
+"""
+
+
+@app.get("/api/oee/realtime")
+async def api_oee_realtime():
+    """OEE en tiempo real (último snapshot)."""
+    rows, cols = run_sql(_sql_oee_realtime())
+    if not rows:
+        return {"rows": [], "columns": cols, "snapshot": None, "ai_analysis": ""}
+
+    # Snapshot = primer registro
+    snap = dict(zip(cols, rows[0]))
+
+    # IA (si está configurada)
+    ai = ai_oee_realtime(snap)
+
+    return {"rows": rows, "columns": cols, "snapshot": snap, "ai_analysis": ai}
+
+@app.post("/api/oee/day-turn")
+async def api_oee_day_turn(payload: dict):
+    """
+    OEE por día/turno. Body: { "day": "YYYY-MM-DD", "shift_name"?: "Primer Turno"|"Segundo Turno"|"Tercer Turno" }
+    """
+    day = (payload.get("day") or "").strip()
+    shift_name = payload.get("shift_name")
+    if not day:
+        raise HTTPException(status_code=400, detail="Falta 'day' (YYYY-MM-DD).")
+    rows, cols = run_sql(_sql_oee_day_turn(day, shift_name))
+
+    # Normalizamos a lista de dicts para el prompt
+    rows_dicts = [dict(zip(cols, r)) for r in rows] if rows else []
+    ai = ai_oee_day_turn(day, rows_dicts, shift_name)
+
+    return {"day": day, "shift_name": shift_name, "rows": rows, "columns": cols, "ai_analysis": ai}
+
+
+@app.post("/api/control-variables/day")
+async def api_control_variables_day(payload: dict):
+    """Devuelve plots + resumen para TODO el día (3 turnos) de variables críticas."""
+    day = normalize_day_str(payload.get("day") or "")
+    if not day:
+        raise HTTPException(status_code=400, detail="Falta 'day' (YYYY-MM-DD o DD/MM/YYYY).")
+
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+        raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD o DD/MM/YYYY.")
+
+    try:
+        df_day = load_critical_reads_for_day(day)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+
+    plots = []
+    if not df_day.empty:
+        var_ids = sorted(
+            df_day["ProductionLineControlVariableId"]
+            .dropna()
+            .astype(str)
+            .str.lower()
+            .unique()
+            .tolist()
+        )
+
+        for vid in var_ids:
+            meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.lower() == vid), None)
+            safe_name = (meta.get("device", "var") + "_" + meta.get("name", "var")) if meta else vid
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", safe_name.strip().lower()).strip("_")
+
+            filename = f"{day}_dia_{safe_name}.html"
+            out_path = os.path.join(out_dir, filename)
+
+            plot_critical_timeseries_day(df_day, vid, out_path)
+
+            plots.append({
+                "var_id": vid,
+                "title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid,
+                "url": f"/static/plots/{filename}"
+            })
+
+    summary_df = summarize_critical_day(df_day)
+    summary = summary_df.to_dict(orient="records")
+
+    exec_lines = []
+    if summary:
+        worst = summary[0]
+        exec_lines.append(f"Resumen ejecutivo ({day}):")
+        exec_lines.append(f"- Variables críticas analizadas: {len(summary)}")
+        exec_lines.append(
+            f"- Mayor % fuera de crítico: {worst.get('name','')} — {worst.get('device','')} ({worst.get('out_pct',0)}%)"
+        )
+        for i, r in enumerate(summary[:3], start=1):
+            exec_lines.append(
+                f"  {i}) {r.get('name','')} — {r.get('device','')}: {r.get('out_pct',0)}% fuera "
+                f"({r.get('out_points',0)}/{r.get('points',0)} pts)"
+            )
+
+    executive_summary = "\n".join(exec_lines)
+
+    ai_analysis = ai_control_variables_day(day=day, summary=summary, executive_summary=executive_summary)
+
+    return {
+        "day": day,
+        "plots": plots,
+        "summary": summary,
+        "executive_summary": executive_summary,
+        "ai_analysis": ai_analysis
+    }
+
+
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return FileResponse("static/index.html")
@@ -776,5 +1494,563 @@ async def chat_bafar(request: Request):
     return await chat(request)
 
 
+# =========================================================
+# Reportes descargables (PDF / Word)
+# =========================================================
+
+def _report_filename(prefix: str, ext: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", prefix).strip("_")
+    return f"{safe}.{ext}"
+
+
+def _build_pdf_bytes(
+    title: str,
+    subtitle: str,
+    sections: List[dict],
+    table_title: str,
+    table_rows: List[dict],
+    logo_path: str | None = None
+) -> bytes:
+    """Genera PDF (bytes) con estilo moderno "Duma Teal":
+    - Título + subtítulo + logo
+    - Secciones con texto tipo markdown simple (##/###, viñetas, párrafos)
+    - Tabla con encabezado estileada
+    - (Opcional) imágenes por sección (paths a PNG/JPG)
+    """
+    import io
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+    from reportlab.lib.units import inch
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+    from datetime import datetime
+
+    # --- PALETA DE COLORES (Matches Frontend) ---
+    COLOR_BRAND = colors.HexColor("#1abc9c")       # Teal brillante
+    COLOR_BRAND_DARK = colors.HexColor("#16a085")  # Teal oscuro
+    COLOR_TEXT = colors.HexColor("#0f172a")        # Navy dark (texto principal)
+    COLOR_TEXT_MUTED = colors.HexColor("#64748b")  # Gray blue (texto secundario)
+    COLOR_BG_LIGHT = colors.HexColor("#f0fdfa")    # Light Teal BG (para filas tabla)
+    COLOR_ACCENT = colors.HexColor("#0f172a")      # Headings
+    
+    def _safe(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def _strip_md(s: str) -> str:
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s or "")
+        s = re.sub(r"`([^`]+)`", r"\1", s)
+        s = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", s)
+        return s
+
+    def _md_to_flowables(md: str, styles) -> List:
+        out = []
+        if not md: return out
+        md = md.replace("\r\n", "\n").replace("\r", "\n")
+        lines = [ln.rstrip() for ln in md.split("\n")]
+        buf = []
+
+        def flush_paragraph():
+            nonlocal buf
+            if buf:
+                txtp = _safe(_strip_md(" ".join([b.strip() for b in buf]).strip()))
+                if txtp:
+                    out.append(Paragraph(txtp, styles["Body"]))
+                    out.append(Spacer(1, 8))
+                buf = []
+
+        for ln in lines:
+            l = ln.strip()
+            if not l:
+                flush_paragraph()
+                continue
+            if l.startswith("### "):
+                flush_paragraph()
+                out.append(Paragraph(_safe(_strip_md(l[4:])), styles["H3"]))
+                out.append(Spacer(1, 6))
+                continue
+            if l.startswith("## "):
+                flush_paragraph()
+                out.append(Paragraph(_safe(_strip_md(l[3:])), styles["H2"]))
+                out.append(Spacer(1, 10))
+                continue
+            if l.startswith("# "):
+                flush_paragraph()
+                out.append(Paragraph(_safe(_strip_md(l[2:])), styles["H1"]))
+                out.append(Spacer(1, 12))
+                continue
+            
+            # Detect bullets
+            if l.startswith("- ") or l.startswith("* "):
+                flush_paragraph()
+                out.append(Paragraph("• " + _safe(_strip_md(l[2:])), styles["Bullet"]))
+                continue
+
+            # Detect numbered lists (1. or 1))
+            match_num = re.match(r"^(\d+[\.\)])\s+(.*)", l)
+            if match_num:
+                flush_paragraph()
+                num_prefix = match_num.group(1)
+                content = match_num.group(2)
+                out.append(Paragraph(f"{num_prefix} { _safe(_strip_md(content))}", styles["Bullet"]))
+                continue
+
+            buf.append(l)
+
+        flush_paragraph()
+        return out
+
+    # -------- Page Template (Header/Footer) --------
+    def on_page(canvas, doc):
+        canvas.saveState()
+        w, h = doc.pagesize
+        
+        # Header Bar (Teal gradient simulation)
+        canvas.setFillColor(COLOR_BG_LIGHT)
+        canvas.rect(0, h - 0.5*inch, w, 0.5*inch, fill=1, stroke=0)
+        
+        # Footer Line
+        canvas.setStrokeColor(COLOR_BRAND)
+        canvas.setLineWidth(1)
+        canvas.line(0.7*inch, 0.75*inch, w - 0.7*inch, 0.75*inch)
+        
+        # Footer Text
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(COLOR_TEXT_MUTED)
+        page_num = f"Página {doc.page}"
+        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        canvas.drawString(0.7*inch, 0.5*inch, f"Duma Analytics — {date_str}")
+        canvas.drawRightString(w - 0.7*inch, 0.5*inch, page_num)
+        
+        canvas.restoreState()
+
+    # -------- Styles --------
+    ss = getSampleStyleSheet()
+    styles = {}
+    styles["Title"] = ParagraphStyle("DumaTitle", parent=ss["Title"], fontName="Helvetica-Bold", fontSize=24, leading=28, textColor=COLOR_BRAND, spaceAfter=8)
+    styles["Sub"] = ParagraphStyle("DumaSub", parent=ss["Normal"], fontName="Helvetica", fontSize=12, leading=14, textColor=COLOR_TEXT_MUTED, spaceAfter=24)
+    styles["H1"] = ParagraphStyle("DumaH1", parent=ss["Heading1"], fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=COLOR_ACCENT, spaceAfter=10, spaceBefore=4)
+    styles["H2"] = ParagraphStyle("DumaH2", parent=ss["Heading2"], fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=COLOR_BRAND_DARK, spaceAfter=8, spaceBefore=4)
+    styles["H3"] = ParagraphStyle("DumaH3", parent=ss["Heading3"], fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=COLOR_TEXT, spaceAfter=6)
+    styles["Body"] = ParagraphStyle("DumaBody", parent=ss["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=COLOR_TEXT)
+    styles["Bullet"] = ParagraphStyle("DumaBullet", parent=ss["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=COLOR_TEXT, leftIndent=14, bulletIndent=6, spaceAfter=4)
+
+    buffer = io.BytesIO()
+    
+    # Decide orientation: Landscape if table has > 5 columns
+    use_landscape = False
+    if table_rows and len(table_rows[0].keys()) > 5:
+        use_landscape = True
+        
+    page_size = landscape(letter) if use_landscape else letter
+    
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=page_size,
+        leftMargin=0.7*inch, rightMargin=0.7*inch,
+        topMargin=0.8*inch, bottomMargin=1*inch
+    )
+
+    story = []
+
+    # --- Cover Section ---
+    if logo_path and os.path.exists(logo_path):
+        try:
+            ir = ImageReader(logo_path)
+            w, h = ir.getSize()
+            max_w = 2.0*inch  # Bigger logo
+            max_h = 1.0*inch
+            scale = min(max_w / float(w), max_h / float(h))
+            img = Image(logo_path, width=w*scale, height=h*scale)
+            img.hAlign = "LEFT"
+            story.append(img)
+            story.append(Spacer(1, 12))
+        except Exception:
+            pass
+
+    story.append(Paragraph(_safe(title), styles["Title"]))
+    if subtitle:
+        story.append(Paragraph(_safe(subtitle), styles["Sub"]))
+        
+    story.append(Spacer(1, 12))
+
+    # --- Normalize Sections ---
+    norm_sections = []
+    for sec in (sections or []):
+        if isinstance(sec, dict):
+            norm_sections.append(sec)
+        elif isinstance(sec, (list, tuple)) and len(sec) >= 2:
+            norm_sections.append({"title": str(sec[0] or ""), "text": str(sec[1] or "")})
+        elif isinstance(sec, str):
+            norm_sections.append({"title": "", "text": sec})
+        else:
+            norm_sections.append({"title": "", "text": str(sec)})
+
+    # --- Content ---
+    for sec in norm_sections:
+        sec_title = (sec.get("title") or "").strip()
+        sec_text = (sec.get("text") or sec.get("content") or "").strip()
+        sec_images = sec.get("images") or []
+
+        if sec_title:
+            story.append(Paragraph(_safe(_strip_md(sec_title)), styles["H2"]))
+            
+        story.extend(_md_to_flowables(sec_text, styles))
+
+        for img_path in sec_images:
+            if not img_path or not os.path.exists(img_path): continue
+            try:
+                ir = ImageReader(img_path)
+                w, h = ir.getSize()
+                # Adjust max width based on orientation
+                avail_w_inch = 9.0 if use_landscape else 7.0
+                available_w = avail_w_inch*inch
+                available_h = 5.0*inch
+                scale = min(available_w/float(w), available_h/float(h))
+                story.append(Image(img_path, width=w*scale, height=h*scale))
+                story.append(Spacer(1, 12))
+            except Exception:
+                continue
+        
+        story.append(Spacer(1, 12))
+
+    # --- Table ---
+    if table_rows:
+        story.append(PageBreak()) # Start table on new page if complex? Optional.
+        story.append(Paragraph(_safe(table_title or "Detalle de Datos"), styles["H2"]))
+        story.append(Spacer(1, 8))
+
+        cols = list(table_rows[0].keys())
+        raw_data = [cols] + [[r.get(c, "") for c in cols] for r in table_rows]
+
+        # --- Dynamic Fit Logic ---
+        # 1. Calculate available width
+        page_w, page_h = page_size
+        # margins defined in SimpleDocTemplate: left=0.7*inch, right=0.7*inch
+        avail_width = page_w - (1.4 * inch)
+        
+        num_cols = len(cols)
+        if num_cols > 0:
+            col_width = avail_width / num_cols
+            col_widths = [col_width] * num_cols
+        else:
+            col_widths = None
+
+        # 2. Define ParagraphStyles for table content (Header vs Body) to allow wrapping
+        tbl_header_style = ParagraphStyle(
+            "TblHead", 
+            parent=styles["Body"], 
+            fontName="Helvetica-Bold", 
+            fontSize=7, 
+            leading=8, 
+            alignment=1, # Center
+            textColor=colors.white
+        )
+        tbl_body_style = ParagraphStyle(
+            "TblBody", 
+            parent=styles["Body"], 
+            fontName="Helvetica", 
+            fontSize=7, 
+            leading=8, 
+            alignment=1, # Center
+            textColor=colors.black
+        )
+
+        # 3. Wrap content in Paragraphs
+        final_data = []
+        
+        # Header row
+        header_row = []
+        for c in cols:
+            header_row.append(Paragraph(_safe(str(c)), tbl_header_style))
+        final_data.append(header_row)
+        
+        # Body rows
+        for row in raw_data[1:]:
+            processed_row = []
+            for cell in row:
+                # Convert None or non-string to string
+                txt = str(cell) if cell is not None else ""
+                processed_row.append(Paragraph(_safe(txt), tbl_body_style))
+            final_data.append(processed_row)
+
+        # 4. Create Table with explicit widths
+        tbl = Table(final_data, colWidths=col_widths, repeatRows=1)
+        
+        # Zebra striping styling
+        tbl_style = [
+            ("BACKGROUND", (0,0), (-1,0), COLOR_BRAND),         # Header BG Teal
+            # Text color is handled by Paragraph style, but we keep this for safety
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("LEFTPADDING", (0,0), (-1,-1), 2),
+            ("RIGHTPADDING", (0,0), (-1,-1), 2),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ]
+        
+        # Add Zebrastripes
+        for i in range(1, len(final_data)):
+            if i % 2 == 0:
+                bg = COLOR_BG_LIGHT # Light Teal for even rows
+            else:
+                bg = colors.white
+            tbl_style.append(("BACKGROUND", (0, i), (-1, i), bg))
+
+        tbl.setStyle(TableStyle(tbl_style))
+        story.append(tbl)
+    
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    return buffer.getvalue()
+
+
+def _as_file_response(content: bytes, filename: str, media_type: str):
+    tmp_path = os.path.join("static", "reports")
+    os.makedirs(tmp_path, exist_ok=True)
+    full = os.path.join(tmp_path, filename)
+    with open(full, "wb") as f:
+        f.write(content)
+    return FileResponse(full, media_type=media_type, filename=filename)
+
+
+@app.get("/api/report/control-variables/day")
+async def report_control_variables_day(day: str, format: str = "pdf"):
+    """Descarga reporte (PDF/DOCX) de Variables de Control para un día completo."""
+    day = normalize_day_str(day or "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+        raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
+
+    try:
+        df_day = load_critical_reads_for_day(day)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"No hay datos para el día {day}.")
+    except Exception as e:
+        print(f"Error generando reporte PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+    summary_df = summarize_critical_day(df_day)
+    summary_rows = summary_df.to_dict(orient="records")
+
+    # ---------- Resumen ejecutivo backend (corto) ----------
+    exec_lines = []
+    if summary_rows:
+        worst = summary_rows[0]
+        exec_lines.append(f"- Variables analizadas: {len(summary_rows)}")
+        exec_lines.append(
+            f"- Mayor % fuera de crítico: {worst.get('name','')} — {worst.get('device','')} ({worst.get('out_pct',0)}%)"
+        )
+        for i, r in enumerate(summary_rows[:3], start=1):
+            exec_lines.append(
+                f"- Top {i}: {r.get('name','')} — {r.get('device','')}: {r.get('out_pct',0)}% "
+                f"({r.get('out_points',0)}/{r.get('points',0)} pts)"
+            )
+    executive_summary = "\n".join(exec_lines)
+
+    # ---------- IA (SIEMPRE AL FINAL) ----------
+    ai_text = ""
+    try:
+        # OJO: tu función ai_control_variables_day requiere (day, summary, executive_summary)
+        ai_text = ai_control_variables_day(day=day, summary=summary_rows, executive_summary=executive_summary)
+    except Exception:
+        ai_text = ""
+
+    # ---------- PNGs para el reporte ----------
+    png_dir = os.path.join("static", "report_imgs")
+    os.makedirs(png_dir, exist_ok=True)
+
+    images = []
+    if df_day is not None and not df_day.empty:
+        var_ids = sorted(df_day["ProductionLineControlVariableId"].dropna().astype(str).str.lower().unique().tolist())
+        for vid in var_ids:
+            meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.strip().lower() == vid), None)
+            safe_name = (meta.get("device","var") + "_" + meta.get("name","var")) if meta else vid
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", safe_name.strip().lower()).strip("_")
+            out_png = os.path.join(png_dir, f"{day}_control_{safe_name}.png")
+            p = plot_critical_timeseries_day_png(df_day, vid, out_png)
+            if p and os.path.exists(p):
+                images.append({
+                    "title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid,
+                    "path": p
+                })
+
+    # ---------- Tabla (nombres ejecutivos) ----------
+    table = []
+    for r in summary_rows:
+        table.append({
+            "Equipo": r.get("device",""),
+            "Variable": r.get("name",""),
+            "Lecturas": r.get("points",0),
+            "Fuera de crítico": r.get("out_points",0),
+            "% fuera": r.get("out_pct",0),
+            "Promedio": r.get("avg_value",""),
+            "Mín": r.get("min_value",""),
+            "Máx": r.get("max_value",""),
+        })
+
+    title = "Reporte — Variables de Control"
+    subtitle = f"Día: {day}"
+
+    sections = []
+    sections.append({"title": "Resumen ejecutivo", "text": executive_summary or "- (Sin datos)"})
+
+    if images:
+        # Aquí van las gráficas ANTES de la IA (como quieres en el documento)
+        sections.append({
+            "title": "Gráficas (PNG)",
+            "text": "Lecturas por variable (día completo).",
+            "images": [x["path"] for x in images]
+        })
+
+    # IA SIEMPRE AL FINAL
+    if ai_text:
+        sections.append({"title": "Análisis mediante IA (Duma)", "text": ai_text})
+
+    fmt = (format or "pdf").lower()
+
+    if fmt in ("docx", "word"):
+        content = _build_docx_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH)
+        filename = f"variables_control_{day}.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    content = _build_pdf_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH)
+    filename = f"variables_control_{day}.pdf"
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@app.get("/api/report/oee/realtime")
+async def report_oee_realtime(format: str = "pdf"):
+    """Descarga reporte (PDF/DOCX) de OEE en tiempo real (último snapshot)."""
+    data = await api_oee_realtime()
+    rows = data.get("rows") or []
+    cols = data.get("columns") or []
+
+    if not rows or not cols:
+        raise HTTPException(status_code=404, detail="No hay datos de OEE en tiempo real.")
+
+    row = dict(zip(cols, rows[0]))
+
+    # Mapeo a nombres cliente (ajusta si quieres)
+    def fmt_pct(x):
+        try:
+            return round(float(x), 2)
+        except Exception:
+            return x
+
+    table = [
+        {"Métrica": "OEE", "Valor": fmt_pct(row.get("OEE"))},
+        {"Métrica": "Disponibilidad", "Valor": fmt_pct(row.get("Availability"))},
+        {"Métrica": "Desempeño", "Valor": fmt_pct(row.get("Performance"))},
+        {"Métrica": "Calidad", "Valor": fmt_pct(row.get("Quality"))},
+        {"Métrica": "Estado de línea", "Valor": row.get("IntervalProductionLineStatus")},
+        {"Métrica": "Snapshot (local)", "Valor": row.get("SnapshotAtLocal")},
+    ]
+
+    # IA (al final)
+    ai_text = ""
+    try:
+        ai_text = ai_oee_realtime(row)
+    except Exception:
+        ai_text = ""
+
+    title = "Reporte — OEE en tiempo real"
+    subtitle = f"Último snapshot disponible"
+
+    sections = [
+        {"title": "Resumen", "text": "Indicadores calculados sobre el último snapshot minuto a minuto."}
+    ]
+    if ai_text:
+        sections.append({"title": "Análisis mediante IA (Duma)", "text": ai_text})
+
+    if format.lower() in ("docx", "word"):
+        content = _build_docx_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH)
+        filename = "oee_tiempo_real.docx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    content = _build_pdf_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH)
+    filename = "oee_tiempo_real.pdf"
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+from fastapi import Response, HTTPException
+import re
+
+@app.get("/api/report/oee/day")
+async def report_oee_day(day: str, shift_name: str | None = None, format: str = "pdf"):
+    """Descarga el análisis (PDF/Word) para OEE por día/turno."""
+    day = normalize_day_str(day or "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+        raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
+
+    # El front usa shift_name (ver index.html), así que mantenemos ese nombre.
+    payload = {"day": day}
+    if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "(todos)", "todos", "(all)", "(All)"):
+        payload["shift_name"] = shift_name
+
+    try:
+        data = await api_oee_day_turn(payload)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error reporte OEE Day: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+    cols = data.get("columns") or []
+    rows = data.get("rows") or []
+
+    if not cols or not rows:
+        raise HTTPException(status_code=404, detail="No hay datos para esa fecha/turno.")
+
+    # rows viene como lista de listas => lo convertimos a lista de dicts
+    table_rows = []
+    for r in rows:
+        # r puede venir como tuple o list
+        r_list = list(r) if isinstance(r, (tuple, list)) else [r]
+        row_dict = {c: (r_list[i] if i < len(r_list) else "") for i, c in enumerate(cols)}
+        table_rows.append(row_dict)
+
+    title = "Reporte — OEE por día/turno"
+    subtitle = f"Fecha: {day}" + (f" — Turno: {shift_name}" if shift_name else "")
+
+    # El análisis ya viene en data["ai_analysis"] (markdown) desde /api/oee/day-turn
+    ai_text = data.get("ai_analysis") or ""
+
+    sections = [
+        {"title": "Resumen", "text": "Indicadores calculados por turno para la fecha seleccionada."}
+    ]
+    if ai_text.strip():
+        sections.append({"title": "Análisis y recomendaciones (IA)", "text": ai_text})
+
+    fmt = (format or "pdf").lower()
+    if fmt in ("docx", "word"):
+        content = _build_docx_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH)
+        return _as_file_response(
+            content,
+            _report_filename(f"oee_day_{day}" + (f"_{shift_name}" if shift_name else ""), "docx"),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    content = _build_pdf_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH)
+    return _as_file_response(
+        content,
+        _report_filename(f"oee_day_{day}" + (f"_{shift_name}" if shift_name else ""), "pdf"),
+        "application/pdf",
+    )
+
+
+
+
+
 # Para correr local:
 # uvicorn main:app --host 0.0.0.0 --port 8000 --env-file .env
+

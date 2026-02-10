@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duma - Dashboard</title>
+  <style>
+    :root {
+      /* Light mode (default) */
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --brand: #1f8a70;
+      --brand-2: #166a55;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --thead: #f1f5f9;
+      --brand-gradient-start: #ffffff;
+      --brand-gradient-end: #fbfdff;
+      --input-bg: #ffffff;
+      --table-hover: #f8fafc;
+      --kpi-bg: #ffffff;
+      --pill-bg: #ffffff;
+      --btn-bg: #ffffff;
+      --menu-hover: #cbd5e1;
+    }
+
+    [data-theme="dark"] {
+      /* Dark mode */
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --brand: #2dd4bf;
+      --brand-2: #14b8a6;
+      --danger: #f87171;
+      --warn: #fbbf24;
+      --thead: #334155;
+      --brand-gradient-start: #1e293b;
+      --brand-gradient-end: #1e293b;
+      --input-bg: #0f172a;
+      --table-hover: #334155;
+      --kpi-bg: #0f172a;
+      --pill-bg: #0f172a;
+      --btn-bg: #0f172a;
+      --menu-hover: #475569;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 270px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: linear-gradient(180deg, var(--brand-gradient-start) 0%, var(--brand-gradient-end) 100%);
+    }
+
+    .brand .dot {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--brand);
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 900;
+    }
+
+    .brand .brandLogo {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      object-fit: contain;
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+
+    .brand .title {
+      font-weight: 900
+    }
+
+    .brand .sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .menu button {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      cursor: pointer;
+      text-align: left;
+      font-weight: 800;
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+
+    .menu button:hover {
+      border-color: var(--menu-hover)
+    }
+
+    .menu button.active {
+      border-color: rgba(31, 138, 112, .45);
+      box-shadow: 0 0 0 3px rgba(31, 138, 112, .12);
+      background: rgba(31, 138, 112, .06);
+    }
+
+    .menu .hint {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 0 6px;
+      line-height: 1.4;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .topbar {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .topbar .left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 220px;
+    }
+
+    .topbar .title {
+      font-weight: 950;
+      letter-spacing: .2px;
+    }
+
+    .topbar .subtitle {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .topbar .right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--pill-bg);
+    }
+
+    .pill.ok {
+      border-color: rgba(31, 138, 112, .35);
+      color: var(--brand-2);
+      background: rgba(31, 138, 112, .06);
+    }
+
+    .pill.busy {
+      border-color: rgba(245, 158, 11, .35);
+      color: #92400e;
+      background: rgba(245, 158, 11, .10);
+    }
+
+    .pill.err {
+      border-color: rgba(239, 68, 68, .35);
+      color: #991b1b;
+      background: rgba(239, 68, 68, .08);
+    }
+
+    .view {
+      flex: 1;
+      overflow: auto;
+      padding: 18px;
+    }
+
+    .shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .card h2 {
+      margin: 0 0 6px 0;
+      font-size: 16px
+    }
+
+    .card .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    input[type="date"],
+    select {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 10px;
+      font-family: inherit;
+      font-size: 14px;
+      background: var(--input-bg);
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      background: var(--btn-bg);
+      font-weight: 900;
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+
+    .btn.primary {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }
+
+    .btn.primary:hover {
+      background: var(--brand-2);
+      border-color: var(--brand-2)
+    }
+
+    .cardHead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    .actions .btn {
+      padding: 8px 10px;
+      font-size: 13px
+    }
+
+    .small {
+      font-size: 12px
+    }
+
+    .muted {
+      color: var(--muted)
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    @media (max-width: 1100px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .sidebar {
+        display: none
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .plot-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .plot-title {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 950;
+      font-size: 13px;
+      line-height: 1.15;
+    }
+
+    .plot-frame {
+      width: 100%;
+      height: 340px;
+      border: 0;
+      display: block;
+      background: #0b0f14;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead th {
+      background: var(--thead);
+      border-bottom: 1px solid var(--border);
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--border);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover {
+      background: var(--table-hover);
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 950;
+      font-size: 12px
+    }
+
+    .tableWrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 900px) {
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .kpi {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--kpi-bg);
+    }
+
+    .kpi .label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 900
+    }
+
+    .kpi .value {
+      font-size: 22px;
+      font-weight: 1000;
+      margin-top: 4px
+    }
+
+    .kpi .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      background: #0b1220;
+      color: #e2e8f0;
+      padding: 10px;
+      border-radius: 12px;
+      overflow: auto;
+      border: 1px solid rgba(148, 163, 184, .2);
+    }
+
+    /* markdown output simple */
+    .md h1,
+    .md h2,
+    .md h3 {
+      margin: 10px 0 6px 0
+    }
+
+    .md p {
+      margin: 6px 0
+    }
+
+    .md ul,
+    .md ol {
+      margin: 6px 0 6px 18px
+    }
+
+    .md li {
+      margin: 3px 0
+    }
+
+    /* Theme toggle button */
+    .theme-toggle {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--btn-bg);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      transition: all 0.3s ease;
+    }
+
+    .theme-toggle:hover {
+      transform: scale(1.05);
+      border-color: var(--brand);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brandLogo" src="/static/images/LOGO%20DUMA.png" alt="Duma"
+          onerror="this.style.display='none'; this.nextElementSibling.style.display='grid'" />
+        <div class="dot" style="display:none">D</div>
+        <div>
+          <div class="title">Duma</div>
+          <div class="sub">Dashboard operativo</div>
+        </div>
+      </div>
+
+      <div class="menu">
+        <button id="btnMenuCV" class="active">📈 Variables de control</button>
+        <button id="btnMenuOeeRT">⚡ OEE en tiempo real</button>
+        <button id="btnMenuOeeDay">📅 OEE por día/turno</button>
+
+        <div class="hint">
+          Variables de control: gráficas del <b>día completo</b> (3 turnos) con bandas críticas y outliers.
+        </div>
+      </div>
+
+      <div style="margin-top:auto" class="small muted">
+        Backend: <b class="muted">FastAPI</b>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="left">
+          <div class="title" id="topTitle">Variables de control</div>
+          <div class="subtitle" id="topSubtitle">Día completo (3 turnos) — variables críticas</div>
+        </div>
+        <div class="right">
+          <button class="theme-toggle" id="themeToggle" title="Cambiar tema">🌙</button>
+          <span class="pill ok" id="statusPill">Listo</span>
+          <button class="btn" id="btnClear">Limpiar vista</button>
+        </div>
+      </div>
+
+      <div class="view">
+        <!-- ===================== -->
+        <!-- VIEW: CONTROL VARIABLES -->
+        <!-- ===================== -->
+        <section id="viewCV" class="shell">
+          <div class="card">
+            <h2>Variables de control (día completo)</h2>
+            <p class="sub">Selecciona una fecha y generaremos las gráficas (una por variable crítica) + análisis IA.</p>
+
+            <div class="form-row">
+              <label class="small muted" for="cvDay">Fecha:</label>
+              <input id="cvDay" type="date" />
+              <button class="btn primary" id="btnGenCV">Generar</button>
+              <span class="small muted" id="cvInfo"></span>
+            </div>
+          </div>
+
+          <!-- SOLO IA (quitamos el "resumen ejecutivo" no-IA) -->
+          <div class="card" id="cvSummaryCard" style="display:none">
+            <h2>Métricas por variable</h2>
+            <div class="tableWrap">
+              <table id="cvTable">
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Equipo</th>
+                    <th>Puntos</th>
+                    <th>Fuera de crítico</th>
+                    <th>% fuera</th>
+                    <th>Min</th>
+                    <th>Max</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid" id="cvGrid"></div>
+
+          <div class="card" id="cvAICard" style="display:none">
+            <div class="cardHead">
+              <h2 style="margin:0">Análisis y recomendaciones (IA)</h2>
+              <div class="actions">
+                <button class="btn" id="btnDlCvPdf" type="button">Descargar PDF</button>
+                <button class="btn" id="btnDlCvDocx" type="button">Descargar Word</button>
+              </div>
+            </div>
+            <div id="cvAI" class="md"></div>
+          </div>
+
+        </section>
+
+        <!-- ===================== -->
+        <!-- VIEW: OEE REALTIME -->
+        <!-- ===================== -->
+        <section id="viewOeeRT" class="shell" style="display:none">
+          <div class="card">
+            <h2>OEE en tiempo real</h2>
+            <p class="sub">Consulta el último snapshot (ProductionLineIntervals TOP 1).</p>
+            <div class="form-row">
+              <button class="btn primary" id="btnFetchOeeRT">Actualizar</button>
+              <span class="small muted" id="oeeRtInfo"></span>
+            </div>
+
+            <div class="kpi-grid" id="oeeRtKpis" style="display:none">
+              <div class="kpi">
+                <div class="label">OEE</div>
+                <div class="value" id="kpiOee"></div>
+                <div class="hint" id="kpiOeeHint"></div>
+              </div>
+              <div class="kpi">
+                <div class="label">Disponibilidad</div>
+                <div class="value" id="kpiAvail"></div>
+              </div>
+              <div class="kpi">
+                <div class="label">Desempeño</div>
+                <div class="value" id="kpiPerf"></div>
+              </div>
+              <div class="kpi">
+                <div class="label">Calidad</div>
+                <div class="value" id="kpiQual"></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:12px; display:none" id="oeeRtTableCard">
+              <h2>Detalle (snapshot)</h2>
+              <div class="tableWrap">
+                <table id="oeeRtTable">
+                  <thead>
+                    <tr id="oeeRtHead"></tr>
+                  </thead>
+                  <tbody id="oeeRtBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card" id="oeeRtAICard" style="display:none; margin-top:12px">
+              <div class="cardHead">
+                <h2 style="margin:0">Análisis y recomendaciones (IA)</h2>
+                <div class="actions">
+                  <button class="btn" id="btnDlOeeRtPdf" type="button">Descargar PDF</button>
+                  <button class="btn" id="btnDlOeeRtDocx" type="button">Descargar Word</button>
+                </div>
+              </div>
+              <div id="oeeRtAI" class="md"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===================== -->
+        <!-- VIEW: OEE DAY/TURN -->
+        <!-- ===================== -->
+        <section id="viewOeeDay" class="shell" style="display:none">
+          <div class="card">
+            <h2>OEE por día/turno</h2>
+            <p class="sub">Selecciona día y opcionalmente un turno. Si no eliges turno, te regresa los 3 turnos.</p>
+
+            <div class="form-row">
+              <label class="small muted" for="oeeDay">Fecha:</label>
+              <input id="oeeDay" type="date" />
+
+              <label class="small muted" for="oeeShift">Turno:</label>
+              <select id="oeeShift">
+                <option value="">(Todos)</option>
+                <option value="Primer Turno">Primer Turno</option>
+                <option value="Segundo Turno">Segundo Turno</option>
+                <option value="Tercer Turno">Tercer Turno</option>
+              </select>
+
+              <button class="btn primary" id="btnFetchOeeDay">Consultar</button>
+              <span class="small muted" id="oeeDayInfo"></span>
+            </div>
+          </div>
+
+          <div class="card" id="oeeDayTableCard" style="display:none">
+            <h2>Resultado</h2>
+            <div class="tableWrap">
+              <table id="oeeDayTable">
+                <thead>
+                  <tr id="oeeDayHead"></tr>
+                </thead>
+                <tbody id="oeeDayBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" id="oeeDayAICard" style="display:none">
+            <div class="cardHead">
+              <h2 style="margin:0">Análisis y recomendaciones (IA)</h2>
+              <div class="actions">
+                <button class="btn" id="btnDlOeeDayPdf" type="button">Descargar PDF</button>
+                <button class="btn" id="btnDlOeeDayDocx" type="button">Descargar Word</button>
+              </div>
+            </div>
+            <div id="oeeDayAI" class="md"></div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+
+    // ===========================
+    // Theme Toggle (Dark/Light Mode)
+    // ===========================
+    function initTheme() {
+      const savedTheme = localStorage.getItem('duma-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+
+      document.documentElement.setAttribute('data-theme', theme);
+      updateThemeIcon(theme);
+    }
+
+    function toggleTheme() {
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+      document.documentElement.setAttribute('data-theme', newTheme);
+      localStorage.setItem('duma-theme', newTheme);
+      updateThemeIcon(newTheme);
+    }
+
+    function updateThemeIcon(theme) {
+      const toggleBtn = el('themeToggle');
+      if (toggleBtn) {
+        toggleBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        toggleBtn.title = theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
+      }
+    }
+
+    // Initialize theme on page load
+    initTheme();
+
+    // Add event listener to toggle button
+    el('themeToggle')?.addEventListener('click', toggleTheme);
+
+
+    function setStatus(kind, text) {
+      const pill = el("statusPill");
+      pill.classList.remove("ok", "busy", "err");
+      pill.classList.add(kind);
+      pill.textContent = text;
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatNum(v) {
+      if (v === null || v === undefined || v === "") return "";
+      const n = Number(v);
+      if (Number.isNaN(n)) return String(v);
+      return (Math.round(n * 100) / 100).toString();
+    }
+
+    function toPct(v) {
+      if (v === null || v === undefined || v === "") return "";
+      const n = Number(v);
+      if (Number.isNaN(n)) return String(v);
+      return (Math.round(n * 100) / 100).toString() + "%";
+    }
+
+    // Estado para descargas
+    let lastCvDay = null;
+    let lastOeeDay = null;
+    let lastOeeShift = null;
+
+    // Mapeo de etiquetas (realtime) - incluye producción/velocidad
+    const LABEL_OEE_RT = {
+      LineName: "Línea",
+      SnapshotAtLocal: "Snapshot (hora local)",
+      OEE: "OEE (%)",
+      Availability: "Disponibilidad (%)",
+      Performance: "Desempeño (%)",
+      Quality: "Calidad (%)",
+      StatusCode: "Estatus",
+      StatusTimeMin: "Tiempo en estatus (min)",
+      NaturalTimeMin: "Tiempo natural (min)",
+      ProductiveTimeMin: "Tiempo productivo (min)",
+      ScheduledStopageMin: "Paro programado (min)",
+      UnscheduledStopageMin: "Paro no programado (min)",
+      CurrentRate: "Velocidad real (kg/h)",
+      ExpectedRate: "Velocidad esperada (kg/h)",
+      CurrentShiftProduction: "Producción real turno (kg)",
+      ExpectedShiftProduction: "Producción esperada turno (kg)",
+      CurrentProduction: "Producción real día (kg)",
+      ExpectedDayProduction: "Producción esperada día (kg)"
+    };
+
+    // Mapeo de etiquetas (día/turno) - nombres reales del SQL
+    const LABEL_OEE_DAY = {
+      Turno: "Turno",
+      Fecha: "Fecha",
+      OEE: "OEE (%)",
+      Disponibilidad: "Disponibilidad (%)",
+      Desempeno: "Desempeño (%)",
+      Calidad: "Calidad (%)",
+      DuracionTurnoMin: "Duración turno (min)",
+      TiempoDisponibleMin: "Tiempo disponible (min)",
+      TiempoProductivoMin: "Tiempo productivo (min)",
+      TiempoNoProdProgramadoMin: "Paro programado (min)",
+      TiempoNoProdNoProgramadoMin: "Paro no programado (min)",
+      ProduccionEstimadaKg: "Producción esperada (kg)",
+      ProduccionRealKg: "Producción real (kg)",
+      VelocidadPromedioEstimadaKgHr: "Velocidad prom. esperada (kg/h)",
+      VelocidadPromedioRealKgHr: "Velocidad prom. real (kg/h)"
+    };
+
+    async function downloadFrom(url, filename) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        const objectUrl = URL.createObjectURL(blob);
+        a.href = objectUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Limpieza sin romper la descarga
+        setTimeout(() => { try { URL.revokeObjectURL(objectUrl); } catch (e) { } }, 1000);
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo descargar el archivo. Revisa que el backend esté corriendo y vuelve a intentar.');
+      }
+    }
+    function todayISO() {
+      const t = new Date();
+      const yyyy = t.getFullYear();
+      const mm = String(t.getMonth() + 1).padStart(2, "0");
+      const dd = String(t.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function buildTable(headRowEl, bodyEl, columns, rows, labelMap = null) {
+      headRowEl.innerHTML = "";
+      bodyEl.innerHTML = "";
+
+      (columns || []).forEach(c => {
+        const th = document.createElement("th");
+        th.textContent = (labelMap && labelMap[c]) ? labelMap[c] : c;
+        headRowEl.appendChild(th);
+      });
+
+      (rows || []).forEach(r => {
+        const tr = document.createElement("tr");
+        (columns || []).forEach((c, idx) => {
+          const td = document.createElement("td");
+          td.textContent = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
+          tr.appendChild(td);
+        });
+        bodyEl.appendChild(tr);
+      });
+    }
+
+    // Markdown muy simple -> HTML
+    // FIX: ahora también convierte **bold** dentro de bullets
+    function mdToHtml(md) {
+      if (!md) return "";
+      const esc = (s) => String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      const applyInline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+      const lines = String(md).split(/\r?\n/);
+      let html = "";
+      let inUl = false;
+      let inOl = false;
+
+      function closeLists() {
+        if (inUl) { html += "</ul>"; inUl = false; }
+        if (inOl) { html += "</ol>"; inOl = false; }
+      }
+
+      for (let rawLine of lines) {
+        const line = rawLine.trimEnd();
+
+        if (!line) {
+          closeLists();
+          html += "<br>";
+          continue;
+        }
+
+        if (line === "---") {
+          closeLists();
+          html += "<hr>";
+          continue;
+        }
+
+        let m;
+        if ((m = line.match(/^#####\s+(.*)$/))) { closeLists(); html += `<h5>${applyInline(m[1])}</h5>`; continue; }
+        if ((m = line.match(/^####\s+(.*)$/))) { closeLists(); html += `<h4>${applyInline(m[1])}</h4>`; continue; }
+        if ((m = line.match(/^###\s+(.*)$/))) { closeLists(); html += `<h3>${applyInline(m[1])}</h3>`; continue; }
+        if ((m = line.match(/^##\s+(.*)$/))) { closeLists(); html += `<h2>${applyInline(m[1])}</h2>`; continue; }
+        if ((m = line.match(/^#\s+(.*)$/))) { closeLists(); html += `<h1>${applyInline(m[1])}</h1>`; continue; }
+
+        if ((m = line.match(/^(?:-|\*)\s+(.*)$/))) {
+          if (inOl) { html += "</ol>"; inOl = false; }
+          if (!inUl) { html += "<ul>"; inUl = true; }
+          html += `<li>${applyInline(m[1])}</li>`;
+          continue;
+        }
+
+        if ((m = line.match(/^\d+\)\s+(.*)$/)) || (m = line.match(/^\d+\.\s+(.*)$/))) {
+          if (inUl) { html += "</ul>"; inUl = false; }
+          if (!inOl) { html += "<ol>"; inOl = true; }
+          html += `<li>${applyInline(m[1])}</li>`;
+          continue;
+        }
+
+        closeLists();
+        html += `<p>${applyInline(line)}</p>`;
+      }
+
+      closeLists();
+      return html;
+    }
+
+    // -----------------------------
+    // Menu switching
+    // -----------------------------
+    function showView(name) {
+      const views = ["CV", "OeeRT", "OeeDay"];
+      for (const v of views) {
+        el("view" + v).style.display = (v === name) ? "" : "none";
+      }
+
+      el("btnMenuCV").classList.toggle("active", name === "CV");
+      el("btnMenuOeeRT").classList.toggle("active", name === "OeeRT");
+      el("btnMenuOeeDay").classList.toggle("active", name === "OeeDay");
+
+      if (name === "CV") {
+        el("topTitle").textContent = "Variables de control";
+        el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
+      } else if (name === "OeeRT") {
+        el("topTitle").textContent = "OEE en tiempo real";
+        el("topSubtitle").textContent = "Último snapshot — línea de producción";
+      } else {
+        el("topTitle").textContent = "OEE por día/turno";
+        el("topSubtitle").textContent = "Resumen por turno para una fecha";
+      }
+    }
+
+    el("btnMenuCV").addEventListener("click", () => showView("CV"));
+    el("btnMenuOeeRT").addEventListener("click", () => showView("OeeRT"));
+    el("btnMenuOeeDay").addEventListener("click", () => showView("OeeDay"));
+
+    // -----------------------------
+    // Clear current view outputs
+    // -----------------------------
+    el("btnClear").addEventListener("click", () => {
+      // CV
+      el("cvInfo").textContent = "";
+      el("cvSummaryCard").style.display = "none";
+      el("cvGrid").innerHTML = "";
+      el("cvAICard").style.display = "none";
+      el("cvAI").innerHTML = "";
+
+      // OEE RT
+      el("oeeRtInfo").textContent = "";
+      el("oeeRtKpis").style.display = "none";
+      el("oeeRtTableCard").style.display = "none";
+      el("oeeRtAICard").style.display = "none";
+      el("oeeRtAI").innerHTML = "";
+
+      // OEE Day
+      el("oeeDayInfo").textContent = "";
+      el("oeeDayTableCard").style.display = "none";
+      el("oeeDayAICard").style.display = "none";
+      el("oeeDayAI").innerHTML = "";
+
+      setStatus("ok", "Listo");
+    });
+
+    // -----------------------------
+    // CONTROL VARIABLES
+    // -----------------------------
+    function renderCVSummary(rows) {
+      const tbody = el("cvTable").querySelector("tbody");
+      tbody.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+        <td>${escapeHtml(r.name || r.var_id || "")}</td>
+        <td>${escapeHtml(r.device || "")}</td>
+        <td>${formatNum(r.points)}</td>
+        <td>${formatNum(r.out_points)}</td>
+        <td>${formatNum(r.out_pct)}%</td>
+        <td>${formatNum(r.min_value)}</td>
+        <td>${formatNum(r.max_value)}</td>
+      `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderCVPlots(plots) {
+      const grid = el("cvGrid");
+      grid.innerHTML = "";
+      for (const p of plots) {
+        const card = document.createElement("div");
+        card.className = "plot-card";
+        card.innerHTML = `
+        <div class="plot-title">${escapeHtml(p.title || p.var_id || "")}</div>
+        <iframe class="plot-frame" src="${p.url}"></iframe>
+      `;
+        grid.appendChild(card);
+      }
+    }
+
+    async function generateControlVars() {
+      const day = (el("cvDay").value || "").trim();
+      if (!day) {
+        el("cvInfo").textContent = "Selecciona una fecha.";
+        return;
+      }
+
+      el("cvInfo").textContent = "";
+      el("cvSummaryCard").style.display = "none";
+      el("cvGrid").innerHTML = "";
+      el("cvAICard").style.display = "none";
+      el("cvAI").innerHTML = "";
+
+      setStatus("busy", "Generando...");
+
+      try {
+        const res = await fetch("/api/control-variables/day", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ day })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || "Error en /api/control-variables/day");
+        }
+
+        lastCvDay = day;
+
+        if (data.ai_analysis) {
+          el("cvAI").innerHTML = mdToHtml(String(data.ai_analysis));
+          el("cvAICard").style.display = "";
+        }
+
+        if (Array.isArray(data.summary)) {
+          renderCVSummary(data.summary);
+          el("cvSummaryCard").style.display = "";
+        }
+
+        if (Array.isArray(data.plots)) {
+          renderCVPlots(data.plots);
+        }
+
+        setStatus("ok", "Listo");
+      } catch (err) {
+        el("cvInfo").textContent = "⚠️ " + (err.message || err);
+        setStatus("err", "Error");
+      }
+    }
+
+    el("btnGenCV").addEventListener("click", generateControlVars);
+
+    // -----------------------------
+    // OEE REALTIME
+    // -----------------------------
+    async function fetchOeeRealtime() {
+      el("oeeRtInfo").textContent = "";
+      el("oeeRtKpis").style.display = "none";
+      el("oeeRtTableCard").style.display = "none";
+      el("oeeRtAICard").style.display = "none";
+      el("oeeRtAI").innerHTML = "";
+
+      setStatus("busy", "Consultando...");
+      try {
+        const res = await fetch("/api/oee/realtime");
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || "Error en /api/oee/realtime");
+        }
+
+        const rows = data.rows || [];
+        const cols = data.columns || [];
+
+        if (rows.length === 0) {
+          el("oeeRtInfo").textContent = "No hay datos de snapshot.";
+          setStatus("ok", "Listo");
+          return;
+        }
+
+        const first = rows[0] || [];
+        const idx = (name) => cols.findIndex(c => String(c).toLowerCase() === String(name).toLowerCase());
+
+        const iOee = idx("OEE");
+        const iAv = idx("Availability");
+        const iPe = idx("Performance");
+        const iQu = idx("Quality");
+        const iLine = idx("LineName");
+        const iSnap = idx("SnapshotAtLocal");
+
+        el("kpiOee").textContent = (iOee >= 0) ? toPct(first[iOee]) : "—";
+        el("kpiAvail").textContent = (iAv >= 0) ? toPct(first[iAv]) : "—";
+        el("kpiPerf").textContent = (iPe >= 0) ? toPct(first[iPe]) : "—";
+        el("kpiQual").textContent = (iQu >= 0) ? toPct(first[iQu]) : "—";
+
+        const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
+        const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
+        el("kpiOeeHint").textContent = (line || snap) ? `${line} ${snap ? "— " + snap : ""}` : "";
+
+        el("oeeRtKpis").style.display = "";
+
+        buildTable(el("oeeRtHead"), el("oeeRtBody"), cols, rows, LABEL_OEE_RT);
+        el("oeeRtTableCard").style.display = "";
+
+        if (data.ai_analysis) {
+          el("oeeRtAI").innerHTML = mdToHtml(String(data.ai_analysis));
+          el("oeeRtAICard").style.display = "";
+        }
+
+        setStatus("ok", "Listo");
+      } catch (err) {
+        el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
+        setStatus("err", "Error");
+      }
+    }
+
+    el("btnFetchOeeRT").addEventListener("click", fetchOeeRealtime);
+
+    // -----------------------------
+    // OEE DAY / TURN
+    // -----------------------------
+    async function fetchOeeDay() {
+      const day = (el("oeeDay").value || "").trim();
+      const shift = (el("oeeShift").value || "").trim();
+
+      if (!day) {
+        el("oeeDayInfo").textContent = "Selecciona una fecha.";
+        return;
+      }
+
+      el("oeeDayInfo").textContent = "";
+      el("oeeDayTableCard").style.display = "none";
+      el("oeeDayAICard").style.display = "none";
+      el("oeeDayAI").innerHTML = "";
+
+      setStatus("busy", "Consultando...");
+      try {
+        const body = { day: day };
+        if (shift) body.shift_name = shift;
+
+        const res = await fetch("/api/oee/day-turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || "Error en /api/oee/day-turn");
+        }
+
+        lastOeeDay = day;
+        lastOeeShift = shift ? shift : null;
+
+        const rows = data.rows || [];
+        const cols = data.columns || [];
+        if (rows.length === 0) {
+          el("oeeDayInfo").textContent = "No hay datos para esa fecha/turno.";
+          setStatus("ok", "Listo");
+          return;
+        }
+
+        buildTable(el("oeeDayHead"), el("oeeDayBody"), cols, rows, LABEL_OEE_DAY);
+        el("oeeDayTableCard").style.display = "";
+
+        if (data.ai_analysis && String(data.ai_analysis).trim()) {
+          el("oeeDayAI").innerHTML = mdToHtml(String(data.ai_analysis));
+          el("oeeDayAICard").style.display = "";
+        }
+
+        setStatus("ok", "Listo");
+      } catch (err) {
+        el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
+        setStatus("err", "Error");
+      }
+    }
+
+    el("btnFetchOeeDay").addEventListener("click", fetchOeeDay);
+
+    // -----------------------------
+    // Descargas (IDs correctos + querystring correcto)
+    // -----------------------------
+    el("btnDlCvPdf").addEventListener("click", async () => {
+      if (!lastCvDay) return alert("Primero genera Variables de control para una fecha.");
+      await downloadFrom(`/api/report/control-variables/day?day=${encodeURIComponent(lastCvDay)}&format=pdf`, `variables_control_${lastCvDay}.pdf`);
+    });
+    el("btnDlCvDocx").addEventListener("click", async () => {
+      if (!lastCvDay) return alert("Primero genera Variables de control para una fecha.");
+      await downloadFrom(`/api/report/control-variables/day?day=${encodeURIComponent(lastCvDay)}&format=docx`, `variables_control_${lastCvDay}.docx`);
+    });
+
+    el("btnDlOeeRtPdf").addEventListener("click", async () => {
+      await downloadFrom(`/api/report/oee/realtime?format=pdf`, `oee_tiempo_real.pdf`);
+    });
+    el("btnDlOeeRtDocx").addEventListener("click", async () => {
+      await downloadFrom(`/api/report/oee/realtime?format=docx`, `oee_tiempo_real.docx`);
+    });
+
+    el("btnDlOeeDayPdf").addEventListener("click", async () => {
+      if (!lastOeeDay) return alert("Primero consulta OEE por día/turno.");
+      const qs = new URLSearchParams({ day: lastOeeDay, format: "pdf" });
+      if (lastOeeShift) qs.set("shift", lastOeeShift);
+      await downloadFrom(`/api/report/oee/day?${qs.toString()}`, `oee_${lastOeeDay}${lastOeeShift ? "_" + lastOeeShift : ""}.pdf`);
+    });
+    el("btnDlOeeDayDocx").addEventListener("click", async () => {
+      if (!lastOeeDay) return alert("Primero consulta OEE por día/turno.");
+      const qs = new URLSearchParams({ day: lastOeeDay, format: "docx" });
+      if (lastOeeShift) qs.set("shift", lastOeeShift);
+      await downloadFrom(`/api/report/oee/day?${qs.toString()}`, `oee_${lastOeeDay}${lastOeeShift ? "_" + lastOeeShift : ""}.docx`);
+    });
+
+    // -----------------------------
+    // Init
+    // -----------------------------
+    (function init() {
+      el("cvDay").value = todayISO();
+      el("oeeDay").value = todayISO();
+      setStatus("ok", "Listo");
+      showView("CV");
+    })();
+  </script>
+</body>
+
+</html>
