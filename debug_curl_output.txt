@@ -1,0 +1,5 @@
+C:\anaconda3\Lib\site-packages\paramiko\transport.py:219: CryptographyDeprecationWarning: Blowfish has been deprecated and will be removed in a future release
+  "class": algorithms.Blowfish,
+
+DEBUG_CMD: curl -v http://localhost:80
+DEBUG_ERROR: 'charmap' codec can't encode character '\u25c8' in position 20584: character maps to <undefined>

@@ -1,0 +1,20 @@
+C:\anaconda3\Lib\site-packages\paramiko\transport.py:219: CryptographyDeprecationWarning: Blowfish has been deprecated and will be removed in a future release
+  "class": algorithms.Blowfish,
+DEBUG_START: Connecting to 172.168.10.106
+DEBUG_CONNECTED
+
+DEBUG_CMD: docker ps -a --filter name=duma_planta
+CONTAINER ID   IMAGE         COMMAND                  CREATED         STATUS         PORTS                                     NAMES
+fc6e37b6f60d   duma_planta   "uvicorn main:app --à"   6 minutes ago   Up 6 minutes   0.0.0.0:80->8000/tcp, [::]:80->8000/tcp   duma_planta
+
+
+
+DEBUG_CMD: docker logs --tail 50 duma_planta
+INFO:     172.168.10.1:49352 - "GET / HTTP/1.1" 200 OK
+
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+DEBUG_END

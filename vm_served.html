@@ -1528,21 +1528,21 @@
 
       // Normalizar saltos de línea
       let processedMd = String(md)
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n");
+        .replace(/\\r\\n/g, "\\n")
+        .replace(/\\r/g, "\\n");
 
       // SEPARACIÓN INTELIGENTE (Lista solo si viene después de un separador natural o puntuación)
       // Esto evita romper oraciones a la mitad.
       processedMd = processedMd
-        .replace(/([^\n])\s*###/g, "$1\n\n###") // Separar headers si vienen pegados a texto
-        .replace(/([.?!:])\s*(\d+\.\s+)/g, "$1\n$2") // Separar lista numerada solo tras punto
-        .replace(/([.?!:])\s*([-*]\s+)/g, "$1\n$2"); // Separar bullets solo tras punto
+        .replace(/([^\\n])\\s*###/g, "$1\\n\\n###") // Separar headers si vienen pegados a texto
+        .replace(/([.?!:])\\s*(\\d+\\.\\s+)/g, "$1\\n$2") // Separar lista numerada solo tras punto
+        .replace(/([.?!:])\\s*([-*]\\s+)/g, "$1\\n$2"); // Separar bullets solo tras punto
 
       // Split headers conocidos que traen contenido en la misma línea
       const COMMON_HEADERS = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
       COMMON_HEADERS.forEach(h => {
         const re = new RegExp(`(###\\s+${h})\\.?(\\s+[^\\n])`, 'gi');
-        processedMd = processedMd.replace(re, "$1\n\n$2");
+        processedMd = processedMd.replace(re, "$1\\n\\n$2");
       });
 
       const esc = (s) => String(s)
@@ -2055,9 +2055,6 @@
     el("cvDay").max = today;
     el("oeeDay").value = today;
     el("oeeDay").max = today;
-
-    // Inicializar vista
-    showView("CV");
   </script>
 </body>
 

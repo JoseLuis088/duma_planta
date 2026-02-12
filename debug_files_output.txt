@@ -1,0 +1,28 @@
+C:\anaconda3\Lib\site-packages\paramiko\transport.py:219: CryptographyDeprecationWarning: Blowfish has been deprecated and will be removed in a future release
+  "class": algorithms.Blowfish,
+
+DEBUG_CMD: ls -lh duma_planta/static/index.html
+-rw-rw-r-- 1 warehouseai warehouseai 57K Feb 12 18:53 duma_planta/static/index.html
+
+
+
+DEBUG_CMD: stat duma_planta/static/index.html
+  File: duma_planta/static/index.html
+  Size: 57977     	Blocks: 120        IO Block: 4096   regular file
+Device: fd00h/64768d	Inode: 12582981    Links: 1
+Access: (0664/-rw-rw-r--)  Uid: ( 1000/warehouseai)   Gid: ( 1000/warehouseai)
+Access: 2026-02-12 18:53:31.262789747 +0000
+Modify: 2026-02-12 18:53:30.670782875 +0000
+Change: 2026-02-12 18:53:30.670782875 +0000
+ Birth: 2026-02-12 18:53:30.670782875 +0000
+
+
+
+DEBUG_CMD: head -n 5 duma_planta/static/index.html
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8" />
+
+

@@ -1,0 +1,65 @@
+C:\anaconda3\Lib\site-packages\paramiko\transport.py:219: CryptographyDeprecationWarning: Blowfish has been deprecated and will be removed in a future release
+  "class": algorithms.Blowfish,
+DEBUG_START: Connecting to 172.168.10.106
+DEBUG_CONNECTED
+
+DEBUG_CMD: docker ps -a --filter name=duma_planta
+CONTAINER ID   IMAGE         COMMAND                  CREATED          STATUS          PORTS                                     NAMES
+fc6e37b6f60d   duma_planta   "uvicorn main:app --à"   10 minutes ago   Up 10 minutes   0.0.0.0:80->8000/tcp, [::]:80->8000/tcp   duma_planta
+
+
+
+DEBUG_CMD: docker logs --tail 50 duma_planta
+    pli.IntervalBegin                 AS SnapshotAtLocal,
+
+    ROUND(pli.OEE,2)                  AS OEE,
+    ROUND(pli.OEEAvailability,2)      AS Availability,
+    ROUND(pli.OEEPerformance,2)       AS Performance,
+    ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
+
+    pli.ProductionLineStatus          AS StatusCode,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+WHERE
+    (@linePattern IS NULL OR pl.Name LIKE N'%' + @linePattern + N'%')
+ORDER BY
+    pli.IntervalBegin DESC,
+    pli.CreatedAt DESC;
+
+======================================
+--> Filas devueltas: 1
+--> Primera fila: ['LÝnea de Hamburguesas', '2026-02-12 13:03:00', '71.83', '67.30', '106.73', '100.00', 'ST', 0, 364, 212, 49, 103, '1084.800', '1492.000', '5626.336', '5271.804', '4686.336', '5776.560']
+INFO:     172.168.10.1:53570 - "GET /api/oee/realtime HTTP/1.1" 200 OK
+INFO:     172.17.0.1:37174 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+INFO:     172.168.10.1:54936 - "GET / HTTP/1.1" 200 OK
+INFO:     172.168.10.1:50968 - "GET / HTTP/1.1" 200 OK
+INFO:     172.168.10.1:51694 - "GET / HTTP/1.1" 200 OK
+
+
+DEBUG_END
