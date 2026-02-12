@@ -97,29 +97,37 @@ def aoai_text(system_prompt: str, user_prompt: str, temperature: float = 0.2, ma
     
 
 CONTROL_VARS_AI_SYSTEM = """\
-Eres Duma, un asistente en español para analítica de piso de producción.
+Eres Duma, un asistente en español para analítica de piso de producción especializado en variables de control crítico.
 
-Te voy a dar métricas calculadas de variables de control para un DÍA COMPLETO (3 turnos).
-Tu tarea es generar un análisis EJECUTIVO y accionable.
+Tu tarea es generar un análisis EJECUTIVO, formal y accionable para la dirección de planta.
 
-Requisitos:
-- Escribe en español, tono profesional (tipo CEO / gerente de planta).
-- Usa SIEMPRE viñetas de Markdown (`- `) para listar puntos. NO uses números (1., 2.).
-- Separa claramente los párrafos con doble salto de línea.
-- Estructura obligatoria (usa estos encabezados exactos con `### `):
-  ### Resumen ejecutivo
-  - (3-6 bullets de alto impacto)
-  ### Hallazgos clave
-  - (Top 3 a 5 variables más críticas, con números)
-  ### Interpretación operacional
-  - (Qué sugiere: sensor, setpoint, proceso, limpieza, carga térmica, etc.)
-  ### Recomendaciones
-  - (Acciones concretas, priorizadas: Alta/Media/Baja)
-  ### Próximos pasos
-  - (Qué medir/validar mañana y cómo)
+### Estructura Obligatoria (Markdown):
 
-- NO inventes datos. Usa SOLO lo recibido.
-- Si detectas valores “100% fuera” o “0% fuera” dilo explícitamente y sugiere validaciones.
+### Resumen ejecutivo
+(Un párrafo breve con la conclusión general del día...)
+
+### Hallazgos clave
+- (Dato específico de desviación 1...)
+- (Dato específico de desviación 2...)
+
+### Interpretación operacional
+(Análisis de posibles causas raíz bajo una perspectiva técnica...)
+
+### Acciones recomendadas
+- (Acción inmediata 1...)
+- (Acción inmediata 2...)
+
+### Próximos pasos
+- (Qué validar o monitorear en el siguiente turno...)
+
+### Reglas Críticas de Formato:
+1. Usa EXACTAMENTE los encabezados con `### ` indicados arriba.
+2. Deja SIEMPRE una línea en blanco (doble salto de línea) antes y después de cada encabezado `### `.
+3. NUNCA escribas texto en la misma línea que un encabezado.
+4. Usa viñetas de Markdown (`- `) para listas.
+5. NO uses negritas (`**`) para párrafos completos; úsalas solo para resaltar términos clave.
+6. El tono debe ser formal (Director de Operaciones). 
+7. NO inventes datos. Si detectas valores "100% fuera" o "0% fuera", menciónalo como una posible anomalía de sensor o proceso.
 """
 
 def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
@@ -128,8 +136,8 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
         "executive_summary_backend": executive_summary,
         "metrics_by_variable": summary[:50],
         "notes": [
-            "out_pct es porcentaje fuera de crítico.",
-            "out_points/points es conteo de puntos fuera de crítico.",
+            "out_pct es porcentaje de lecturas fuera de rango.",
+            "out_points/points es conteo de lecturas fuera de rango.",
         ],
     }
     user_prompt = (
@@ -145,24 +153,32 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
 # -----------------------------------------------------------------------------
 
 OEE_AI_SYSTEM = """
-Eres Duma, un asistente en español para analítica de piso de producción.
+Eres Duma, un asistente en español para analítica de piso de producción. Tu objetivo es asesorar a nivel de gerencia de planta sobre el desempeño OEE.
 
-Escribe SIEMPRE con estilo **ejecutivo** (Director de Operaciones / Planta):
-- Prioriza impacto, riesgo y acción.
-- Evita tecnicismos innecesarios.
-- Usa listas cortas.
-- Máximo 1 párrafo por sección.
+### Estructura Obligatoria (Markdown):
 
-Estructura:
-1) Resumen ejecutivo (riesgo principal y urgencia)
-2) KPI limitante (el más bajo) y por qué importa
-3) Acciones recomendadas (hoy / 24h) — 3 a 6 bullets
-4) Riesgo si no se actúa (1-2 bullets)
+### Resumen ejecutivo
+(Análisis del desempeño global, riesgos detectados y nivel de urgencia...)
 
-Notas:
-- Si el estatus de línea es US/SS/LP/AV, interpreta:
-  US=Paro No Programado, SS=Paro Programado, LP=Baja Producción, AV=Disponible.
-- Si faltan datos, dilo explícitamente y recomienda verificar fuente/sensores.
+### KPI limitante
+(Identifica el indicador más bajo —Disponibilidad, Desempeño o Calidad— y explica su impacto operativo...)
+
+### Acciones recomendadas
+- (Acción inmediata para corregir la desviación 1...)
+- (Acción inmediata para corregir la desviación 2...)
+
+### Riesgo si no se actúa
+- (Consecuencia potencial 1...)
+- (Consecuencia potencial 2...)
+
+### Reglas Críticas de Formato:
+1. Usa EXACTAMENTE los encabezados con `### ` indicados arriba.
+2. Deja SIEMPRE una línea en blanco (doble salto de línea) antes y después de cada encabezado `### `.
+3. NUNCA escribas texto en la misma línea que un encabezado.
+4. Tono estrictamente formal y profesional (Senior Management).
+5. NO uses negritas (`**`) para párrafos enteros.
+6. Usa listas con viñetas (`- `) para acciones y riesgos.
+7. Si faltan datos, indícalo claramente como un punto de atención.
 """.strip()
 
 
@@ -390,7 +406,7 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
     # Palabras clave que indican preguntas que DEBEN ir a SQL
     KPI_KEYWORDS = [
-        "oee", "disponibilidad", "desempeño", "desempeno", "calidad",
+        "oee", "disponibilidad", "desempeño", "desempeno", "producto conforme",
         "turno", "ayer", "hoy", "fecha", "rango", "intervalo",
         "actual", "ahora", "último", "ultimo", "snapshot", "estado"
     ]
@@ -458,7 +474,7 @@ SELECT TOP (1)
     ROUND(pli.OEE,2)                  AS OEE,
     ROUND(pli.OEEAvailability,2)      AS Availability,
     ROUND(pli.OEEPerformance,2)       AS Performance,
-    ROUND(pli.OEEQuality,2)           AS Quality,
+    ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
     -- Estado de la línea
     pli.ProductionLineStatus          AS StatusCode,
@@ -539,7 +555,7 @@ SELECT
     wses.Oee                       AS OEE,
     wses.Availability              AS Disponibilidad,
     wses.Performance               AS Desempeno,
-    wses.Quality                   AS Calidad,
+    wses.Quality                   AS [Producto Conforme],
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
     wses.ProductiveTimeMin         AS TiempoProductivoMin,
@@ -706,7 +722,7 @@ ORDER BY
             "usa EXCLUSIVAMENTE las recetas H1.x del duma_cookbook.txt (H1.1, H1.2, H1.3), "
             "basadas en dbo.WorkShiftExecutions + dbo.WorkShiftTemplates + ind.WorkShiftExecutionSummaries. "
             "No inventes nuevas consultas: copia la receta que corresponda y solo ajusta @day, @fromDay, @toDay y @shiftName. "
-            "Tras ejecutar sql_query, resume OEE, Disponibilidad, Desempeño y Calidad en % (2 decimales) y "
+            "Tras ejecutar sql_query, resume OEE, Disponibilidad, Desempeño y Producto Conforme en % (2 decimales) y "
             "menciona el nombre del turno (Primer/Segundo/Tercero) y la fecha local correspondiente. "
             "Usa viz_render sólo si el usuario pide comparaciones, tendencias o gráficas."
         )
@@ -739,7 +755,7 @@ ORDER BY
                 "   - OEE: indicador OEE global.\n"
                 "   - OEEAvailability: disponibilidad.\n"
                 "   - OEEPerformance: desempeño.\n"
-                "   - OEEQuality: calidad / producto conforme.\n"
+                "   - OEEQuality: Producto Conforme.\n"
                 " Cuando el usuario pregunte por 'tiempo productivo', responde usando EffectiveAvailableTime.\n"
                 " Cuando pregunte por 'tiempo no productivo programado', usa ScheduledStopageTime.\n"
                 " Cuando pregunte por 'tiempo no productivo no programado', usa UnscheduledStopageTime.\n"
@@ -795,7 +811,7 @@ ORDER BY
                 "(por ejemplo H1.1 para un solo día por turno, H1.2 para rangos de fechas).\n"
                 "No inventes nuevas consultas SQL: copia la receta que corresponda, ajusta solo las fechas o filtros necesarios, "
                 "y pásala a sql_query.\n"
-                "En la respuesta, entrega OEE, disponibilidad, desempeño y calidad en % (En la base de datos ya están en porcentaje, no multipliques por 100), "
+                "En la respuesta, entrega OEE, disponibilidad, desempeño y producto conforme en % (En la base de datos ya están en porcentaje, no multipliques por 100), "
                 "producción estimada vs real, velocidades promedio estimada y real (si están en la receta), "
                 "y tiempos productivos vs no productivos.\n"
                 "NO muestres la consulta SQL en el mensaje final."
@@ -1060,7 +1076,7 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
     fig.add_trace(go.Scatter(
         x=d["LocalTime"], y=[crit_min]*len(d),
         mode="lines", line=dict(width=0),
-        fill="tonexty", fillcolor="rgba(255, 80, 80, 0.12)",
+        fill="tonexty", fillcolor="rgba(52, 152, 219, 0.2)",
         name="Banda crítica", hoverinfo="skip"
     ))
 
@@ -1076,7 +1092,7 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         fig.add_trace(go.Scatter(
             x=out["LocalTime"], y=out["Value"],
             mode="markers",
-            name="Fuera de crítico",
+            name="Lecturas fuera de rango",
             marker=dict(size=6)
         ))
 
@@ -1125,13 +1141,13 @@ def plot_critical_timeseries_day_png(
     fig, ax = plt.subplots(figsize=(10, 3.4), dpi=160)
 
     ax.plot(d["LocalTime"], d["Value"], linewidth=1.2, label="Valor")
-    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.15, label="Rango crítico")
+    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.15, color="#3498db", label="Rango crítico")
     ax.axhline(crit_min, linestyle="--", linewidth=1, label="Crítico mín")
     ax.axhline(crit_max, linestyle="--", linewidth=1, label="Crítico máx")
 
     out = d[d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
     if not out.empty:
-        ax.scatter(out["LocalTime"], out["Value"], s=8, label="Fuera de crítico")
+        ax.scatter(out["LocalTime"], out["Value"], s=8, label="Lecturas fuera de rango")
 
     ax.set_title(title)
     ax.set_xlabel("Hora local")
@@ -1235,7 +1251,7 @@ SELECT TOP (1)
     ROUND(pli.OEE,2)                  AS OEE,
     ROUND(pli.OEEAvailability,2)      AS Availability,
     ROUND(pli.OEEPerformance,2)       AS Performance,
-    ROUND(pli.OEEQuality,2)           AS Quality,
+    ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
     pli.ProductionLineStatus          AS StatusCode,
 
@@ -1302,7 +1318,7 @@ SELECT
     wses.Oee                       AS OEE,
     wses.Availability              AS Disponibilidad,
     wses.Performance               AS Desempeno,
-    wses.Quality                   AS Calidad,
+    wses.Quality                   AS [Producto Conforme],
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
     wses.ProductiveTimeMin         AS TiempoProductivoMin,
@@ -1547,15 +1563,27 @@ def _build_pdf_bytes(
     def _md_to_flowables(md: str, styles) -> List:
         out = []
         if not md: return out
+
+        # Normalizar y asegurar que los headers pegados se separen
         md = md.replace("\r\n", "\n").replace("\r", "\n")
+        md = re.sub(r'([^\n])\s*###', r'\1\n\n###', md)
+        md = re.sub(r'###\s+([^\n]+)([^\n])', r'### \1\n\n\2', md)
+        
         lines = [ln.rstrip() for ln in md.split("\n")]
         buf = []
+
+        # Títulos comunes para detectar si están pegados al texto
+        COMMON_HEADERS = [
+            "Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", 
+            "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"
+        ]
 
         def flush_paragraph():
             nonlocal buf
             if buf:
-                txtp = _safe(_strip_md(" ".join([b.strip() for b in buf]).strip()))
-                if txtp:
+                txtp = " ".join([b.strip() for b in buf]).strip()
+                txtp = _safe(_strip_md(txtp))
+                if txtp and txtp != ".":
                     out.append(Paragraph(txtp, styles["Body"]))
                     out.append(Spacer(1, 8))
                 buf = []
@@ -1565,36 +1593,54 @@ def _build_pdf_bytes(
             if not l:
                 flush_paragraph()
                 continue
+            
+            # Headers
             if l.startswith("### "):
                 flush_paragraph()
-                out.append(Paragraph(_safe(_strip_md(l[4:])), styles["H3"]))
-                out.append(Spacer(1, 6))
+                raw = l[4:].strip()
+                
+                # Intentar detectar si el header tiene contenido pegado
+                found_h = next((h for h in COMMON_HEADERS if raw.lower().startswith(h.lower())), None)
+                if found_h and len(raw) > len(found_h) + 10:
+                    title_text = raw[:len(found_h)].strip()
+                    body_text = raw[len(found_h):].strip()
+                    out.append(Paragraph(_safe(_strip_md(title_text)), styles["H3"]))
+                    out.append(Spacer(1, 4))
+                    if body_text:
+                        out.append(Paragraph(_safe(_strip_md(body_text)), styles["Body"]))
+                        out.append(Spacer(1, 8))
+                else:
+                    out.append(Paragraph(_safe(_strip_md(raw)), styles["H3"]))
+                    out.append(Spacer(1, 4))
                 continue
+
             if l.startswith("## "):
                 flush_paragraph()
                 out.append(Paragraph(_safe(_strip_md(l[3:])), styles["H2"]))
-                out.append(Spacer(1, 10))
+                out.append(Spacer(1, 8))
                 continue
             if l.startswith("# "):
                 flush_paragraph()
                 out.append(Paragraph(_safe(_strip_md(l[2:])), styles["H1"]))
-                out.append(Spacer(1, 12))
+                out.append(Spacer(1, 10))
                 continue
             
-            # Detect bullets
+            # Bullets
             if l.startswith("- ") or l.startswith("* "):
                 flush_paragraph()
-                out.append(Paragraph("• " + _safe(_strip_md(l[2:])), styles["Bullet"]))
+                content = l[2:].strip()
+                out.append(Paragraph("• " + _safe(_strip_md(content)), styles["Bullet"]))
                 continue
 
-            # Detect numbered lists (1. or 1))
+            # Numeradas
             match_num = re.match(r"^(\d+[\.\)])\s+(.*)", l)
             if match_num:
                 flush_paragraph()
-                num_prefix = match_num.group(1)
-                content = match_num.group(2)
-                out.append(Paragraph(f"{num_prefix} { _safe(_strip_md(content))}", styles["Bullet"]))
+                out.append(Paragraph(f"{match_num.group(1)} { _safe(_strip_md(match_num.group(2)))}", styles["Bullet"]))
                 continue
+
+            # Ignorar puntos solos que a veces mete la IA
+            if l == ".": continue
 
             buf.append(l)
 
@@ -1632,7 +1678,7 @@ def _build_pdf_bytes(
     styles["Sub"] = ParagraphStyle("DumaSub", parent=ss["Normal"], fontName="Helvetica", fontSize=12, leading=14, textColor=COLOR_TEXT_MUTED, spaceAfter=24)
     styles["H1"] = ParagraphStyle("DumaH1", parent=ss["Heading1"], fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=COLOR_ACCENT, spaceAfter=10, spaceBefore=4)
     styles["H2"] = ParagraphStyle("DumaH2", parent=ss["Heading2"], fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=COLOR_BRAND_DARK, spaceAfter=8, spaceBefore=4)
-    styles["H3"] = ParagraphStyle("DumaH3", parent=ss["Heading3"], fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=COLOR_TEXT, spaceAfter=6)
+    styles["H3"] = ParagraphStyle("DumaH3", parent=ss["Heading3"], fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=COLOR_BRAND, spaceAfter=6)
     styles["Body"] = ParagraphStyle("DumaBody", parent=ss["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=COLOR_TEXT)
     styles["Bullet"] = ParagraphStyle("DumaBullet", parent=ss["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=COLOR_TEXT, leftIndent=14, bulletIndent=6, spaceAfter=4)
 
@@ -1814,15 +1860,25 @@ def _as_file_response(content: bytes, filename: str, media_type: str):
     return FileResponse(full, media_type=media_type, filename=filename)
 
 
-@app.get("/api/report/control-variables/day")
-async def report_control_variables_day(day: str, format: str = "pdf"):
+@app.post("/api/report/control-variables/day")
+async def report_control_variables_day(payload: dict):
     """Descarga reporte (PDF/DOCX) de Variables de Control para un día completo."""
-    day = normalize_day_str(day or "")
+    day = normalize_day_str(payload.get("day") or "")
+    fmt = (payload.get("format") or "pdf").lower()
+    provided_summary = payload.get("summary")
+    provided_ai = payload.get("ai_analysis")
+
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
         raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
 
     try:
-        df_day = load_critical_reads_for_day(day)
+        if provided_summary is not None:
+            summary_rows = provided_summary
+            df_day = None # No necesitamos cargarlo si ya hay resumen
+        else:
+            df_day = load_critical_reads_for_day(day)
+            summary_df = summarize_critical_day(df_day)
+            summary_rows = summary_df.to_dict(orient="records")
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"No hay datos para el día {day}.")
     except Exception as e:
@@ -1847,12 +1903,13 @@ async def report_control_variables_day(day: str, format: str = "pdf"):
     executive_summary = "\n".join(exec_lines)
 
     # ---------- IA (SIEMPRE AL FINAL) ----------
-    ai_text = ""
-    try:
-        # OJO: tu función ai_control_variables_day requiere (day, summary, executive_summary)
-        ai_text = ai_control_variables_day(day=day, summary=summary_rows, executive_summary=executive_summary)
-    except Exception:
-        ai_text = ""
+    ai_text = provided_ai if provided_ai is not None else ""
+    if provided_ai is None:
+        try:
+            # OJO: tu función ai_control_variables_day requiere (day, summary, executive_summary)
+            ai_text = ai_control_variables_day(day=day, summary=summary_rows, executive_summary=executive_summary)
+        except Exception:
+            ai_text = ""
 
     # ---------- PNGs para el reporte ----------
     png_dir = os.path.join("static", "report_imgs")
@@ -1905,7 +1962,7 @@ async def report_control_variables_day(day: str, format: str = "pdf"):
     if ai_text:
         sections.append({"title": "Análisis mediante IA (Duma)", "text": ai_text})
 
-    fmt = (format or "pdf").lower()
+    fmt = (fmt or "pdf").lower()
 
     if fmt in ("docx", "word"):
         content = _build_docx_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH)
@@ -1925,12 +1982,22 @@ async def report_control_variables_day(day: str, format: str = "pdf"):
     )
 
 
-@app.get("/api/report/oee/realtime")
-async def report_oee_realtime(format: str = "pdf"):
+@app.post("/api/report/oee/realtime")
+async def report_oee_realtime(payload: dict):
     """Descarga reporte (PDF/DOCX) de OEE en tiempo real (último snapshot)."""
-    data = await api_oee_realtime()
-    rows = data.get("rows") or []
-    cols = data.get("columns") or []
+    fmt = (payload.get("format") or "pdf").lower()
+    provided_rows = payload.get("rows")
+    provided_cols = payload.get("columns")
+    provided_ai = payload.get("ai_analysis")
+
+    if provided_rows and provided_cols:
+        rows = provided_rows
+        cols = provided_cols
+    else:
+        # Fallback si no hay datos en el body
+        data = await api_oee_realtime()
+        rows = data.get("rows") or []
+        cols = data.get("columns") or []
 
     if not rows or not cols:
         raise HTTPException(status_code=404, detail="No hay datos de OEE en tiempo real.")
@@ -1948,17 +2015,18 @@ async def report_oee_realtime(format: str = "pdf"):
         {"Métrica": "OEE", "Valor": fmt_pct(row.get("OEE"))},
         {"Métrica": "Disponibilidad", "Valor": fmt_pct(row.get("Availability"))},
         {"Métrica": "Desempeño", "Valor": fmt_pct(row.get("Performance"))},
-        {"Métrica": "Calidad", "Valor": fmt_pct(row.get("Quality"))},
-        {"Métrica": "Estado de línea", "Valor": row.get("IntervalProductionLineStatus")},
+        {"Métrica": "Producto Conforme", "Valor": fmt_pct(row.get("Producto Conforme"))},
+        {"Métrica": "Estado de línea", "Valor": row.get("IntervalProductionLineStatus") or row.get("StatusCode")},
         {"Métrica": "Snapshot (local)", "Valor": row.get("SnapshotAtLocal")},
     ]
 
     # IA (al final)
-    ai_text = ""
-    try:
-        ai_text = ai_oee_realtime(row)
-    except Exception:
-        ai_text = ""
+    ai_text = provided_ai if provided_ai is not None else ""
+    if provided_ai is None:
+        try:
+            ai_text = ai_oee_realtime(row)
+        except Exception:
+            ai_text = ""
 
     title = "Reporte — OEE en tiempo real"
     subtitle = f"Último snapshot disponible"
@@ -1969,7 +2037,7 @@ async def report_oee_realtime(format: str = "pdf"):
     if ai_text:
         sections.append({"title": "Análisis mediante IA (Duma)", "text": ai_text})
 
-    if format.lower() in ("docx", "word"):
+    if fmt in ("docx", "word"):
         content = _build_docx_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH)
         filename = "oee_tiempo_real.docx"
         return Response(
@@ -1985,28 +2053,39 @@ async def report_oee_realtime(format: str = "pdf"):
 from fastapi import Response, HTTPException
 import re
 
-@app.get("/api/report/oee/day")
-async def report_oee_day(day: str, shift_name: str | None = None, format: str = "pdf"):
+@app.post("/api/report/oee/day")
+async def report_oee_day(payload: dict):
     """Descarga el análisis (PDF/Word) para OEE por día/turno."""
-    day = normalize_day_str(day or "")
+    day = normalize_day_str(payload.get("day") or "")
+    shift_name = payload.get("shift_name")
+    fmt = (payload.get("format") or "pdf").lower()
+    provided_rows = payload.get("rows")
+    provided_cols = payload.get("columns")
+    provided_ai = payload.get("ai_analysis")
+
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
         raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
 
-    # El front usa shift_name (ver index.html), así que mantenemos ese nombre.
-    payload = {"day": day}
-    if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "(todos)", "todos", "(all)", "(All)"):
-        payload["shift_name"] = shift_name
+    if provided_rows and provided_cols:
+        rows = provided_rows
+        cols = provided_cols
+    else:
+        # El front usa shift_name (ver index.html), así que mantenemos ese nombre.
+        api_payload = {"day": day}
+        if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "(todos)", "todos", "(all)", "(All)"):
+            api_payload["shift_name"] = shift_name
 
-    try:
-        data = await api_oee_day_turn(payload)
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"Error reporte OEE Day: {e}")
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
-
-    cols = data.get("columns") or []
-    rows = data.get("rows") or []
+        try:
+            data = await api_oee_day_turn(api_payload)
+            cols = data.get("columns") or []
+            rows = data.get("rows") or []
+            if not provided_ai:
+                provided_ai = data.get("ai_analysis")
+        except HTTPException as he:
+            raise he
+        except Exception as e:
+            print(f"Error reporte OEE Day: {e}")
+            raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
     if not cols or not rows:
         raise HTTPException(status_code=404, detail="No hay datos para esa fecha/turno.")
@@ -2023,7 +2102,7 @@ async def report_oee_day(day: str, shift_name: str | None = None, format: str = 
     subtitle = f"Fecha: {day}" + (f" — Turno: {shift_name}" if shift_name else "")
 
     # El análisis ya viene en data["ai_analysis"] (markdown) desde /api/oee/day-turn
-    ai_text = data.get("ai_analysis") or ""
+    ai_text = provided_ai or ""
 
     sections = [
         {"title": "Resumen", "text": "Indicadores calculados por turno para la fecha seleccionada."}
@@ -2031,7 +2110,7 @@ async def report_oee_day(day: str, shift_name: str | None = None, format: str = 
     if ai_text.strip():
         sections.append({"title": "Análisis y recomendaciones (IA)", "text": ai_text})
 
-    fmt = (format or "pdf").lower()
+    fmt = (fmt or "pdf").lower()
     if fmt in ("docx", "word"):
         content = _build_docx_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH)
         return _as_file_response(

@@ -127,6 +127,33 @@
       position: relative;
       z-index: 100;
       animation: slideInLeft 0.5s ease;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sidebar.collapsed {
+      width: 88px;
+      padding: 24px 10px;
+    }
+
+    .sidebar.collapsed .brand {
+      padding: 8px;
+      justify-content: center;
+    }
+
+    .sidebar.collapsed .brand-logo {
+      width: 48px;
+      height: 48px;
+    }
+
+    .sidebar.collapsed .brand-info,
+    .sidebar.collapsed .menu-item span:not(.menu-icon),
+    .sidebar.collapsed .menu-hint,
+    .sidebar.collapsed .sidebar-footer {
+      display: none;
+    }
+
+    .sidebar.collapsed .menu-item {
+      justify-content: center;
     }
 
     @keyframes slideInLeft {
@@ -152,6 +179,13 @@
       box-shadow: 0 8px 32px var(--brand-glow);
       position: relative;
       overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .brand:hover {
+      transform: scale(1.02);
+      box-shadow: 0 10px 40px var(--brand-glow);
     }
 
     .brand::before {
@@ -493,11 +527,21 @@
       border-color: transparent;
       color: white;
       box-shadow: 0 4px 16px var(--brand-glow);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
 
     .btn.primary:hover {
       box-shadow: 0 8px 24px var(--brand-glow);
       transform: translateY(-2px) scale(1.02);
+    }
+
+    .btn.busy {
+      background: var(--warning) !important;
+      color: white !important;
+      border-color: transparent !important;
+      box-shadow: 0 4px 16px var(--warning-glow) !important;
+      cursor: wait !important;
+      pointer-events: none;
     }
 
     /* ==================== CONTENT AREA ==================== */
@@ -730,6 +774,7 @@
       padding: 16px 12px;
       text-align: left;
       border-bottom: 2px solid var(--border);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
 
     thead th:first-child {
@@ -802,6 +847,12 @@
     /* Markdown Content */
     .md {
       line-height: 1.7;
+      color: var(--text) !important;
+    }
+
+    .md p {
+      margin: 16px 0;
+      color: var(--text) !important;
     }
 
     .md h1,
@@ -809,10 +860,12 @@
     .md h3 {
       margin: 20px 0 12px 0;
       font-weight: 800;
+      color: var(--brand) !important;
     }
 
-    .md p {
-      margin: 12px 0;
+    .md h3 {
+      margin: 24px 0 12px 0;
+      font-size: 1.1em;
     }
 
     .md ul,
@@ -979,47 +1032,42 @@
       transform: scale(1.1);
     }
 
-    /* Expand Button on Plot Card */
-    .plot-header {
-      padding: 16px 20px;
-      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+    /* Tabs */
+    .tabs {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      background: var(--panel);
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      width: fit-content;
     }
 
-    .plot-title {
-      color: white;
-      font-weight: 700;
-      font-size: 14px;
-      letter-spacing: 0.3px;
-    }
-
-    .plot-expand-btn {
+    .tab-btn {
+      padding: 8px 20px;
+      border-radius: 8px;
+      border: none;
       background: transparent;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      border-radius: 6px;
-      width: 28px;
-      height: 28px;
-      cursor: pointer;
-      display: grid;
-      place-items: center;
+      color: var(--text-muted);
+      font-weight: 600;
       font-size: 14px;
+      cursor: pointer;
       transition: all 0.2s;
     }
 
-    .plot-expand-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
-      border-color: white;
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: white;
+      box-shadow: 0 4px 12px var(--brand-glow);
     }
   </style>
 </head>
 
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand" id="brandToggle">
         <img src="/static/images/LOGO%20DUMA.png" alt="Duma Logo" class="brand-logo"
           style="object-fit: contain; background: white; padding: 6px;">
         <div class="brand-info">
@@ -1033,13 +1081,9 @@
           <span class="menu-icon">📈</span>
           <span>Variables de Control</span>
         </button>
-        <button class="menu-item" id="btnMenuOeeRT">
-          <span class="menu-icon">⚡</span>
-          <span>OEE Tiempo Real</span>
-        </button>
-        <button class="menu-item" id="btnMenuOeeDay">
-          <span class="menu-icon">📅</span>
-          <span>OEE por Día/Turno</span>
+        <button class="menu-item" id="btnMenuOEE">
+          <span class="menu-icon">📊</span>
+          <span>OEE (Eficiencia)</span>
         </button>
 
         <div class="menu-hint">
@@ -1093,11 +1137,11 @@
                   <tr>
                     <th>Variable</th>
                     <th>Equipo</th>
-                    <th>Puntos</th>
-                    <th>Fuera de Crítico</th>
-                    <th>% Fuera</th>
-                    <th>Min</th>
-                    <th>Max</th>
+                    <th>Lecturas</th>
+                    <th>Lecturas fuera de rango</th>
+                    <th>% Fuera de rango</th>
+                    <th>Lectura mínima</th>
+                    <th>Lectura máxima</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -1112,7 +1156,6 @@
               <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
               <div class="actions">
                 <button class="btn" id="btnDlCvPdf">📄 Descargar PDF</button>
-                <button class="btn" id="btnDlCvDocx">📝 Descargar Word</button>
               </div>
             </div>
             <div id="cvAI" class="md"></div>
@@ -1120,112 +1163,119 @@
         </section>
 
         <!-- ===================== -->
-        <!-- VIEW: OEE REALTIME -->
+        <!-- VIEW: OEE (CONSOLIDATED) -->
         <!-- ===================== -->
-        <section id="viewOeeRT" class="shell" style="display:none">
-          <div class="card">
-            <h2>OEE en Tiempo Real</h2>
-            <p class="sub">Consulta el último snapshot de la línea de producción</p>
-            <div class="form-row">
-              <button class="btn primary" id="btnFetchOeeRT">🔄 Actualizar</button>
-              <span class="small muted" id="oeeRtInfo"></span>
-            </div>
+        <section id="viewOEE" class="shell" style="display:none">
+          <div class="tabs">
+            <button class="tab-btn active" id="tabBtnOeeRT">Tiempo Real</button>
+            <button class="tab-btn" id="tabBtnOeeHist">Histórico</button>
+          </div>
 
-            <div class="kpi-grid" id="oeeRtKpis" style="display:none">
-              <div class="kpi">
-                <div class="kpi-label">OEE</div>
-                <div class="kpi-value" id="kpiOee"></div>
-                <div class="kpi-hint" id="kpiOeeHint"></div>
+          <!-- Tab Content: Realtime -->
+          <div id="tabContentOeeRT">
+            <div class="card">
+              <h2>OEE en Tiempo Real</h2>
+              <p class="sub">Snapshot actualizado automáticamente de la línea de producción</p>
+              <div class="form-row">
+                <button class="btn primary" id="btnFetchOeeRT">🔄 Actualizar Ahora</button>
+                <label class="small muted"
+                  style="margin-left: 20px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                  <input type="checkbox" id="chkAutoRefresh" checked> Auto-actualizar
+                </label>
+                <span class="small muted" id="oeeRtInfo" style="margin-left: 10px"></span>
               </div>
-              <div class="kpi">
-                <div class="kpi-label">Disponibilidad</div>
-                <div class="kpi-value" id="kpiAvail"></div>
-              </div>
-              <div class="kpi">
-                <div class="kpi-label">Desempeño</div>
-                <div class="kpi-value" id="kpiPerf"></div>
-              </div>
-              <div class="kpi">
-                <div class="kpi-label">Calidad</div>
-                <div class="kpi-value" id="kpiQual"></div>
-              </div>
-            </div>
 
-            <div class="card" style="margin-top:20px; display:none" id="oeeRtTableCard">
-              <h2>Detalle (Snapshot)</h2>
-              <div class="table-wrap">
-                <table id="oeeRtTable">
-                  <thead>
-                    <tr id="oeeRtHead"></tr>
-                  </thead>
-                  <tbody id="oeeRtBody"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="card" id="oeeRtAICard" style="display:none; margin-top:20px">
-              <div class="card-head">
-                <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
-                <div class="actions">
-                  <button class="btn" id="btnDlOeeRtPdf">📄 PDF</button>
-                  <button class="btn" id="btnDlOeeRtDocx">📝 Word</button>
+              <div class="kpi-grid" id="oeeRtKpis" style="display:none">
+                <div class="kpi">
+                  <div class="kpi-label">OEE</div>
+                  <div class="kpi-value" id="kpiOee"></div>
+                  <div class="kpi-hint" id="kpiOeeHint"></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Disponibilidad</div>
+                  <div class="kpi-value" id="kpiAvail"></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Desempeño</div>
+                  <div class="kpi-value" id="kpiPerf"></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Producto Conforme</div>
+                  <div class="kpi-value" id="kpiQual"></div>
                 </div>
               </div>
-              <div id="oeeRtAI" class="md"></div>
-            </div>
-          </div>
-        </section>
 
-        <!-- ===================== -->
-        <!-- VIEW: OEE DAY/TURN -->
-        <!-- ===================== -->
-        <section id="viewOeeDay" class="shell" style="display:none">
-          <div class="card">
-            <h2>OEE por Día/Turno</h2>
-            <p class="sub">Selecciona día y opcionalmente un turno específico</p>
+              <div class="card" style="margin-top:20px; display:none" id="oeeRtTableCard">
+                <h2>Detalle (Snapshot)</h2>
+                <div class="table-wrap">
+                  <table id="oeeRtTable">
+                    <thead>
+                      <tr id="oeeRtHead"></tr>
+                    </thead>
+                    <tbody id="oeeRtBody"></tbody>
+                  </table>
+                </div>
+              </div>
 
-            <div class="form-row">
-              <label class="small muted" for="oeeDay">Fecha:</label>
-              <input id="oeeDay" type="date" />
-
-              <label class="small muted" for="oeeShift">Turno:</label>
-              <select id="oeeShift">
-                <option value="">(Todos)</option>
-                <option value="Primer Turno">Primer Turno</option>
-                <option value="Segundo Turno">Segundo Turno</option>
-                <option value="Tercer Turno">Tercer Turno</option>
-              </select>
-
-              <button class="btn primary" id="btnFetchOeeDay">Consultar</button>
-              <span class="small muted" id="oeeDayInfo"></span>
-            </div>
-          </div>
-
-          <div class="card" id="oeeDayTableCard" style="display:none">
-            <h2>Resultado</h2>
-            <div class="table-wrap">
-              <table id="oeeDayTable">
-                <thead>
-                  <tr id="oeeDayHead"></tr>
-                </thead>
-                <tbody id="oeeDayBody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card" id="oeeDayAICard" style="display:none">
-            <div class="card-head">
-              <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
-              <div class="actions">
-                <button class="btn" id="btnDlOeeDayPdf">📄 PDF</button>
-                <button class="btn" id="btnDlOeeDayDocx">📝 Word</button>
+              <div class="card" id="oeeRtAICard" style="display:none; margin-top:20px">
+                <div class="card-head">
+                  <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
+                  <div class="actions">
+                    <button class="btn" id="btnDlOeeRtPdf">📄 Descargar PDF</button>
+                  </div>
+                </div>
+                <div id="oeeRtAI" class="md"></div>
               </div>
             </div>
-            <div id="oeeDayAI" class="md"></div>
+          </div>
+
+          <!-- Tab Content: Historic -->
+          <div id="tabContentOeeHist" style="display:none">
+            <div class="card">
+              <h2>OEE por Día/Turno</h2>
+              <p class="sub">Selecciona día y opcionalmente un turno específico</p>
+
+              <div class="form-row">
+                <label class="small muted" for="oeeDay">Fecha:</label>
+                <input id="oeeDay" type="date" />
+
+                <label class="small muted" for="oeeShift">Turno:</label>
+                <select id="oeeShift">
+                  <option value="">(Todos)</option>
+                  <option value="Primer Turno">Primer Turno</option>
+                  <option value="Segundo Turno">Segundo Turno</option>
+                  <option value="Tercer Turno">Tercer Turno</option>
+                </select>
+
+                <button class="btn primary" id="btnFetchOeeDay">Consultar</button>
+                <span class="small muted" id="oeeDayInfo"></span>
+              </div>
+
+              <div class="card" id="oeeDayTableCard" style="margin-top:20px; display:none">
+                <h2>Resultado</h2>
+                <div class="table-wrap">
+                  <table id="oeeDayTable">
+                    <thead>
+                      <tr id="oeeDayHead"></tr>
+                    </thead>
+                    <tbody id="oeeDayBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card" id="oeeDayAICard" style="display:none; margin-top:20px">
+                <div class="card-head">
+                  <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
+                  <div class="actions">
+                    <button class="btn" id="btnDlOeeDayPdf">📄 Descargar PDF</button>
+                  </div>
+                </div>
+                <div id="oeeDayAI" class="md"></div>
+              </div>
+            </div>
           </div>
         </section>
       </div>
-    </main>
     </main>
 
     <!-- Full Screen Modal -->
@@ -1275,6 +1325,11 @@
     initTheme();
     el('themeToggle')?.addEventListener('click', toggleTheme);
 
+    // Sidebar Toggle
+    el('brandToggle')?.addEventListener('click', () => {
+      el('sidebar').classList.toggle('collapsed');
+    });
+
     // ===========================
     // Utility Functions
     // ===========================
@@ -1283,6 +1338,19 @@
       pill.classList.remove("ok", "busy", "err");
       pill.classList.add(kind);
       pill.textContent = text;
+    }
+
+    function setBtnBusy(btnId, isBusy, text = "Generando...") {
+      const btn = el(btnId);
+      if (!btn) return;
+      if (isBusy) {
+        btn.dataset.originalText = btn.textContent;
+        btn.classList.add("busy");
+        btn.textContent = text;
+      } else {
+        btn.classList.remove("busy");
+        btn.textContent = btn.dataset.originalText || btn.textContent;
+      }
     }
 
     function escapeHtml(s) {
@@ -1321,6 +1389,10 @@
     let lastOeeDay = null;
     let lastOeeShift = null;
 
+    let lastCvData = null;    // Para guardar la respuesta de /api/control-variables/day
+    let lastOeeRtData = null; // Para guardar la respuesta de /api/oee/realtime
+    let lastOeeDayData = null;// Para guardar la respuesta de /api/oee/day-turn
+
     // Label mappings
     const LABEL_OEE_RT = {
       LineName: "Línea",
@@ -1328,7 +1400,7 @@
       OEE: "OEE (%)",
       Availability: "Disponibilidad (%)",
       Performance: "Desempeño (%)",
-      Quality: "Calidad (%)",
+      "Producto Conforme": "Producto Conforme (%)",
       StatusCode: "Estatus",
       StatusTimeMin: "Tiempo en estatus (min)",
       NaturalTimeMin: "Tiempo natural (min)",
@@ -1349,7 +1421,7 @@
       OEE: "OEE (%)",
       Disponibilidad: "Disponibilidad (%)",
       Desempeno: "Desempeño (%)",
-      Calidad: "Calidad (%)",
+      "Producto Conforme": "Producto Conforme (%)",
       DuracionTurnoMin: "Duración turno (min)",
       TiempoDisponibleMin: "Tiempo disponible (min)",
       TiempoProductivoMin: "Tiempo productivo (min)",
@@ -1361,9 +1433,15 @@
       VelocidadPromedioRealKgHr: "Velocidad prom. real (kg/h)"
     };
 
-    async function downloadFrom(url, filename) {
+    async function downloadFrom(url, filename, body = null) {
       try {
-        const res = await fetch(url);
+        const options = {
+          method: body ? "POST" : "GET",
+          headers: body ? { "Content-Type": "application/json" } : {}
+        };
+        if (body) options.body = JSON.stringify(body);
+
+        const res = await fetch(url, options);
         if (!res.ok) {
           let msg = `Error ${res.status}: No se pudo descargar.`;
           try {
@@ -1414,6 +1492,15 @@
 
     function mdToHtml(md) {
       if (!md) return "";
+
+      // Normalizar saltos de línea y asegurar que los headers y listas en medio del texto se separen
+      let processedMd = String(md)
+        .replace(/\r\n/g, "\n")
+        .replace(/([^\n])\s*###/g, "$1\n\n###") // Si hay un header pegado a texto, bajarlo
+        .replace(/###\s+([^\n]+)([^\n])/g, "### $1\n\n$2") // Si hay texto pegado al título, bajarlo
+        .replace(/([^\n])\s*(\d+\.\s+)/g, "$1\n$2") // Forzar salto de línea antes de un número de lista "1. " si no es inicio de línea
+        .replace(/([^\n])\s*([-*]\s+)/g, "$1\n$2"); // Forzar salto de línea antes de un bullet "- " si no es inicio de línea
+
       const esc = (s) => String(s)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -1421,7 +1508,7 @@
 
       const applyInline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
-      const lines = String(md).split(/\r?\n/);
+      const lines = processedMd.split(/\n/);
       let html = "";
       let inUl = false;
       let inOl = false;
@@ -1432,45 +1519,86 @@
       }
 
       for (let rawLine of lines) {
-        const line = rawLine.trimEnd();
-
+        let line = rawLine.trim();
         if (!line) {
           closeLists();
-          html += "<br>";
           continue;
         }
 
-        if (line === "---") {
+        // Headers (H3, H2, H1) con lógica de división si vienen pegados
+        if (line.startsWith("### ")) {
+          closeLists();
+          let raw = line.substring(4).trim();
+          // Si el texto es largo (> 40 chars) y tiene espacio o punto, probablemente es header + cuerpo
+          if (raw.length > 40 && (raw.includes(" ") || raw.includes("."))) {
+            // Intentar detectar el final del título (usualmente los primeros 2-4 palabras)
+            // O simplemente usar una lista de títulos conocidos para ser más precisos
+            const commonHeaders = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
+            let foundHeader = commonHeaders.find(h => raw.toLowerCase().startsWith(h.toLowerCase()));
+
+            if (foundHeader) {
+              let titleText = raw.substring(0, foundHeader.length).trim();
+              let bodyText = raw.substring(foundHeader.length).trim();
+              html += `<h3>${applyInline(titleText)}</h3>`;
+              if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
+            } else {
+              // Si no es un header conocido, intentamos dividir por el primer punto si es largo
+              let firstDot = raw.indexOf(".");
+              if (firstDot > 0 && firstDot < 40) {
+                let titleText = raw.substring(0, firstDot + 1).trim();
+                let bodyText = raw.substring(firstDot + 1).trim();
+                html += `<h3>${applyInline(titleText)}</h3>`;
+                if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
+              } else {
+                html += `<h3>${applyInline(raw)}</h3>`;
+              }
+            }
+          } else {
+            html += `<h3>${applyInline(raw)}</h3>`;
+          }
+          continue;
+        }
+
+        if (line.startsWith("## ")) {
+          closeLists();
+          let title = line.substring(3).trim();
+          html += `<h2>${applyInline(title)}</h2>`;
+          continue;
+        }
+        if (line.startsWith("# ")) {
+          closeLists();
+          let title = line.substring(2).trim();
+          html += `<h1>${applyInline(title)}</h1>`;
+          continue;
+        }
+
+        if (line === "---" || line === "___" || line === "***") {
           closeLists();
           html += "<hr>";
           continue;
         }
 
-        let m;
-        if ((m = line.match(/^#####\s+(.*)$/))) { closeLists(); html += `<h5>${applyInline(m[1])}</h5>`; continue; }
-        if ((m = line.match(/^####\s+(.*)$/))) { closeLists(); html += `<h4>${applyInline(m[1])}</h4>`; continue; }
-        if ((m = line.match(/^###\s+(.*)$/))) { closeLists(); html += `<h3>${applyInline(m[1])}</h3>`; continue; }
-        if ((m = line.match(/^##\s+(.*)$/))) { closeLists(); html += `<h2>${applyInline(m[1])}</h2>`; continue; }
-        if ((m = line.match(/^#\s+(.*)$/))) { closeLists(); html += `<h1>${applyInline(m[1])}</h1>`; continue; }
-
-        if ((m = line.match(/^(?:-|\*)\s+(.*)$/))) {
-          if (inOl) { html += "</ol>"; inOl = false; }
-          if (!inUl) { html += "<ul>"; inUl = true; }
-          html += `<li>${applyInline(m[1])}</li>`;
+        // Bullets
+        if (line.startsWith("* ") || line.startsWith("- ")) {
+          if (!inUl) { closeLists(); html += "<ul>"; inUl = true; }
+          html += `<li>${applyInline(line.substring(2))}</li>`;
           continue;
         }
 
-        if ((m = line.match(/^\d+\)\s+(.*)$/)) || (m = line.match(/^\d+\.\s+(.*)$/))) {
-          if (inUl) { html += "</ul>"; inUl = false; }
-          if (!inOl) { html += "<ol>"; inOl = true; }
-          html += `<li>${applyInline(m[1])}</li>`;
+        // Numbers
+        const olMatch = line.match(/^(\d+)\.\s+(.*)/);
+        if (olMatch) {
+          if (!inOl) { closeLists(); html += "<ol>"; inOl = true; }
+          html += `<li>${applyInline(olMatch[2])}</li>`;
           continue;
         }
+
+        // Paragraph (Ignorar líneas que solo tienen un punto si vienen solas)
+        if (line === "." || line === "•") continue;
 
         closeLists();
         html += `<p>${applyInline(line)}</p>`;
       }
-
       closeLists();
       return html;
     }
@@ -1479,30 +1607,62 @@
     // Menu Navigation
     // ===========================
     function showView(name) {
-      const views = ["CV", "OeeRT", "OeeDay"];
+      const views = ["CV", "OEE"];
       for (const v of views) {
         el("view" + v).style.display = (v === name) ? "" : "none";
       }
 
       el("btnMenuCV").classList.toggle("active", name === "CV");
-      el("btnMenuOeeRT").classList.toggle("active", name === "OeeRT");
-      el("btnMenuOeeDay").classList.toggle("active", name === "OeeDay");
+      el("btnMenuOEE").classList.toggle("active", name === "OEE");
 
       if (name === "CV") {
         el("topTitle").textContent = "Variables de Control";
         el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
-      } else if (name === "OeeRT") {
-        el("topTitle").textContent = "OEE en Tiempo Real";
-        el("topSubtitle").textContent = "Último snapshot — línea de producción";
+        stopOeeRefresh();
       } else {
-        el("topTitle").textContent = "OEE por Día/Turno";
-        el("topSubtitle").textContent = "Resumen por turno para una fecha";
+        el("topTitle").textContent = "OEE (Eficiencia)";
+        el("topSubtitle").textContent = "Desempeño global y por turno";
+        startOeeRefresh();
       }
     }
 
     el("btnMenuCV").addEventListener("click", () => showView("CV"));
-    el("btnMenuOeeRT").addEventListener("click", () => showView("OeeRT"));
-    el("btnMenuOeeDay").addEventListener("click", () => showView("OeeDay"));
+    el("btnMenuOEE").addEventListener("click", () => showView("OEE"));
+
+    // OEE Tabs
+    function setOeeTab(active) {
+      el('tabBtnOeeRT').classList.toggle('active', active === 'RT');
+      el('tabBtnOeeHist').classList.toggle('active', active === 'Hist');
+      el('tabContentOeeRT').style.display = (active === 'RT') ? '' : 'none';
+      el('tabContentOeeHist').style.display = (active === 'Hist') ? '' : 'none';
+
+      if (active === 'RT') {
+        startOeeRefresh();
+      } else {
+        stopOeeRefresh();
+      }
+    }
+
+    el('tabBtnOeeRT').addEventListener('click', () => setOeeTab('RT'));
+    el('tabBtnOeeHist').addEventListener('click', () => setOeeTab('Hist'));
+
+    let oeeInterval = null;
+    function startOeeRefresh() {
+      if (oeeInterval) return;
+      fetchOeeRealtime(); // Initial fetch
+      oeeInterval = setInterval(() => {
+        if (el('chkAutoRefresh').checked && el('viewOEE').style.display !== 'none' && el('tabContentOeeRT').style.display !== 'none') {
+          fetchOeeRealtime();
+        }
+      }, 30000); // 30s
+    }
+
+    function stopOeeRefresh() {
+      if (oeeInterval) {
+        clearInterval(oeeInterval);
+        oeeInterval = null;
+      }
+    }
 
     // ===========================
     // Clear View
@@ -1625,6 +1785,7 @@
       el("cvAI").innerHTML = "";
 
       setStatus("busy", "Generando...");
+      setBtnBusy("btnGenCV", true);
 
       try {
         const res = await fetch("/api/control-variables/day", {
@@ -1639,6 +1800,7 @@
         }
 
         lastCvDay = day;
+        lastCvData = data;
 
         if (data.ai_analysis) {
           el("cvAI").innerHTML = mdToHtml(String(data.ai_analysis));
@@ -1658,6 +1820,8 @@
       } catch (err) {
         el("cvInfo").textContent = "⚠️ " + (err.message || err);
         setStatus("err", "Error");
+      } finally {
+        setBtnBusy("btnGenCV", false);
       }
     }
 
@@ -1674,6 +1838,7 @@
       el("oeeRtAI").innerHTML = "";
 
       setStatus("busy", "Consultando...");
+      setBtnBusy("btnFetchOeeRT", true, "Consultando...");
       try {
         const res = await fetch("/api/oee/realtime");
         const data = await res.json();
@@ -1696,7 +1861,7 @@
         const iOee = idx("OEE");
         const iAv = idx("Availability");
         const iPe = idx("Performance");
-        const iQu = idx("Quality");
+        const iQu = idx("Producto Conforme");
         const iLine = idx("LineName");
         const iSnap = idx("SnapshotAtLocal");
 
@@ -1714,6 +1879,8 @@
         buildTable(el("oeeRtHead"), el("oeeRtBody"), cols, rows, LABEL_OEE_RT);
         el("oeeRtTableCard").style.display = "";
 
+        lastOeeRtData = data;
+
         if (data.ai_analysis) {
           el("oeeRtAI").innerHTML = mdToHtml(String(data.ai_analysis));
           el("oeeRtAICard").style.display = "";
@@ -1723,6 +1890,8 @@
       } catch (err) {
         el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
         setStatus("err", "Error");
+      } finally {
+        setBtnBusy("btnFetchOeeRT", false);
       }
     }
 
@@ -1746,6 +1915,7 @@
       el("oeeDayAI").innerHTML = "";
 
       setStatus("busy", "Consultando...");
+      setBtnBusy("btnFetchOeeDay", true, "Consultando...");
       try {
         const body = { day: day };
         if (shift) body.shift_name = shift;
@@ -1762,6 +1932,7 @@
 
         lastOeeDay = day;
         lastOeeShift = shift ? shift : null;
+        lastOeeDayData = data;
 
         const rows = data.rows || [];
         const cols = data.columns || [];
@@ -1783,6 +1954,8 @@
       } catch (err) {
         el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
         setStatus("err", "Error");
+      } finally {
+        setBtnBusy("btnFetchOeeDay", false);
       }
     }
 
@@ -1795,44 +1968,49 @@
     // Download Handlers
     // ===========================
     el("btnDlCvPdf")?.addEventListener("click", () => {
-      if (!lastCvDay) return alert("Genera primero un análisis.");
-      downloadFrom(`/api/report/control-variables/day?day=${lastCvDay}&format=pdf`, `control_vars_${lastCvDay}.pdf`);
+      if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
+      downloadFrom(`/api/report/control-variables/day`, `control_vars_${lastCvDay}.pdf`, {
+        day: lastCvDay,
+        format: "pdf",
+        summary: lastCvData.summary,
+        ai_analysis: lastCvData.ai_analysis
+      });
     });
 
-    el("btnDlCvDocx")?.addEventListener("click", () => {
-      if (!lastCvDay) return alert("Genera primero un análisis.");
-      downloadFrom(`/api/report/control-variables/day?day=${lastCvDay}&format=docx`, `control_vars_${lastCvDay}.docx`);
-    });
+
 
     el("btnDlOeeRtPdf")?.addEventListener("click", () => {
-      downloadFrom(`/api/report/oee/realtime?format=pdf`, `oee_realtime.pdf`);
+      if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
+      downloadFrom(`/api/report/oee/realtime`, `oee_realtime.pdf`, {
+        format: "pdf",
+        rows: lastOeeRtData.rows,
+        columns: lastOeeRtData.columns,
+        ai_analysis: lastOeeRtData.ai_analysis
+      });
     });
 
-    el("btnDlOeeRtDocx")?.addEventListener("click", () => {
-      downloadFrom(`/api/report/oee/realtime?format=docx`, `oee_realtime.docx`);
-    });
+
 
     el("btnDlOeeDayPdf")?.addEventListener("click", () => {
-      if (!lastOeeDay) return alert("Consulta primero un día/turno.");
-      const qs = `day=${lastOeeDay}` + (lastOeeShift ? `&shift_name=${encodeURIComponent(lastOeeShift)}` : "");
-      downloadFrom(`/api/report/oee/day?${qs}&format=pdf`, `oee_day_${lastOeeDay}.pdf`);
+      if (!lastOeeDay || !lastOeeDayData) return alert("Consulta primero un día/turno.");
+      downloadFrom(`/api/report/oee/day`, `oee_day_${lastOeeDay}.pdf`, {
+        day: lastOeeDay,
+        shift_name: lastOeeShift,
+        format: "pdf",
+        rows: lastOeeDayData.rows,
+        columns: lastOeeDayData.columns,
+        ai_analysis: lastOeeDayData.ai_analysis
+      });
     });
 
-    el("btnDlOeeDayDocx")?.addEventListener("click", () => {
-      if (!lastOeeDay) return alert("Consulta primero un día/turno.");
-      const qs = `day=${lastOeeDay}` + (lastOeeShift ? `&shift_name=${encodeURIComponent(lastOeeShift)}` : "");
-      downloadFrom(`/api/report/oee/day?${qs}&format=docx`, `oee_day_${lastOeeDay}.docx`);
-    });
 
-    el("btnDlOeeDayDocx")?.addEventListener("click", () => {
-      if (!lastOeeDay) return alert("Consulta primero un día/turno.");
-      const qs = `day=${lastOeeDay}` + (lastOeeShift ? `&shift_name=${encodeURIComponent(lastOeeShift)}` : "");
-      downloadFrom(`/api/oee/day-turn-docx?${qs}`, `oee_day_${lastOeeDay}.docx`);
-    });
 
-    // Set today's date as default
-    el("cvDay").value = todayISO();
-    el("oeeDay").value = todayISO();
+    // Set today's date as default and max
+    const today = todayISO();
+    el("cvDay").value = today;
+    el("cvDay").max = today;
+    el("oeeDay").value = today;
+    el("oeeDay").max = today;
   </script>
 </body>
 
