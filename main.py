@@ -97,37 +97,34 @@ def aoai_text(system_prompt: str, user_prompt: str, temperature: float = 0.2, ma
     
 
 CONTROL_VARS_AI_SYSTEM = """\
-Eres Duma, un asistente en español para analítica de piso de producción especializado en variables de control crítico.
+Eres Duma, un asistente experto para analítica de piso de producción. Tu tarea es generar un informe EJECUTIVO y de ALTO NIVEL para la dirección.
 
-Tu tarea es generar un análisis EJECUTIVO, formal y accionable para la dirección de planta.
-
-### Estructura Obligatoria (Markdown):
+### Estructura Mandataria (Markdown):
 
 ### Resumen ejecutivo
-(Un párrafo breve con la conclusión general del día...)
+(Escribe UN párrafo fluido y profesional que resuma el estado de la planta hoy. NUNCA uses listas aquí.)
 
 ### Hallazgos clave
-- (Dato específico de desviación 1...)
-- (Dato específico de desviación 2...)
+- (Dato de desviación con impacto operativo...)
+- (Incidencia técnica o anomalía de sensor...)
 
 ### Interpretación operacional
-(Análisis de posibles causas raíz bajo una perspectiva técnica...)
+(Análisis técnico breve de las posibles causas raíz. Usa un tono de Director de Operaciones.)
 
 ### Acciones recomendadas
-- (Acción inmediata 1...)
-- (Acción inmediata 2...)
+- (Acción concreta 1...)
+- (Acción concreta 2...)
 
 ### Próximos pasos
-- (Qué validar o monitorear en el siguiente turno...)
+- (Validación necesaria para el siguiente turno...)
 
 ### Reglas Críticas de Formato:
-1. Usa EXACTAMENTE los encabezados con `### ` indicados arriba.
-2. Deja SIEMPRE una línea en blanco (doble salto de línea) antes y después de cada encabezado `### `.
-3. NUNCA escribas texto en la misma línea que un encabezado.
-4. Usa viñetas de Markdown (`- `) para listas.
-5. NO uses negritas (`**`) para párrafos completos; úsalas solo para resaltar términos clave.
-6. El tono debe ser formal (Director de Operaciones). 
-7. NO inventes datos. Si detectas valores "100% fuera" o "0% fuera", menciónalo como una posible anomalía de sensor o proceso.
+1. Usa EXACTAMENTE los encabezados con `### `.
+2. Deja SIEMPRE una línea en blanco antes y después de cada encabezado.
+3. El Resumen Ejecutivo debe ser TEXTO CONTINUO (Párrafo).
+4. CADA HALLAZGO Y ACCIÓN DEBE IR EN UNA LÍNEA NUEVA con `- `.
+5. NO uses fragmentos de oraciones cortadas como puntos de lista.
+6. Tono: Formal, sobrio y directo.
 """
 
 def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
@@ -153,31 +150,28 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
 # -----------------------------------------------------------------------------
 
 OEE_AI_SYSTEM = """
-Eres Duma, un asistente en español para analítica de piso de producción. Tu objetivo es asesorar a nivel de gerencia de planta sobre el desempeño OEE.
+Eres Duma, un consultor experto en productividad industrial. Genera un análisis ejecutivo del OEE para la gerencia.
 
-### Estructura Obligatoria (Markdown):
+### Estructura Mandataria (Markdown):
 
 ### Resumen ejecutivo
-(Análisis del desempeño global, riesgos detectados y nivel de urgencia...)
+(Párrafo fluido analizando el desempeño global y urgencia. SIN listas.)
 
 ### KPI limitante
-(Identifica el indicador más bajo —Disponibilidad, Desempeño o Calidad— y explica su impacto operativo...)
+(Identifica DISPONIBILIDAD, DESEMPEÑO o CALIDAD como el cuello de botella actual.)
 
 ### Acciones recomendadas
-- (Acción inmediata para corregir la desviación 1...)
-- (Acción inmediata para corregir la desviación 2...)
+- (Acción paliativa o correctiva 1...)
+- (Acción paliativa o correctiva 2...)
 
 ### Riesgo si no se actúa
-- (Consecuencia potencial 1...)
-- (Consecuencia potencial 2...)
+- (Impacto en costos o entregas 1...)
 
-### Reglas Críticas de Formato:
-1. Usa EXACTAMENTE los encabezados con `### ` indicados arriba.
-2. Deja SIEMPRE una línea en blanco (doble salto de línea) antes y después de cada encabezado `### `.
-3. NUNCA escribas texto en la misma línea que un encabezado.
-4. Tono estrictamente formal y profesional (Senior Management).
-5. NO uses negritas (`**`) para párrafos enteros.
-6. Usa listas con viñetas (`- `) para acciones y riesgos.
+### Reglas Críticas:
+1. Tono Senio/Director.
+2. Resumen Ejecutivo siempre en PÁRRAFO.
+3. Listas verticales con `- ` para acciones y riesgos.
+4. Doble salto de línea entre secciones.
 7. Si faltan datos, indícalo claramente como un punto de atención.
 """.strip()
 
@@ -1564,19 +1558,24 @@ def _build_pdf_bytes(
         out = []
         if not md: return out
 
-        # Normalizar y asegurar que los headers pegados se separen
+        # Normalizar saltos de línea
         md = md.replace("\r\n", "\n").replace("\r", "\n")
-        md = re.sub(r'([^\n])\s*###', r'\1\n\n###', md)
-        md = re.sub(r'###\s+([^\n]+)([^\n])', r'### \1\n\n\2', md)
-        
-        lines = [ln.rstrip() for ln in md.split("\n")]
-        buf = []
 
-        # Títulos comunes para detectar si están pegados al texto
+        # SEPARACIÓN INTELIGENTE (Lista solo si viene después de puntuación)
+        md = re.sub(r'([^\n])\s*###', r'\1\n\n###', md) # Header pegado
+        md = re.sub(r'([.?!:])\s*(\d+[\.\)]\s+)', r'\1\n\2', md) # Número tras punto
+        md = re.sub(r'([.?!:])\s*([-*]\s+)', r'\1\n\2', md) # Bullet tras punto
+
+        # Split headers conocidos que traen contenido en la misma línea
         COMMON_HEADERS = [
             "Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", 
             "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"
         ]
+        for h in COMMON_HEADERS:
+            md = re.sub(rf'(###\s+{re.escape(h)})\.?(\s+[^ \n])', r'\1\n\n\2', md, flags=re.IGNORECASE)
+
+        lines = [ln.rstrip() for ln in md.split("\n")]
+        buf = []
 
         def flush_paragraph():
             nonlocal buf
