@@ -1131,24 +1131,43 @@ def plot_critical_timeseries_day_png(
     meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.strip().lower() == var_id.strip().lower()), None)
     title = f"{meta.get('name','Variable')} — {meta.get('device','')}" if meta else str(var_id)
 
+    # Colores estéticos
+    COLOR_IN = "#2ecc71"   # Verde esmeralda
+    COLOR_OUT = "#e74c3c"  # Alizarin (Rojo)
+    COLOR_LINE = "#2c3e50" # Midnight blue para la línea
+    COLOR_BAND = "#3498db" # Belize hole (Azul) para la banda
+
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(10, 3.4), dpi=160)
+    fig, ax = plt.subplots(figsize=(10, 3.8), dpi=160)
 
-    ax.plot(d["LocalTime"], d["Value"], linewidth=1.2, label="Valor")
-    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.15, color="#3498db", label="Rango crítico")
-    ax.axhline(crit_min, linestyle="--", linewidth=1, label="Crítico mín")
-    ax.axhline(crit_max, linestyle="--", linewidth=1, label="Crítico máx")
+    # Línea principal
+    ax.plot(d["LocalTime"], d["Value"], color=COLOR_LINE, linewidth=1.0, alpha=0.7, label="Tendencia")
 
-    out = d[d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
-    if not out.empty:
-        ax.scatter(out["LocalTime"], out["Value"], s=8, label="Lecturas fuera de rango")
+    # Banda crítica
+    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.1, color=COLOR_BAND, label="Rango óptimo")
+    ax.axhline(crit_min, color=COLOR_BAND, linestyle="--", linewidth=0.8, alpha=0.5)
+    ax.axhline(crit_max, color=COLOR_BAND, linestyle="--", linewidth=0.8, alpha=0.5)
 
-    ax.set_title(title)
-    ax.set_xlabel("Hora local")
-    ax.set_ylabel("Valor")
-    ax.grid(True, alpha=0.25)
-    ax.legend(loc="upper left", fontsize=7, ncol=2)
+    # Puntos dentro del rango (Verde)
+    in_range = d[~d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
+    if not in_range.empty:
+        ax.scatter(in_range["LocalTime"], in_range["Value"], s=10, color=COLOR_IN, alpha=0.8, label="En rango", zorder=3)
 
+    # Puntos fuera de rango (Rojo)
+    out_range = d[d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
+    if not out_range.empty:
+        ax.scatter(out_range["LocalTime"], out_range["Value"], s=12, color=COLOR_OUT, alpha=0.9, label="Fuera de rango", zorder=4)
+
+    ax.set_title(title, fontsize=12, fontweight='bold', pad=15)
+    ax.set_xlabel("Hora local", fontsize=9)
+    ax.set_ylabel("Valor", fontsize=9)
+    ax.grid(True, alpha=0.15)
+    ax.legend(loc="upper left", fontsize=8, ncol=3, frameon=True, framealpha=0.9)
+
+    # Ajustar formato de fecha en el eje X para que se vea limpio
+    import matplotlib.dates as mdates
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    
     os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_png_path, bbox_inches="tight")

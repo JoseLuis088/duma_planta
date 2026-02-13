@@ -2011,40 +2011,55 @@
     // ===========================
     // Download Handlers
     // ===========================
-    el("btnDlCvPdf")?.addEventListener("click", () => {
+    el("btnDlCvPdf")?.addEventListener("click", async () => {
       if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
-      downloadFrom(`/api/report/control-variables/day`, `control_vars_${lastCvDay}.pdf`, {
-        day: lastCvDay,
-        format: "pdf",
-        summary: lastCvData.summary,
-        ai_analysis: lastCvData.ai_analysis
-      });
+      setBtnBusy("btnDlCvPdf", true, "Descargando...");
+      try {
+        await downloadFrom(`/api/report/control-variables/day`, `control_vars_${lastCvDay}.pdf`, {
+          day: lastCvDay,
+          format: "pdf",
+          summary: lastCvData.summary,
+          ai_analysis: lastCvData.ai_analysis
+        });
+      } finally {
+        setBtnBusy("btnDlCvPdf", false);
+      }
     });
 
 
 
-    el("btnDlOeeRtPdf")?.addEventListener("click", () => {
+    el("btnDlOeeRtPdf")?.addEventListener("click", async () => {
       if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
-      downloadFrom(`/api/report/oee/realtime`, `oee_realtime.pdf`, {
-        format: "pdf",
-        rows: lastOeeRtData.rows,
-        columns: lastOeeRtData.columns,
-        ai_analysis: lastOeeRtData.ai_analysis
-      });
+      setBtnBusy("btnDlOeeRtPdf", true, "Descargando...");
+      try {
+        await downloadFrom(`/api/report/oee/realtime`, `oee_realtime.pdf`, {
+          format: "pdf",
+          rows: lastOeeRtData.rows,
+          columns: lastOeeRtData.columns,
+          ai_analysis: lastOeeRtData.ai_analysis
+        });
+      } finally {
+        setBtnBusy("btnDlOeeRtPdf", false);
+      }
     });
 
 
 
-    el("btnDlOeeDayPdf")?.addEventListener("click", () => {
+    el("btnDlOeeDayPdf")?.addEventListener("click", async () => {
       if (!lastOeeDay || !lastOeeDayData) return alert("Consulta primero un día/turno.");
-      downloadFrom(`/api/report/oee/day`, `oee_day_${lastOeeDay}.pdf`, {
-        day: lastOeeDay,
-        shift_name: lastOeeShift,
-        format: "pdf",
-        rows: lastOeeDayData.rows,
-        columns: lastOeeDayData.columns,
-        ai_analysis: lastOeeDayData.ai_analysis
-      });
+      setBtnBusy("btnDlOeeDayPdf", true, "Descargando...");
+      try {
+        await downloadFrom(`/api/report/oee/day`, `oee_day_${lastOeeDay}.pdf`, {
+          day: lastOeeDay,
+          shift_name: lastOeeShift,
+          format: "pdf",
+          rows: lastOeeDayData.rows,
+          columns: lastOeeDayData.columns,
+          ai_analysis: lastOeeDayData.ai_analysis
+        });
+      } finally {
+        setBtnBusy("btnDlOeeDayPdf", false);
+      }
     });
 
 
