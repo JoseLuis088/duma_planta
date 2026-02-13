@@ -1871,11 +1871,12 @@ async def report_control_variables_day(payload: dict):
         raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
 
     try:
+        # Siempre cargamos df_day si queremos gráficas (y para el resumen si no viene)
+        df_day = load_critical_reads_for_day(day)
+        
         if provided_summary is not None:
             summary_rows = provided_summary
-            df_day = None # No necesitamos cargarlo si ya hay resumen
         else:
-            df_day = load_critical_reads_for_day(day)
             summary_df = summarize_critical_day(df_day)
             summary_rows = summary_df.to_dict(orient="records")
     except FileNotFoundError:
@@ -1883,8 +1884,6 @@ async def report_control_variables_day(payload: dict):
     except Exception as e:
         print(f"Error generando reporte PDF: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
-    summary_df = summarize_critical_day(df_day)
-    summary_rows = summary_df.to_dict(orient="records")
 
     # ---------- Resumen ejecutivo backend (corto) ----------
     exec_lines = []
