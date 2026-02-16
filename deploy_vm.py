@@ -89,11 +89,13 @@ def main():
             print(f"Uploading .env to {remote_env}...")
             sftp.put(local_env, remote_env)
             
-            # Upload patched requirements.txt
-            if os.path.exists("requirements.txt"):
-                remote_req = f"/home/{USER}/{APP_NAME}/requirements.txt"
-                print(f"Uploading requirements.txt to {remote_req}...")
-                sftp.put("requirements.txt", remote_req)
+            # Upload ignored but critical AI files
+            critical_files = ["requirements.txt", "System prompt.txt", "duma_cookbook.txt", "schema.md"]
+            for f in critical_files:
+                if os.path.exists(f):
+                    remote_f = f"/home/{USER}/{APP_NAME}/{f}"
+                    print(f"Uploading {f} to {remote_f}...")
+                    sftp.put(f, remote_f)
                 
             sftp.close()
         else:

@@ -125,6 +125,8 @@ Eres Duma, un asistente experto para analítica de piso de producción. Tu tarea
 4. CADA HALLAZGO Y ACCIÓN DEBE IR EN UNA LÍNEA NUEVA con `- `.
 5. NO uses fragmentos de oraciones cortadas como puntos de lista.
 6. Tono: Formal, sobrio y directo.
+7. **Contexto de Turnos**: Los turnos inician a las 07:00, 15:30 y 23:00.
+8. **Regla de Ceros**: Si detectas valores en 0 (producción, velocidad, OEE) exactamente en estos horarios de inicio, interprétalos como un REINICIO (o "borrón y cuenta nueva") del contador acumulado para el nuevo turno, NO como una falla operacional ni parada de línea.
 """
 
 def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
@@ -173,6 +175,8 @@ Eres Duma, un consultor experto en productividad industrial. Genera un análisis
 3. Listas verticales con `- ` para acciones y riesgos.
 4. Doble salto de línea entre secciones.
 7. Si faltan datos, indícalo claramente como un punto de atención.
+8. **Contexto de Turnos**: Turnos inician a las 07:00, 15:30 y 23:00.
+9. **Regla de Ceros**: Valores en 0 en estos horarios coinciden con el cambio de turno y deben interpretarse como un reinicio de acumulados, NUNCA como una falla o detención.
 """.strip()
 
 
