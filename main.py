@@ -1071,7 +1071,7 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         x=d["LocalTime"], y=[crit_min]*len(d),
         mode="lines", line=dict(width=0),
         fill="tonexty", fillcolor="rgba(52, 152, 219, 0.2)",
-        name="Banda crítica", hoverinfo="skip"
+        name="Rango operativo", hoverinfo="skip"
     ))
 
     # Serie principal
@@ -1096,8 +1096,8 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         yaxis_title="Valor",
         template="plotly_dark",
         hovermode="x unified",
-        margin=dict(l=55, r=25, t=90, b=50),
-        legend=dict(orientation="h", yanchor="top", y=1.18, xanchor="left", x=0.01, font=dict(size=11))
+        margin=dict(l=55, r=25, t=115, b=50),
+        legend=dict(orientation="h", yanchor="top", y=1.25, xanchor="left", x=0.01, font=dict(size=11))
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
@@ -1144,7 +1144,7 @@ def plot_critical_timeseries_day_png(
     ax.plot(d["LocalTime"], d["Value"], color=COLOR_LINE, linewidth=1.0, alpha=0.7, label="Tendencia")
 
     # Banda crítica
-    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.1, color=COLOR_BAND, label="Rango óptimo")
+    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.1, color=COLOR_BAND, label="Rango operativo")
     ax.axhline(crit_min, color=COLOR_BAND, linestyle="--", linewidth=0.8, alpha=0.5)
     ax.axhline(crit_max, color=COLOR_BAND, linestyle="--", linewidth=0.8, alpha=0.5)
 
