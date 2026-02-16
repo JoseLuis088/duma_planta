@@ -696,7 +696,14 @@ ORDER BY
         )
 
 
-        # 3) Instrucciones base (saludo mínimo + uso de tools + reglas SQL por turno sin horarios fijos)
+        # 3) Instrucciones base (Carga desde archivo + saludo mínimo + reglas SQL por turno)
+        system_prompt_content = ""
+        try:
+            with open("System prompt.txt", "r", encoding="utf-8") as f:
+                system_prompt_content = f.read()
+        except Exception as e:
+            logging.error(f"No se pudo leer System prompt.txt: {e}")
+
         msg = user_text.strip().lower()
         greeting_set = {
             "hola", "holi", "buenos días", "buenas", "buenas tardes", "buenas noches",
@@ -705,6 +712,8 @@ ORDER BY
         is_pure_greeting = msg in greeting_set or msg.rstrip("!.?") in greeting_set
 
         extra_instructions = (
+            f"{system_prompt_content}\n\n"
+            "INSTRUCCIONES ADICIONALES DE SESIÓN:\n"
             "Responde en español. "
             "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
             "NO muestres consultas SQL en la respuesta final (salvo que el usuario lo pida explícitamente). "
