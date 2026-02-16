@@ -1096,8 +1096,8 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         yaxis_title="Valor",
         template="plotly_dark",
         hovermode="x unified",
-        margin=dict(l=55, r=25, t=140, b=50),
-        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0.01, font=dict(size=11))
+        margin=dict(l=55, r=25, t=150, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.20, xanchor="left", x=0.01, font=dict(size=11))
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
@@ -1158,7 +1158,7 @@ def plot_critical_timeseries_day_png(
     if not out_range.empty:
         ax.scatter(out_range["LocalTime"], out_range["Value"], s=12, color=COLOR_OUT, alpha=0.9, label="Fuera de rango", zorder=4)
 
-    ax.set_title(title, fontsize=12, fontweight='bold', pad=15)
+    ax.set_title(title, fontsize=12, fontweight='bold', pad=45)
     ax.set_xlabel("Hora local", fontsize=9)
     ax.set_ylabel("Valor", fontsize=9)
     ax.grid(True, alpha=0.15)
