@@ -1096,8 +1096,8 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         yaxis_title="Valor",
         template="plotly_dark",
         hovermode="x unified",
-        margin=dict(l=55, r=25, t=70, b=50),
-        legend=dict(orientation="h", yanchor="top", y=1.10, xanchor="left", x=0.01, font=dict(size=11))
+        margin=dict(l=55, r=25, t=90, b=50),
+        legend=dict(orientation="h", yanchor="top", y=1.18, xanchor="left", x=0.01, font=dict(size=11))
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
@@ -1162,7 +1162,7 @@ def plot_critical_timeseries_day_png(
     ax.set_xlabel("Hora local", fontsize=9)
     ax.set_ylabel("Valor", fontsize=9)
     ax.grid(True, alpha=0.15)
-    ax.legend(loc="upper left", fontsize=8, ncol=3, frameon=True, framealpha=0.9)
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02), fontsize=8, ncol=3, frameon=True, framealpha=0.9)
 
     # Ajustar formato de fecha en el eje X para que se vea limpio
     import matplotlib.dates as mdates
