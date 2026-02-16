@@ -1211,10 +1211,6 @@
               <p class="sub">Snapshot actualizado automáticamente de la línea de producción</p>
               <div class="form-row">
                 <button class="btn primary" id="btnFetchOeeRT">🔄 Actualizar Ahora</button>
-                <label class="small muted"
-                  style="margin-left: 20px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" id="chkAutoRefresh" checked> Auto-actualizar
-                </label>
                 <span class="small muted" id="oeeRtInfo" style="margin-left: 10px"></span>
               </div>
 
@@ -1662,11 +1658,10 @@
       if (name === "CV") {
         el("topTitle").textContent = "Variables de Control";
         el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
-        stopOeeRefresh();
       } else {
         el("topTitle").textContent = "OEE (Eficiencia)";
         el("topSubtitle").textContent = "Desempeño global y por turno";
-        startOeeRefresh();
+        fetchOeeRealtime();
       }
     }
 
@@ -1681,32 +1676,14 @@
       el('tabContentOeeHist').style.display = (active === 'Hist') ? '' : 'none';
 
       if (active === 'RT') {
-        startOeeRefresh();
-      } else {
-        stopOeeRefresh();
+        fetchOeeRealtime();
       }
     }
 
     el('tabBtnOeeRT').addEventListener('click', () => setOeeTab('RT'));
     el('tabBtnOeeHist').addEventListener('click', () => setOeeTab('Hist'));
 
-    let oeeInterval = null;
-    function startOeeRefresh() {
-      if (oeeInterval) return;
-      fetchOeeRealtime(); // Initial fetch
-      oeeInterval = setInterval(() => {
-        if (el('chkAutoRefresh').checked && el('viewOEE').style.display !== 'none' && el('tabContentOeeRT').style.display !== 'none') {
-          fetchOeeRealtime();
-        }
-      }, 30000); // 30s
-    }
-
-    function stopOeeRefresh() {
-      if (oeeInterval) {
-        clearInterval(oeeInterval);
-        oeeInterval = null;
-      }
-    }
+    // (Background refresh removed as per user request)
 
     // ===========================
     // Clear View
