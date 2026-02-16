@@ -1334,12 +1334,7 @@ DECLARE @day DATE = {day_sql};
 SELECT
     wst.Name AS Turno,
 
-    -- Fecha técnica: Tercer Turno cuenta para el día en que TERMINA (StartDate + 1)
-    CASE
-        WHEN wst.Name = N'Tercer Turno'
-            THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
-        ELSE CONVERT(date, wse.StartDate)
-    END AS Fecha,
+    CONVERT(date, wse.StartDate)   AS Fecha,
 
     wses.Oee                       AS OEE,
     wses.Availability              AS Disponibilidad,
@@ -1365,14 +1360,8 @@ WHERE
     AND wses.Active = 1
     AND wst.Active = 1
 
-    -- Filtro por FECHA TÉCNICA (no por StartDate directo)
-    AND (
-        CASE
-            WHEN wst.Name = N'Tercer Turno'
-                THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
-            ELSE CONVERT(date, wse.StartDate)
-        END
-    ) = @day
+    -- Filtro por StartDate directo
+    AND CONVERT(date, wse.StartDate) = @day
     {shift_filter}
 ORDER BY
     Fecha,
