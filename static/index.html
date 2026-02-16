@@ -1661,7 +1661,10 @@
       } else {
         el("topTitle").textContent = "OEE (Eficiencia)";
         el("topSubtitle").textContent = "Desempeño global y por turno";
-        fetchOeeRealtime();
+        // Solo consultar automáticamente la primera vez
+        if (!lastOeeRtData) {
+          fetchOeeRealtime();
+        }
       }
     }
 
@@ -1676,7 +1679,7 @@
       el('tabContentOeeHist').style.display = (active === 'Hist') ? '' : 'none';
 
       if (active === 'RT') {
-        fetchOeeRealtime();
+        // No fetch on tab switch - preserve state
       }
     }
 
