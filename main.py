@@ -1096,8 +1096,8 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         yaxis_title="Valor",
         template="plotly_dark",
         hovermode="x unified",
-        margin=dict(l=55, r=25, t=115, b=50),
-        legend=dict(orientation="h", yanchor="top", y=1.25, xanchor="left", x=0.01, font=dict(size=11))
+        margin=dict(l=55, r=25, t=140, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0.01, font=dict(size=11))
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
