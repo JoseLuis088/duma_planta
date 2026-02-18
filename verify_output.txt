@@ -1,0 +1,6 @@
+
+--- Verificando OEE para el día: 2026-02-09 ---
+        Turno                  StartDate                    EndDate FechaOperativa   Oee  Availability  Performance  Quality
+ Primer Turno 2026-02-09 13:00:05.814385 2026-02-09 21:30:00.392553     2026-02-09 69.53         62.33       111.55    100.0
+Segundo Turno 2026-02-09 21:30:00.392553 2026-02-10 05:00:07.556658     2026-02-09 89.74         73.59       121.94    100.0
+ Tercer Turno 2026-02-10 05:00:07.556658 2026-02-10 13:00:01.993967     2026-02-09 89.48         77.25       115.83    100.0

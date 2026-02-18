@@ -1,0 +1,30 @@
+C:\anaconda3\Lib\site-packages\paramiko\transport.py:219: CryptographyDeprecationWarning: Blowfish has been deprecated and will be removed in a future release
+  "class": algorithms.Blowfish,
+
+DEBUG_CMD: curl -I http://localhost:80
+HTTP/1.1 405 Method Not Allowed
+
+date: Thu, 12 Feb 2026 19:10:09 GMT
+
+server: uvicorn
+
+allow: GET
+
+content-length: 31
+
+content-type: application/json
+
+
+
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+  0    31    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+
+
+DEBUG_CMD: curl -s http://localhost:80 | wc -c
+58004
+
+

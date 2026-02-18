@@ -170,13 +170,14 @@ Eres Duma, un consultor experto en productividad industrial. Genera un análisis
 - (Impacto en costos o entregas 1...)
 
 ### Reglas Críticas:
-1. Tono Senio/Director.
+1. Tono Senior/Director.
 2. Resumen Ejecutivo siempre en PÁRRAFO.
 3. Listas verticales con `- ` para acciones y riesgos.
 4. Doble salto de línea entre secciones.
 7. Si faltan datos, indícalo claramente como un punto de atención.
 8. **Contexto de Turnos**: Turnos inician a las 07:00, 15:30 y 23:00.
 9. **Regla de Ceros**: Valores en 0 en estos horarios coinciden con el cambio de turno y deben interpretarse como un reinicio de acumulados, NUNCA como una falla o detención.
+10. **Fecha Operativa del Tercer Turno**: El Tercer Turno (23:00→07:00) cruza la medianoche. Su StartDate es el día D (23:00) y su EndDate es el día D+1 (07:00). La "Fecha Operativa" del turno es siempre el día D (el día en que comenzó). Si los datos muestran que el Tercer Turno tiene StartDate en un día y EndDate en el siguiente, es completamente normal y NO indica un error.
 """.strip()
 
 
@@ -542,13 +543,9 @@ DECLARE @day DATE = {day_sql};
 SELECT
     wst.Name AS Turno,
 
-    -- ✅ Fecha técnica:
-    -- El Tercer Turno se asigna al día en que TERMINA (StartDate + 1)
-    CASE
-        WHEN wst.Name = N'Tercer Turno'
-            THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
-        ELSE CONVERT(date, wse.StartDate)
-    END AS Fecha,
+    -- ✅ Fecha técnica (simplificada): 
+    -- Se usa StartDate para todos los turnos.
+    CONVERT(date, wse.StartDate) AS Fecha,
 
     wses.Oee                       AS OEE,
     wses.Availability              AS Disponibilidad,
@@ -574,14 +571,8 @@ WHERE
     AND wses.Active = 1
     AND wst.Active = 1
 
-    -- ✅ Filtro por FECHA TÉCNICA (NO por StartDate directo)
-    AND (
-        CASE
-            WHEN wst.Name = N'Tercer Turno'
-                THEN CONVERT(date, DATEADD(DAY, 1, wse.StartDate))
-            ELSE CONVERT(date, wse.StartDate)
-        END
-    ) = @day
+    -- ✅ Filtro por fecha de inicio (StartDate)
+    AND CONVERT(date, wse.StartDate) = @day
     {shift_filter}
 ORDER BY
     Fecha,
@@ -1317,7 +1308,7 @@ ORDER BY
 
 def _sql_oee_day_turn(day: str, shift_name: str | None = None) -> str:
     """
-    Resumen por turno para un día (H1.1 con fecha técnica de Tercer Turno).
+    Resumen por turno para un día (Usa Lógica de Fecha Operativa).
     """
     # Escapar comillas simples SIN backslashes dentro del f-string
     day_safe = str(day).replace("'", "''")
@@ -1334,7 +1325,11 @@ DECLARE @day DATE = {day_sql};
 SELECT
     wst.Name AS Turno,
 
-    CONVERT(date, wse.StartDate)   AS Fecha,
+    -- Fecha operativa real (ShiftBusinessDate)
+    CASE
+        WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+        ELSE CAST(wse.StartDate AS date)
+    END                            AS Fecha,
 
     wses.Oee                       AS OEE,
     wses.Availability              AS Disponibilidad,
@@ -1360,8 +1355,13 @@ WHERE
     AND wses.Active = 1
     AND wst.Active = 1
 
-    -- Filtro por StartDate directo
-    AND CONVERT(date, wse.StartDate) = @day
+    -- Filtro por Fecha Operativa
+    AND (
+        CASE
+            WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+        END
+    ) = @day
     {shift_filter}
 ORDER BY
     Fecha,
