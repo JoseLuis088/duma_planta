@@ -1094,6 +1094,340 @@
       color: white;
       box-shadow: 0 4px 12px var(--brand-glow);
     }
+
+    /* ==================== DUMA CHATBOT ==================== */
+    #duma-chat-widget {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 3000;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .chat-bubble-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: white;
+      border: none;
+      box-shadow: 0 8px 32px var(--brand-glow);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      font-size: 28px;
+    }
+
+    .chat-bubble-btn:hover {
+      transform: scale(1.1) rotate(5deg);
+      box-shadow: 0 12px 40px var(--brand-glow);
+    }
+
+    .chat-window {
+      position: absolute;
+      bottom: 80px;
+      right: 0;
+      width: 400px;
+      height: 600px;
+      max-height: calc(100vh - 120px);
+      background: var(--panel);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      display: none;
+      flex-direction: column;
+      box-shadow: 0 16px 64px var(--shadow-lg);
+      transform-origin: bottom right;
+      animation: chatOpen 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      overflow: hidden;
+    }
+
+    @keyframes chatOpen {
+      from {
+        transform: scale(0.5);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .chat-header {
+      padding: 20px;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-header-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chat-header-img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: white;
+      padding: 4px;
+      object-fit: contain;
+    }
+
+    .chat-header-title {
+      font-weight: 800;
+      font-size: 16px;
+    }
+
+    .chat-close-btn {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: background 0.2s;
+    }
+
+    .chat-close-btn:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--bg-solid);
+    }
+
+    .msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.5;
+      position: relative;
+      animation: msgIn 0.3s ease;
+    }
+
+    @keyframes msgIn {
+      from {
+        transform: translateY(10px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: white;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 12px var(--brand-glow);
+    }
+
+    .msg.bot {
+      align-self: flex-start;
+      background: var(--panel-solid);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    /* Estilos para markdown dentro del chat */
+    .msg.bot strong {
+      color: var(--brand);
+    }
+
+    .msg.bot h3 {
+      font-size: 15px;
+      margin: 12px 0 6px 0;
+      color: var(--brand);
+      border: none;
+      padding: 0;
+    }
+
+    .msg.bot p {
+      margin: 8px 0;
+    }
+
+    .msg.bot ul,
+    .msg.bot ol {
+      margin: 8px 0 8px 20px;
+      padding: 0;
+    }
+
+    .msg.bot li {
+      margin: 4px 0;
+    }
+
+    .msg.bot img {
+      max-width: 100%;
+      border-radius: 8px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+
+    .chat-input-area {
+      padding: 16px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .chat-input {
+      flex: 1;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      padding: 12px 16px;
+      border-radius: 12px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    .chat-input:focus {
+      border-color: var(--brand);
+    }
+
+    .chat-send-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--brand);
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s;
+    }
+
+    .chat-send-btn:hover {
+      background: var(--brand-2);
+      transform: scale(1.05);
+    }
+
+    .chat-send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Typing indicator */
+    .typing {
+      display: flex;
+      gap: 4px;
+      padding: 8px 12px;
+    }
+
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--brand);
+      border-radius: 50%;
+      animation: typing 1.4s infinite;
+      opacity: 0.4;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typing {
+
+      0%,
+      100% {
+        transform: translateY(0);
+        opacity: 0.4;
+      }
+
+      50% {
+        transform: translateY(-4px);
+        opacity: 1;
+      }
+    }
+
+    /* Quick Suggestions chips */
+    .chat-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 15px;
+      background: rgba(255, 255, 255, 0.05);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .chat-suggestion-chip {
+      background: rgba(26, 188, 156, 0.1);
+      border: 1px solid rgba(26, 188, 156, 0.3);
+      color: var(--duma-teal, #1abc9c);
+      padding: 6px 12px;
+      border-radius: 15px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .chat-suggestion-chip:hover {
+      background: var(--duma-teal, #1abc9c);
+      color: white;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Botón para gráficas interactivas en chat */
+    .chat-plot-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(26, 188, 156, 0.1);
+      border: 1px solid var(--duma-teal, #1abc9c);
+      color: var(--duma-teal, #1abc9c);
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-top: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .chat-plot-btn:hover {
+      background: var(--duma-teal, #1abc9c);
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .chat-plot-btn i {
+      font-size: 16px;
+    }
   </style>
 </head>
 
@@ -1317,410 +1651,442 @@
         <iframe id="fsFrame" class="fs-frame"></iframe>
       </div>
     </div>
-  </div>
+    <!-- DUNA CHAT WIDGET -->
+    <div id="duma-chat-widget">
+      <button class="chat-bubble-btn" id="chatBubbleBtn">
+        <span>💬</span>
+      </button>
+      <div class="chat-window" id="chatWindow">
+        <div class="chat-header">
+          <div class="chat-header-info">
+            <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-header-img">
+            <div class="chat-header-title">Duma Assistant</div>
+          </div>
+          <button class="chat-close-btn" id="chatCloseBtn">✕</button>
+        </div>
+        <div class="chat-messages" id="chatMsgs">
+          <div class="msg bot">
+            ¡Hola! Soy <strong>Duma</strong>, tu analista de piso. ¿En qué puedo ayudarte hoy?
+          </div>
+        </div>
+        <div class="chat-suggestions" id="chatSuggestions">
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cuál es el OEE actual?</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Grafica el OEE de la última
+            semana por día y por turno</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Resumen de ayer por turno</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Hubo problemas con el Chiller
+            hoy?</div>
+        </div>
+        <div class="chat-input-area">
+          <input type="text" class="chat-input" id="chatInput" placeholder="Pregúntame algo..." autocomplete="off">
+          <button class="chat-send-btn" id="chatSendBtn">➤</button>
+        </div>
+      </div>
+    </div>
 
-  <script>
-    const el = (id) => document.getElementById(id);
+    <script>
+      const el = (id) => document.getElementById(id);
 
-    // ===========================
-    // Theme Toggle
-    // ===========================
-    function initTheme() {
-      const savedTheme = localStorage.getItem('duma-theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+      // ===========================
+      // Theme Toggle
+      // ===========================
+      function initTheme() {
+        const savedTheme = localStorage.getItem('duma-theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = savedTheme || (prefersDark ? 'dark' : 'light');
 
-      document.documentElement.setAttribute('data-theme', theme);
-      updateThemeIcon(theme);
-    }
-
-    function toggleTheme() {
-      const currentTheme = document.documentElement.getAttribute('data-theme');
-      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-      document.documentElement.setAttribute('data-theme', newTheme);
-      localStorage.setItem('duma-theme', newTheme);
-      updateThemeIcon(newTheme);
-    }
-
-    function updateThemeIcon(theme) {
-      const toggleBtn = el('themeToggle');
-      if (toggleBtn) {
-        toggleBtn.querySelector('span').textContent = theme === 'dark' ? '☀️' : '🌙';
-        toggleBtn.title = theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
+        document.documentElement.setAttribute('data-theme', theme);
+        updateThemeIcon(theme);
       }
-    }
 
-    initTheme();
-    el('themeToggle')?.addEventListener('click', toggleTheme);
+      function toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-    // Sidebar Toggle
-    el('brandToggle')?.addEventListener('click', () => {
-      el('sidebar').classList.toggle('collapsed');
-    });
-
-    // ===========================
-    // Utility Functions
-    // ===========================
-    function setStatus(kind, text) {
-      const pill = el("statusPill");
-      pill.classList.remove("ok", "busy", "err");
-      pill.classList.add(kind);
-      pill.textContent = text;
-    }
-
-    function setBtnBusy(btnId, isBusy, text = "Generando...") {
-      const btn = el(btnId);
-      if (!btn) return;
-      if (isBusy) {
-        btn.dataset.originalText = btn.textContent;
-        btn.classList.add("busy");
-        btn.textContent = text;
-      } else {
-        btn.classList.remove("busy");
-        btn.textContent = btn.dataset.originalText || btn.textContent;
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('duma-theme', newTheme);
+        updateThemeIcon(newTheme);
       }
-    }
 
-    function escapeHtml(s) {
-      return String(s ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
+      function updateThemeIcon(theme) {
+        const toggleBtn = el('themeToggle');
+        if (toggleBtn) {
+          toggleBtn.querySelector('span').textContent = theme === 'dark' ? '☀️' : '🌙';
+          toggleBtn.title = theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
+        }
+      }
 
-    function formatNum(v) {
-      if (v === null || v === undefined || v === "") return "";
-      const n = Number(v);
-      if (Number.isNaN(n)) return String(v);
-      return (Math.round(n * 100) / 100).toString();
-    }
+      initTheme();
+      el('themeToggle')?.addEventListener('click', toggleTheme);
 
-    function toPct(v) {
-      if (v === null || v === undefined || v === "") return "";
-      const n = Number(v);
-      if (Number.isNaN(n)) return String(v);
-      return (Math.round(n * 100) / 100).toString() + "%";
-    }
+      // Sidebar Toggle
+      el('brandToggle')?.addEventListener('click', () => {
+        el('sidebar').classList.toggle('collapsed');
+      });
 
-    function todayISO() {
-      const t = new Date();
-      const yyyy = t.getFullYear();
-      const mm = String(t.getMonth() + 1).padStart(2, "0");
-      const dd = String(t.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
+      // ===========================
+      // Utility Functions
+      // ===========================
+      function setStatus(kind, text) {
+        const pill = el("statusPill");
+        pill.classList.remove("ok", "busy", "err");
+        pill.classList.add(kind);
+        pill.textContent = text;
+      }
 
-    // State for downloads
-    let lastCvDay = null;
-    let lastOeeDay = null;
-    let lastOeeShift = null;
+      function setBtnBusy(btnId, isBusy, text = "Generando...") {
+        const btn = el(btnId);
+        if (!btn) return;
+        if (isBusy) {
+          btn.dataset.originalText = btn.textContent;
+          btn.classList.add("busy");
+          btn.textContent = text;
+        } else {
+          btn.classList.remove("busy");
+          btn.textContent = btn.dataset.originalText || btn.textContent;
+        }
+      }
 
-    let lastCvData = null;    // Para guardar la respuesta de /api/control-variables/day
-    let lastOeeRtData = null; // Para guardar la respuesta de /api/oee/realtime
-    let lastOeeDayData = null;// Para guardar la respuesta de /api/oee/day-turn
+      function escapeHtml(s) {
+        return String(s ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
 
-    // Label mappings
-    const LABEL_OEE_RT = {
-      LineName: "Línea",
-      SnapshotAtLocal: "Snapshot (hora local)",
-      OEE: "OEE (%)",
-      Availability: "Disponibilidad (%)",
-      Performance: "Desempeño (%)",
-      "Producto Conforme": "Producto Conforme (%)",
-      StatusCode: "Estatus",
-      StatusTimeMin: "Tiempo en estatus (min)",
-      NaturalTimeMin: "Tiempo natural (min)",
-      ProductiveTimeMin: "Tiempo productivo (min)",
-      ScheduledStopageMin: "Paro programado (min)",
-      UnscheduledStopageMin: "Paro no programado (min)",
-      CurrentRate: "Velocidad real (kg/h)",
-      ExpectedRate: "Velocidad esperada (kg/h)",
-      CurrentShiftProduction: "Producción real turno (kg)",
-      ExpectedShiftProduction: "Producción esperada turno (kg)",
-      CurrentProduction: "Producción real día (kg)",
-      ExpectedDayProduction: "Producción esperada día (kg)"
-    };
+      function formatNum(v) {
+        if (v === null || v === undefined || v === "") return "";
+        const n = Number(v);
+        if (Number.isNaN(n)) return String(v);
+        return (Math.round(n * 100) / 100).toString();
+      }
 
-    const LABEL_OEE_DAY = {
-      Turno: "Turno",
-      Fecha: "Fecha",
-      OEE: "OEE (%)",
-      Disponibilidad: "Disponibilidad (%)",
-      Desempeno: "Desempeño (%)",
-      "Producto Conforme": "Producto Conforme (%)",
-      DuracionTurnoMin: "Duración turno (min)",
-      TiempoDisponibleMin: "Tiempo disponible (min)",
-      TiempoProductivoMin: "Tiempo productivo (min)",
-      TiempoNoProdProgramadoMin: "Paro programado (min)",
-      TiempoNoProdNoProgramadoMin: "Paro no programado (min)",
-      ProduccionEstimadaKg: "Producción esperada (kg)",
-      ProduccionRealKg: "Producción real (kg)",
-      VelocidadPromedioEstimadaKgHr: "Velocidad prom. esperada (kg/h)",
-      VelocidadPromedioRealKgHr: "Velocidad prom. real (kg/h)"
-    };
+      function toPct(v) {
+        if (v === null || v === undefined || v === "") return "";
+        const n = Number(v);
+        if (Number.isNaN(n)) return String(v);
+        return (Math.round(n * 100) / 100).toString() + "%";
+      }
 
-    async function downloadFrom(url, filename, body = null) {
-      try {
-        const options = {
-          method: body ? "POST" : "GET",
-          headers: body ? { "Content-Type": "application/json" } : {}
-        };
-        if (body) options.body = JSON.stringify(body);
+      function todayISO() {
+        const t = new Date();
+        const yyyy = t.getFullYear();
+        const mm = String(t.getMonth() + 1).padStart(2, "0");
+        const dd = String(t.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      }
 
-        const res = await fetch(url, options);
-        if (!res.ok) {
-          let msg = `Error ${res.status}: No se pudo descargar.`;
-          try {
-            const errJson = await res.json();
-            if (errJson.detail) msg = errJson.detail;
-          } catch (e) {
-            // Si no es JSON, intentamos texto o dejamos el default
-            const t = await res.text().catch(() => null);
-            if (t && t.length < 200) msg = t;
+      // State for downloads
+      let lastCvDay = null;
+      let lastOeeDay = null;
+      let lastOeeShift = null;
+
+      let lastCvData = null;    // Para guardar la respuesta de /api/control-variables/day
+      let lastOeeRtData = null; // Para guardar la respuesta de /api/oee/realtime
+      let lastOeeDayData = null;// Para guardar la respuesta de /api/oee/day-turn
+
+      // Label mappings
+      const LABEL_OEE_RT = {
+        LineName: "Línea",
+        SnapshotAtLocal: "Snapshot (hora local)",
+        OEE: "OEE (%)",
+        Availability: "Disponibilidad (%)",
+        Performance: "Desempeño (%)",
+        "Producto Conforme": "Producto Conforme (%)",
+        StatusCode: "Estatus",
+        StatusTimeMin: "Tiempo en estatus (min)",
+        NaturalTimeMin: "Tiempo natural (min)",
+        ProductiveTimeMin: "Tiempo productivo (min)",
+        ScheduledStopageMin: "Paro programado (min)",
+        UnscheduledStopageMin: "Paro no programado (min)",
+        CurrentRate: "Velocidad real (kg/h)",
+        ExpectedRate: "Velocidad esperada (kg/h)",
+        CurrentShiftProduction: "Producción real turno (kg)",
+        ExpectedShiftProduction: "Producción esperada turno (kg)",
+        CurrentProduction: "Producción real día (kg)",
+        ExpectedDayProduction: "Producción esperada día (kg)"
+      };
+
+      const LABEL_OEE_DAY = {
+        Turno: "Turno",
+        Fecha: "Fecha",
+        OEE: "OEE (%)",
+        Disponibilidad: "Disponibilidad (%)",
+        Desempeno: "Desempeño (%)",
+        "Producto Conforme": "Producto Conforme (%)",
+        DuracionTurnoMin: "Duración turno (min)",
+        TiempoDisponibleMin: "Tiempo disponible (min)",
+        TiempoProductivoMin: "Tiempo productivo (min)",
+        TiempoNoProdProgramadoMin: "Paro programado (min)",
+        TiempoNoProdNoProgramadoMin: "Paro no programado (min)",
+        ProduccionEstimadaKg: "Producción esperada (kg)",
+        ProduccionRealKg: "Producción real (kg)",
+        VelocidadPromedioEstimadaKgHr: "Velocidad prom. esperada (kg/h)",
+        VelocidadPromedioRealKgHr: "Velocidad prom. real (kg/h)"
+      };
+
+      async function downloadFrom(url, filename, body = null) {
+        try {
+          const options = {
+            method: body ? "POST" : "GET",
+            headers: body ? { "Content-Type": "application/json" } : {}
+          };
+          if (body) options.body = JSON.stringify(body);
+
+          const res = await fetch(url, options);
+          if (!res.ok) {
+            let msg = `Error ${res.status}: No se pudo descargar.`;
+            try {
+              const errJson = await res.json();
+              if (errJson.detail) msg = errJson.detail;
+            } catch (e) {
+              // Si no es JSON, intentamos texto o dejamos el default
+              const t = await res.text().catch(() => null);
+              if (t && t.length < 200) msg = t;
+            }
+            throw new Error(msg);
           }
-          throw new Error(msg);
+          const blob = await res.blob();
+          const a = document.createElement('a');
+          const objectUrl = URL.createObjectURL(blob);
+          a.href = objectUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => { try { URL.revokeObjectURL(objectUrl); } catch (e) { } }, 1000);
+        } catch (err) {
+          console.error(err);
+          alert(err.message);
         }
-        const blob = await res.blob();
-        const a = document.createElement('a');
-        const objectUrl = URL.createObjectURL(blob);
-        a.href = objectUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => { try { URL.revokeObjectURL(objectUrl); } catch (e) { } }, 1000);
-      } catch (err) {
-        console.error(err);
-        alert(err.message);
       }
-    }
 
-    function buildTable(headRowEl, bodyEl, columns, rows, labelMap = null) {
-      headRowEl.innerHTML = "";
-      bodyEl.innerHTML = "";
+      function buildTable(headRowEl, bodyEl, columns, rows, labelMap = null) {
+        headRowEl.innerHTML = "";
+        bodyEl.innerHTML = "";
 
-      (columns || []).forEach(c => {
-        const th = document.createElement("th");
-        th.textContent = (labelMap && labelMap[c]) ? labelMap[c] : c;
-        headRowEl.appendChild(th);
-      });
-
-      (rows || []).forEach(r => {
-        const tr = document.createElement("tr");
-        (columns || []).forEach((c, idx) => {
-          const td = document.createElement("td");
-          td.textContent = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
-          tr.appendChild(td);
+        (columns || []).forEach(c => {
+          const th = document.createElement("th");
+          th.textContent = (labelMap && labelMap[c]) ? labelMap[c] : c;
+          headRowEl.appendChild(th);
         });
-        bodyEl.appendChild(tr);
-      });
-    }
 
-    function mdToHtml(md) {
-      if (!md) return "";
-
-      // Normalizar saltos de línea
-      let processedMd = String(md)
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n");
-
-      // SEPARACIÓN INTELIGENTE (Lista solo si viene después de un separador natural o puntuación)
-      // Esto evita romper oraciones a la mitad.
-      processedMd = processedMd
-        .replace(/([^\n])\s*###/g, "$1\n\n###") // Separar headers si vienen pegados a texto
-        .replace(/([.?!:])\s*(\d+\.\s+)/g, "$1\n$2") // Separar lista numerada solo tras punto
-        .replace(/([.?!:])\s*([-*]\s+)/g, "$1\n$2"); // Separar bullets solo tras punto
-
-      // Split headers conocidos que traen contenido en la misma línea
-      const COMMON_HEADERS = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
-      COMMON_HEADERS.forEach(h => {
-        const re = new RegExp(`(###\\s+${h})\\.?(\\s+[^\\n])`, 'gi');
-        processedMd = processedMd.replace(re, "$1\n\n$2");
-      });
-
-      const esc = (s) => String(s)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-
-      const applyInline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-      const lines = processedMd.split(/\n/);
-      let html = "";
-      let inUl = false;
-      let inOl = false;
-
-      function closeLists() {
-        if (inUl) { html += "</ul>"; inUl = false; }
-        if (inOl) { html += "</ol>"; inOl = false; }
+        (rows || []).forEach(r => {
+          const tr = document.createElement("tr");
+          (columns || []).forEach((c, idx) => {
+            const td = document.createElement("td");
+            td.textContent = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
+            tr.appendChild(td);
+          });
+          bodyEl.appendChild(tr);
+        });
       }
 
-      for (let rawLine of lines) {
-        let line = rawLine.trim();
-        if (!line) {
-          closeLists();
-          continue;
+      function mdToHtml(md) {
+        if (!md) return "";
+
+        // Normalizar saltos de línea y limpiar sintaxis de imagen markdown (fail-safe)
+        let processedMd = String(md)
+          .replace(/!\[.*?\]\(.*?\)/g, "")
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n");
+
+        // SEPARACIÓN INTELIGENTE (Lista solo si viene después de un separador natural o puntuación)
+        // Esto evita romper oraciones a la mitad.
+        processedMd = processedMd
+          .replace(/([^\n])\s*###/g, "$1\n\n###") // Separar headers si vienen pegados a texto
+          .replace(/([.?!:])\s*(\d+\.\s+)/g, "$1\n$2") // Separar lista numerada solo tras punto
+          .replace(/([.?!:])\s*([-*]\s+)/g, "$1\n$2"); // Separar bullets solo tras punto
+
+        // Split headers conocidos que traen contenido en la misma línea
+        const COMMON_HEADERS = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
+        COMMON_HEADERS.forEach(h => {
+          const re = new RegExp(`(###\\s+${h})\\.?(\\s+[^\\n])`, 'gi');
+          processedMd = processedMd.replace(re, "$1\n\n$2");
+        });
+
+        const esc = (s) => String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+        const applyInline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+        const lines = processedMd.split(/\n/);
+        let html = "";
+        let inUl = false;
+        let inOl = false;
+
+        function closeLists() {
+          if (inUl) { html += "</ul>"; inUl = false; }
+          if (inOl) { html += "</ol>"; inOl = false; }
         }
 
-        // Headers (H3, H2, H1) con lógica de división si vienen pegados
-        if (line.startsWith("### ")) {
-          closeLists();
-          let raw = line.substring(4).trim();
-          // Si el texto es largo (> 40 chars) y tiene espacio o punto, probablemente es header + cuerpo
-          if (raw.length > 40 && (raw.includes(" ") || raw.includes("."))) {
-            // Intentar detectar el final del título (usualmente los primeros 2-4 palabras)
-            // O simplemente usar una lista de títulos conocidos para ser más precisos
-            const commonHeaders = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
-            let foundHeader = commonHeaders.find(h => raw.toLowerCase().startsWith(h.toLowerCase()));
+        for (let rawLine of lines) {
+          let line = rawLine.trim();
+          if (!line) {
+            closeLists();
+            continue;
+          }
 
-            if (foundHeader) {
-              let titleText = raw.substring(0, foundHeader.length).trim();
-              let bodyText = raw.substring(foundHeader.length).trim();
-              html += `<h3>${applyInline(titleText)}</h3>`;
-              if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
-            } else {
-              // Si no es un header conocido, intentamos dividir por el primer punto si es largo
-              let firstDot = raw.indexOf(".");
-              if (firstDot > 0 && firstDot < 40) {
-                let titleText = raw.substring(0, firstDot + 1).trim();
-                let bodyText = raw.substring(firstDot + 1).trim();
+          // Headers (H3, H2, H1) con lógica de división si vienen pegados
+          if (line.startsWith("### ")) {
+            closeLists();
+            let raw = line.substring(4).trim();
+            // Si el texto es largo (> 40 chars) y tiene espacio o punto, probablemente es header + cuerpo
+            if (raw.length > 40 && (raw.includes(" ") || raw.includes("."))) {
+              // Intentar detectar el final del título (usualmente los primeros 2-4 palabras)
+              // O simplemente usar una lista de títulos conocidos para ser más precisos
+              const commonHeaders = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
+              let foundHeader = commonHeaders.find(h => raw.toLowerCase().startsWith(h.toLowerCase()));
+
+              if (foundHeader) {
+                let titleText = raw.substring(0, foundHeader.length).trim();
+                let bodyText = raw.substring(foundHeader.length).trim();
                 html += `<h3>${applyInline(titleText)}</h3>`;
                 if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
               } else {
-                html += `<h3>${applyInline(raw)}</h3>`;
+                // Si no es un header conocido, intentamos dividir por el primer punto si es largo
+                let firstDot = raw.indexOf(".");
+                if (firstDot > 0 && firstDot < 40) {
+                  let titleText = raw.substring(0, firstDot + 1).trim();
+                  let bodyText = raw.substring(firstDot + 1).trim();
+                  html += `<h3>${applyInline(titleText)}</h3>`;
+                  if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
+                } else {
+                  html += `<h3>${applyInline(raw)}</h3>`;
+                }
               }
+            } else {
+              html += `<h3>${applyInline(raw)}</h3>`;
             }
-          } else {
-            html += `<h3>${applyInline(raw)}</h3>`;
+            continue;
           }
-          continue;
-        }
 
-        if (line.startsWith("## ")) {
+          if (line.startsWith("## ")) {
+            closeLists();
+            let title = line.substring(3).trim();
+            html += `<h2>${applyInline(title)}</h2>`;
+            continue;
+          }
+          if (line.startsWith("# ")) {
+            closeLists();
+            let title = line.substring(2).trim();
+            html += `<h1>${applyInline(title)}</h1>`;
+            continue;
+          }
+
+          if (line === "---" || line === "___" || line === "***") {
+            closeLists();
+            html += "<hr>";
+            continue;
+          }
+
+          // Bullets
+          if (line.startsWith("* ") || line.startsWith("- ")) {
+            if (!inUl) { closeLists(); html += "<ul>"; inUl = true; }
+            html += `<li>${applyInline(line.substring(2))}</li>`;
+            continue;
+          }
+
+          // Numbers
+          const olMatch = line.match(/^(\d+)\.\s+(.*)/);
+          if (olMatch) {
+            if (!inOl) { closeLists(); html += "<ol>"; inOl = true; }
+            html += `<li>${applyInline(olMatch[2])}</li>`;
+            continue;
+          }
+
+          // Paragraph (Ignorar líneas que solo tienen un punto si vienen solas)
+          if (line === "." || line === "•") continue;
+
           closeLists();
-          let title = line.substring(3).trim();
-          html += `<h2>${applyInline(title)}</h2>`;
-          continue;
+          html += `<p>${applyInline(line)}</p>`;
         }
-        if (line.startsWith("# ")) {
-          closeLists();
-          let title = line.substring(2).trim();
-          html += `<h1>${applyInline(title)}</h1>`;
-          continue;
-        }
-
-        if (line === "---" || line === "___" || line === "***") {
-          closeLists();
-          html += "<hr>";
-          continue;
-        }
-
-        // Bullets
-        if (line.startsWith("* ") || line.startsWith("- ")) {
-          if (!inUl) { closeLists(); html += "<ul>"; inUl = true; }
-          html += `<li>${applyInline(line.substring(2))}</li>`;
-          continue;
-        }
-
-        // Numbers
-        const olMatch = line.match(/^(\d+)\.\s+(.*)/);
-        if (olMatch) {
-          if (!inOl) { closeLists(); html += "<ol>"; inOl = true; }
-          html += `<li>${applyInline(olMatch[2])}</li>`;
-          continue;
-        }
-
-        // Paragraph (Ignorar líneas que solo tienen un punto si vienen solas)
-        if (line === "." || line === "•") continue;
-
         closeLists();
-        html += `<p>${applyInline(line)}</p>`;
-      }
-      closeLists();
-      return html;
-    }
-
-    // ===========================
-    // Menu Navigation
-    // ===========================
-    function showView(name) {
-      const views = ["CV", "OEE"];
-      for (const v of views) {
-        el("view" + v).style.display = (v === name) ? "" : "none";
+        return html;
       }
 
-      el("btnMenuCV").classList.toggle("active", name === "CV");
-      el("btnMenuOEE").classList.toggle("active", name === "OEE");
+      // ===========================
+      // Menu Navigation
+      // ===========================
+      function showView(name) {
+        const views = ["CV", "OEE"];
+        for (const v of views) {
+          el("view" + v).style.display = (v === name) ? "" : "none";
+        }
 
-      if (name === "CV") {
-        el("topTitle").textContent = "Variables de Control";
-        el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
-      } else {
-        el("topTitle").textContent = "OEE (Eficiencia)";
-        el("topSubtitle").textContent = "Desempeño global y por turno";
-        // Solo consultar automáticamente la primera vez
-        if (!lastOeeRtData) {
-          fetchOeeRealtime();
+        el("btnMenuCV").classList.toggle("active", name === "CV");
+        el("btnMenuOEE").classList.toggle("active", name === "OEE");
+
+        if (name === "CV") {
+          el("topTitle").textContent = "Variables de Control";
+          el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
+        } else {
+          el("topTitle").textContent = "OEE (Eficiencia)";
+          el("topSubtitle").textContent = "Desempeño global y por turno";
+          // Solo consultar automáticamente la primera vez
+          if (!lastOeeRtData) {
+            fetchOeeRealtime();
+          }
         }
       }
-    }
 
-    el("btnMenuCV").addEventListener("click", () => showView("CV"));
-    el("btnMenuOEE").addEventListener("click", () => showView("OEE"));
+      el("btnMenuCV").addEventListener("click", () => showView("CV"));
+      el("btnMenuOEE").addEventListener("click", () => showView("OEE"));
 
-    // OEE Tabs
-    function setOeeTab(active) {
-      el('tabBtnOeeRT').classList.toggle('active', active === 'RT');
-      el('tabBtnOeeHist').classList.toggle('active', active === 'Hist');
-      el('tabContentOeeRT').style.display = (active === 'RT') ? '' : 'none';
-      el('tabContentOeeHist').style.display = (active === 'Hist') ? '' : 'none';
+      // OEE Tabs
+      function setOeeTab(active) {
+        el('tabBtnOeeRT').classList.toggle('active', active === 'RT');
+        el('tabBtnOeeHist').classList.toggle('active', active === 'Hist');
+        el('tabContentOeeRT').style.display = (active === 'RT') ? '' : 'none';
+        el('tabContentOeeHist').style.display = (active === 'Hist') ? '' : 'none';
 
-      if (active === 'RT') {
-        // No fetch on tab switch - preserve state
+        if (active === 'RT') {
+          // No fetch on tab switch - preserve state
+        }
       }
-    }
 
-    el('tabBtnOeeRT').addEventListener('click', () => setOeeTab('RT'));
-    el('tabBtnOeeHist').addEventListener('click', () => setOeeTab('Hist'));
+      el('tabBtnOeeRT').addEventListener('click', () => setOeeTab('RT'));
+      el('tabBtnOeeHist').addEventListener('click', () => setOeeTab('Hist'));
 
-    // (Background refresh removed as per user request)
+      // (Background refresh removed as per user request)
 
-    // ===========================
-    // Clear View
-    // ===========================
-    el("btnClear").addEventListener("click", () => {
-      el("cvInfo").textContent = "";
-      el("cvSummaryCard").style.display = "none";
-      el("cvGrid").innerHTML = "";
-      el("cvAICard").style.display = "none";
-      el("cvAI").innerHTML = "";
+      // ===========================
+      // Clear View
+      // ===========================
+      el("btnClear").addEventListener("click", () => {
+        el("cvInfo").textContent = "";
+        el("cvSummaryCard").style.display = "none";
+        el("cvGrid").innerHTML = "";
+        el("cvAICard").style.display = "none";
+        el("cvAI").innerHTML = "";
 
-      el("oeeRtInfo").textContent = "";
-      el("oeeRtKpis").style.display = "none";
-      el("oeeRtTableCard").style.display = "none";
-      el("oeeRtAICard").style.display = "none";
-      el("oeeRtAI").innerHTML = "";
+        el("oeeRtInfo").textContent = "";
+        el("oeeRtKpis").style.display = "none";
+        el("oeeRtTableCard").style.display = "none";
+        el("oeeRtAICard").style.display = "none";
+        el("oeeRtAI").innerHTML = "";
 
-      el("oeeDayInfo").textContent = "";
-      el("oeeDayTableCard").style.display = "none";
-      el("oeeDayAICard").style.display = "none";
-      el("oeeDayAI").innerHTML = "";
+        el("oeeDayInfo").textContent = "";
+        el("oeeDayTableCard").style.display = "none";
+        el("oeeDayAICard").style.display = "none";
+        el("oeeDayAI").innerHTML = "";
 
-      setStatus("ok", "Listo");
-    });
+        setStatus("ok", "Listo");
+      });
 
-    // ===========================
-    // CONTROL VARIABLES
-    // ===========================
-    function renderCVSummary(rows) {
-      const tbody = el("cvTable").querySelector("tbody");
-      tbody.innerHTML = "";
-      for (const r of rows) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
+      // ===========================
+      // CONTROL VARIABLES
+      // ===========================
+      function renderCVSummary(rows) {
+        const tbody = el("cvTable").querySelector("tbody");
+        tbody.innerHTML = "";
+        for (const r of rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
           <td>${escapeHtml(r.name || r.var_id || "")}</td>
           <td>${escapeHtml(r.device || "")}</td>
           <td>${formatNum(r.points)}</td>
@@ -1729,331 +2095,463 @@
           <td>${formatNum(r.min_value)}</td>
           <td>${formatNum(r.max_value)}</td>
         `;
-        tbody.appendChild(tr);
-      }
-    }
-
-    function renderCVPlots(plots) {
-      const grid = el("cvGrid");
-      grid.innerHTML = "";
-      for (const p of plots) {
-        const card = document.createElement("div");
-        card.className = "plot-card";
-
-        // Replaced simple .plot-title with .plot-header containing title + button
-        const header = document.createElement("div");
-        header.className = "plot-header";
-
-        const titleDiv = document.createElement("div");
-        titleDiv.className = "plot-title";
-        titleDiv.textContent = p.title || p.var_id || "";
-
-        const btn = document.createElement("button");
-        btn.className = "plot-expand-btn";
-        btn.innerHTML = "⛶"; // Icono de expandir
-        btn.title = "Ver en pantalla completa";
-        btn.onclick = () => openFullScreen(p.url, p.title || p.var_id);
-
-        header.appendChild(titleDiv);
-        header.appendChild(btn);
-
-        const iframe = document.createElement("iframe");
-        iframe.className = "plot-frame";
-        iframe.src = p.url;
-
-        card.appendChild(header);
-        card.appendChild(iframe);
-        grid.appendChild(card);
-      }
-    }
-
-    // ===========================
-    // Full Screen Logic
-    // ===========================
-    function openFullScreen(url, title) {
-      el("fsTitle").textContent = title || "Gráfica";
-      el("fsFrame").src = url;
-      el("fsModal").style.display = "flex";
-    }
-
-    function closeFullScreen() {
-      el("fsModal").style.display = "none";
-      el("fsFrame").src = "about:blank"; // Stop iframe content
-    }
-
-    el("fsClose").addEventListener("click", closeFullScreen);
-
-    // Close on backdrop click
-    el("fsModal").addEventListener("click", (e) => {
-      if (e.target.id === "fsModal") closeFullScreen();
-    });
-
-    // Close on Esc key
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && el("fsModal").style.display === "flex") {
-        closeFullScreen();
-      }
-    });
-
-    async function generateControlVars() {
-      const day = (el("cvDay").value || "").trim();
-      if (!day) {
-        el("cvInfo").textContent = "Selecciona una fecha.";
-        return;
+          tbody.appendChild(tr);
+        }
       }
 
-      el("cvInfo").textContent = "";
-      el("cvSummaryCard").style.display = "none";
-      el("cvGrid").innerHTML = "";
-      el("cvAICard").style.display = "none";
-      el("cvAI").innerHTML = "";
+      function renderCVPlots(plots) {
+        const grid = el("cvGrid");
+        grid.innerHTML = "";
+        for (const p of plots) {
+          const card = document.createElement("div");
+          card.className = "plot-card";
 
-      setStatus("busy", "Generando...");
-      setBtnBusy("btnGenCV", true);
+          // Replaced simple .plot-title with .plot-header containing title + button
+          const header = document.createElement("div");
+          header.className = "plot-header";
 
-      try {
-        const res = await fetch("/api/control-variables/day", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ day })
-        });
-        const data = await res.json();
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "plot-title";
+          titleDiv.textContent = p.title || p.var_id || "";
 
-        if (!res.ok) {
-          throw new Error(data.detail || data.error || "Error en /api/control-variables/day");
+          const btn = document.createElement("button");
+          btn.className = "plot-expand-btn";
+          btn.innerHTML = "⛶"; // Icono de expandir
+          btn.title = "Ver en pantalla completa";
+          btn.onclick = () => openFullScreen(p.url, p.title || p.var_id);
+
+          header.appendChild(titleDiv);
+          header.appendChild(btn);
+
+          const iframe = document.createElement("iframe");
+          iframe.className = "plot-frame";
+          iframe.src = p.url;
+
+          card.appendChild(header);
+          card.appendChild(iframe);
+          grid.appendChild(card);
         }
-
-        lastCvDay = day;
-        lastCvData = data;
-
-        if (data.ai_analysis) {
-          el("cvAI").innerHTML = mdToHtml(String(data.ai_analysis));
-          el("cvAICard").style.display = "";
-        }
-
-        if (Array.isArray(data.summary)) {
-          renderCVSummary(data.summary);
-          el("cvSummaryCard").style.display = "";
-        }
-
-        if (Array.isArray(data.plots)) {
-          renderCVPlots(data.plots);
-        }
-
-        setStatus("ok", "Listo");
-      } catch (err) {
-        el("cvInfo").textContent = "⚠️ " + (err.message || err);
-        setStatus("err", "Error");
-      } finally {
-        setBtnBusy("btnGenCV", false);
       }
-    }
 
-    el("btnGenCV").addEventListener("click", generateControlVars);
+      // ===========================
+      // Full Screen Logic
+      // ===========================
+      function openFullScreen(url, title) {
+        el("fsTitle").textContent = title || "Gráfica";
+        el("fsFrame").src = url;
+        el("fsModal").style.display = "flex";
+      }
 
-    // ===========================
-    // OEE REALTIME
-    // ===========================
-    async function fetchOeeRealtime() {
-      el("oeeRtInfo").textContent = "";
-      el("oeeRtKpis").style.display = "none";
-      el("oeeRtTableCard").style.display = "none";
-      el("oeeRtAICard").style.display = "none";
-      el("oeeRtAI").innerHTML = "";
+      function closeFullScreen() {
+        el("fsModal").style.display = "none";
+        el("fsFrame").src = "about:blank"; // Stop iframe content
+      }
 
-      setStatus("busy", "Consultando...");
-      setBtnBusy("btnFetchOeeRT", true, "Consultando...");
-      try {
-        const res = await fetch("/api/oee/realtime");
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.detail || data.error || "Error en /api/oee/realtime");
+      el("fsClose").addEventListener("click", closeFullScreen);
+
+      // Close on backdrop click
+      el("fsModal").addEventListener("click", (e) => {
+        if (e.target.id === "fsModal") closeFullScreen();
+      });
+
+      // Close on Esc key
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && el("fsModal").style.display === "flex") {
+          closeFullScreen();
         }
+      });
 
-        const rows = data.rows || [];
-        const cols = data.columns || [];
-
-        if (rows.length === 0) {
-          el("oeeRtInfo").textContent = "No hay datos de snapshot.";
-          setStatus("ok", "Listo");
+      async function generateControlVars() {
+        const day = (el("cvDay").value || "").trim();
+        if (!day) {
+          el("cvInfo").textContent = "Selecciona una fecha.";
           return;
         }
 
-        const first = rows[0] || [];
-        const idx = (name) => cols.findIndex(c => String(c).toLowerCase() === String(name).toLowerCase());
+        el("cvInfo").textContent = "";
+        el("cvSummaryCard").style.display = "none";
+        el("cvGrid").innerHTML = "";
+        el("cvAICard").style.display = "none";
+        el("cvAI").innerHTML = "";
 
-        const iOee = idx("OEE");
-        const iAv = idx("Availability");
-        const iPe = idx("Performance");
-        const iQu = idx("Producto Conforme");
-        const iLine = idx("LineName");
-        const iSnap = idx("SnapshotAtLocal");
+        setStatus("busy", "Generando...");
+        setBtnBusy("btnGenCV", true);
 
-        el("kpiOee").textContent = (iOee >= 0) ? toPct(first[iOee]) : "—";
-        el("kpiAvail").textContent = (iAv >= 0) ? toPct(first[iAv]) : "—";
-        el("kpiPerf").textContent = (iPe >= 0) ? toPct(first[iPe]) : "—";
-        el("kpiQual").textContent = (iQu >= 0) ? toPct(first[iQu]) : "—";
+        try {
+          const res = await fetch("api/control-variables/day", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ day })
+          });
+          const data = await res.json();
 
-        const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
-        const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
-        el("kpiOeeHint").textContent = (line || snap) ? `${line} ${snap ? "— " + snap : ""}` : "";
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Error en /api/control-variables/day");
+          }
 
-        el("oeeRtKpis").style.display = "";
+          lastCvDay = day;
+          lastCvData = data;
 
-        buildTable(el("oeeRtHead"), el("oeeRtBody"), cols, rows, LABEL_OEE_RT);
-        el("oeeRtTableCard").style.display = "";
+          if (data.ai_analysis) {
+            el("cvAI").innerHTML = mdToHtml(String(data.ai_analysis));
+            el("cvAICard").style.display = "";
+          }
 
-        lastOeeRtData = data;
+          if (Array.isArray(data.summary)) {
+            renderCVSummary(data.summary);
+            el("cvSummaryCard").style.display = "";
+          }
 
-        if (data.ai_analysis) {
-          el("oeeRtAI").innerHTML = mdToHtml(String(data.ai_analysis));
-          el("oeeRtAICard").style.display = "";
-        }
+          if (Array.isArray(data.plots)) {
+            renderCVPlots(data.plots);
+          }
 
-        setStatus("ok", "Listo");
-      } catch (err) {
-        el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
-        setStatus("err", "Error");
-      } finally {
-        setBtnBusy("btnFetchOeeRT", false);
-      }
-    }
-
-    el("btnFetchOeeRT").addEventListener("click", fetchOeeRealtime);
-
-    // ===========================
-    // OEE DAY/TURN
-    // ===========================
-    async function fetchOeeDay() {
-      const day = (el("oeeDay").value || "").trim();
-      const shift = (el("oeeShift").value || "").trim();
-
-      if (!day) {
-        el("oeeDayInfo").textContent = "Selecciona una fecha.";
-        return;
-      }
-
-      el("oeeDayInfo").textContent = "";
-      el("oeeDayTableCard").style.display = "none";
-      el("oeeDayAICard").style.display = "none";
-      el("oeeDayAI").innerHTML = "";
-
-      setStatus("busy", "Consultando...");
-      setBtnBusy("btnFetchOeeDay", true, "Consultando...");
-      try {
-        const body = { day: day };
-        if (shift) body.shift_name = shift;
-
-        const res = await fetch("/api/oee/day-turn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.detail || data.error || "Error en /api/oee/day-turn");
-        }
-
-        lastOeeDay = day;
-        lastOeeShift = shift ? shift : null;
-        lastOeeDayData = data;
-
-        const rows = data.rows || [];
-        const cols = data.columns || [];
-        if (rows.length === 0) {
-          el("oeeDayInfo").textContent = "No hay datos para esa fecha/turno.";
           setStatus("ok", "Listo");
+        } catch (err) {
+          el("cvInfo").textContent = "⚠️ " + (err.message || err);
+          setStatus("err", "Error");
+        } finally {
+          setBtnBusy("btnGenCV", false);
+        }
+      }
+
+      el("btnGenCV").addEventListener("click", generateControlVars);
+
+      // ===========================
+      // OEE REALTIME
+      // ===========================
+      async function fetchOeeRealtime() {
+        el("oeeRtInfo").textContent = "";
+        el("oeeRtKpis").style.display = "none";
+        el("oeeRtTableCard").style.display = "none";
+        el("oeeRtAICard").style.display = "none";
+        el("oeeRtAI").innerHTML = "";
+
+        setStatus("busy", "Consultando...");
+        setBtnBusy("btnFetchOeeRT", true, "Consultando...");
+        try {
+          const res = await fetch("api/oee/realtime");
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Error en /api/oee/realtime");
+          }
+
+          const rows = data.rows || [];
+          const cols = data.columns || [];
+
+          if (rows.length === 0) {
+            el("oeeRtInfo").textContent = "No hay datos de snapshot.";
+            setStatus("ok", "Listo");
+            return;
+          }
+
+          const first = rows[0] || [];
+          const idx = (name) => cols.findIndex(c => String(c).toLowerCase() === String(name).toLowerCase());
+
+          const iOee = idx("OEE");
+          const iAv = idx("Availability");
+          const iPe = idx("Performance");
+          const iQu = idx("Producto Conforme");
+          const iLine = idx("LineName");
+          const iSnap = idx("SnapshotAtLocal");
+
+          el("kpiOee").textContent = (iOee >= 0) ? toPct(first[iOee]) : "—";
+          el("kpiAvail").textContent = (iAv >= 0) ? toPct(first[iAv]) : "—";
+          el("kpiPerf").textContent = (iPe >= 0) ? toPct(first[iPe]) : "—";
+          el("kpiQual").textContent = (iQu >= 0) ? toPct(first[iQu]) : "—";
+
+          const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
+          const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
+          el("kpiOeeHint").textContent = (line || snap) ? `${line} ${snap ? "— " + snap : ""}` : "";
+
+          el("oeeRtKpis").style.display = "";
+
+          buildTable(el("oeeRtHead"), el("oeeRtBody"), cols, rows, LABEL_OEE_RT);
+          el("oeeRtTableCard").style.display = "";
+
+          lastOeeRtData = data;
+
+          if (data.ai_analysis) {
+            el("oeeRtAI").innerHTML = mdToHtml(String(data.ai_analysis));
+            el("oeeRtAICard").style.display = "";
+          }
+
+          setStatus("ok", "Listo");
+        } catch (err) {
+          el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
+          setStatus("err", "Error");
+        } finally {
+          setBtnBusy("btnFetchOeeRT", false);
+        }
+      }
+
+      el("btnFetchOeeRT").addEventListener("click", fetchOeeRealtime);
+
+      // ===========================
+      // OEE DAY/TURN
+      // ===========================
+      async function fetchOeeDay() {
+        const day = (el("oeeDay").value || "").trim();
+        const shift = (el("oeeShift").value || "").trim();
+
+        if (!day) {
+          el("oeeDayInfo").textContent = "Selecciona una fecha.";
           return;
         }
 
-        buildTable(el("oeeDayHead"), el("oeeDayBody"), cols, rows, LABEL_OEE_DAY);
-        el("oeeDayTableCard").style.display = "";
+        el("oeeDayInfo").textContent = "";
+        el("oeeDayTableCard").style.display = "none";
+        el("oeeDayAICard").style.display = "none";
+        el("oeeDayAI").innerHTML = "";
 
-        if (data.ai_analysis && String(data.ai_analysis).trim()) {
-          el("oeeDayAI").innerHTML = mdToHtml(String(data.ai_analysis));
-          el("oeeDayAICard").style.display = "";
+        setStatus("busy", "Consultando...");
+        setBtnBusy("btnFetchOeeDay", true, "Consultando...");
+        try {
+          const body = { day: day };
+          if (shift) body.shift_name = shift;
+
+          const res = await fetch("api/oee/day-turn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Error en /api/oee/day-turn");
+          }
+
+          lastOeeDay = day;
+          lastOeeShift = shift ? shift : null;
+          lastOeeDayData = data;
+
+          const rows = data.rows || [];
+          const cols = data.columns || [];
+          if (rows.length === 0) {
+            el("oeeDayInfo").textContent = "No hay datos para esa fecha/turno.";
+            setStatus("ok", "Listo");
+            return;
+          }
+
+          buildTable(el("oeeDayHead"), el("oeeDayBody"), cols, rows, LABEL_OEE_DAY);
+          el("oeeDayTableCard").style.display = "";
+
+          if (data.ai_analysis && String(data.ai_analysis).trim()) {
+            el("oeeDayAI").innerHTML = mdToHtml(String(data.ai_analysis));
+            el("oeeDayAICard").style.display = "";
+          }
+
+          setStatus("ok", "Listo");
+        } catch (err) {
+          el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
+          setStatus("err", "Error");
+        } finally {
+          setBtnBusy("btnFetchOeeDay", false);
         }
-
-        setStatus("ok", "Listo");
-      } catch (err) {
-        el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
-        setStatus("err", "Error");
-      } finally {
-        setBtnBusy("btnFetchOeeDay", false);
       }
-    }
 
-    el("btnFetchOeeDay").addEventListener("click", fetchOeeDay);
+      el("btnFetchOeeDay").addEventListener("click", fetchOeeDay);
 
-    // ===========================
-    // Download Handlers
-    // ===========================
-    // ===========================
-    // Download Handlers
-    // ===========================
-    el("btnDlCvPdf")?.addEventListener("click", async () => {
-      if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
-      setBtnBusy("btnDlCvPdf", true, "Descargando...");
-      try {
-        await downloadFrom(`/api/report/control-variables/day`, `control_vars_${lastCvDay}.pdf`, {
-          day: lastCvDay,
-          format: "pdf",
-          summary: lastCvData.summary,
-          ai_analysis: lastCvData.ai_analysis
-        });
-      } finally {
-        setBtnBusy("btnDlCvPdf", false);
-      }
-    });
-
-
-
-    el("btnDlOeeRtPdf")?.addEventListener("click", async () => {
-      if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
-      setBtnBusy("btnDlOeeRtPdf", true, "Descargando...");
-      try {
-        await downloadFrom(`/api/report/oee/realtime`, `oee_realtime.pdf`, {
-          format: "pdf",
-          rows: lastOeeRtData.rows,
-          columns: lastOeeRtData.columns,
-          ai_analysis: lastOeeRtData.ai_analysis
-        });
-      } finally {
-        setBtnBusy("btnDlOeeRtPdf", false);
-      }
-    });
+      // ===========================
+      // Download Handlers
+      // ===========================
+      // ===========================
+      // Download Handlers
+      // ===========================
+      el("btnDlCvPdf")?.addEventListener("click", async () => {
+        if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
+        setBtnBusy("btnDlCvPdf", true, "Descargando...");
+        try {
+          await downloadFrom(`api/report/control-variables/day`, `control_vars_${lastCvDay}.pdf`, {
+            day: lastCvDay,
+            format: "pdf",
+            summary: lastCvData.summary,
+            ai_analysis: lastCvData.ai_analysis
+          });
+        } finally {
+          setBtnBusy("btnDlCvPdf", false);
+        }
+      });
 
 
 
-    el("btnDlOeeDayPdf")?.addEventListener("click", async () => {
-      if (!lastOeeDay || !lastOeeDayData) return alert("Consulta primero un día/turno.");
-      setBtnBusy("btnDlOeeDayPdf", true, "Descargando...");
-      try {
-        await downloadFrom(`/api/report/oee/day`, `oee_day_${lastOeeDay}.pdf`, {
-          day: lastOeeDay,
-          shift_name: lastOeeShift,
-          format: "pdf",
-          rows: lastOeeDayData.rows,
-          columns: lastOeeDayData.columns,
-          ai_analysis: lastOeeDayData.ai_analysis
-        });
-      } finally {
-        setBtnBusy("btnDlOeeDayPdf", false);
-      }
-    });
+      el("btnDlOeeRtPdf")?.addEventListener("click", async () => {
+        if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
+        setBtnBusy("btnDlOeeRtPdf", true, "Descargando...");
+        try {
+          await downloadFrom(`api/report/oee/realtime`, `oee_realtime.pdf`, {
+            format: "pdf",
+            rows: lastOeeRtData.rows,
+            columns: lastOeeRtData.columns,
+            ai_analysis: lastOeeRtData.ai_analysis
+          });
+        } finally {
+          setBtnBusy("btnDlOeeRtPdf", false);
+        }
+      });
 
 
 
-    // Set today's date as default and max
-    const today = todayISO();
-    el("cvDay").value = today;
-    el("cvDay").max = today;
-    el("oeeDay").value = today;
-    el("oeeDay").max = today;
+      el("btnDlOeeDayPdf")?.addEventListener("click", async () => {
+        if (!lastOeeDay || !lastOeeDayData) return alert("Consulta primero un día/turno.");
+        setBtnBusy("btnDlOeeDayPdf", true, "Descargando...");
+        try {
+          await downloadFrom(`api/report/oee/day`, `oee_day_${lastOeeDay}.pdf`, {
+            day: lastOeeDay,
+            shift_name: lastOeeShift,
+            format: "pdf",
+            rows: lastOeeDayData.rows,
+            columns: lastOeeDayData.columns,
+            ai_analysis: lastOeeDayData.ai_analysis
+          });
+        } finally {
+          setBtnBusy("btnDlOeeDayPdf", false);
+        }
+      });
 
-    // Inicializar vista
-    showView("CV");
-  </script>
+
+
+      // Set today's date as default and max
+      const today = todayISO();
+      el("cvDay").value = today;
+      el("cvDay").max = today;
+      el("oeeDay").value = today;
+      el("oeeDay").max = today;
+
+      // Inicializar vista
+      showView("CV");
+
+      // ===========================
+      // DUMA CHAT LOGIC
+      // ===========================
+      const chatWidget = {
+        threadId: localStorage.getItem("duma_thread_id"),
+        isOpen: false,
+        isTyping: false,
+
+        init() {
+          el("chatBubbleBtn").addEventListener("click", () => this.toggle());
+          el("chatCloseBtn").addEventListener("click", () => this.close());
+          el("chatSendBtn").addEventListener("click", () => this.handleSend());
+          el("chatInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") this.handleSend();
+          });
+        },
+
+        toggle() {
+          this.isOpen ? this.close() : this.open();
+        },
+
+        open() {
+          el("chatWindow").style.display = "flex";
+          this.isOpen = true;
+          el("chatInput").focus();
+        },
+
+        close() {
+          el("chatWindow").style.display = "none";
+          this.isOpen = false;
+        },
+
+        async handleSend() {
+          const input = el("chatInput").value.trim();
+          if (!input || this.isTyping) return;
+
+          el("chatInput").value = "";
+          this.addMessage("user", input);
+          this.showTyping(true);
+
+          // Hide suggestions after first message
+          if (el("chatSuggestions")) el("chatSuggestions").style.display = "none";
+
+          try {
+            const res = await fetch("chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                input: input,
+                thread_id: this.threadId
+              })
+            });
+
+            const data = await res.json();
+            this.showTyping(false);
+
+            if (data.thread_id) {
+              this.threadId = data.thread_id;
+              localStorage.setItem("duma_thread_id", data.thread_id);
+            }
+
+            if (data.message) {
+              this.addMessage("bot", data.message, data.images);
+            } else if (data.error) {
+              this.addMessage("bot", "⚠️ Error: " + data.error);
+            }
+
+          } catch (err) {
+            this.showTyping(false);
+            this.addMessage("bot", "⚠️ Error de conexión con el servidor.");
+          }
+        },
+
+        addMessage(role, text, images = []) {
+          const container = el("chatMsgs");
+          const msg = document.createElement("div");
+          msg.className = "msg " + role;
+
+          // Usar mdToHtml existente para el asistente
+          if (role === "bot") {
+            msg.innerHTML = mdToHtml(text);
+
+            if (images && images.length > 0) {
+              images.forEach(imgUrl => {
+                const safeUrl = imgUrl.replace('sandbox:', '');
+
+                const btn = document.createElement("div");
+                btn.className = "chat-plot-btn";
+                btn.innerHTML = `<span>📊 Ver gráfica</span>`;
+                btn.onclick = () => openFullScreen(safeUrl, "Gráfica de Duma");
+                msg.appendChild(btn);
+              });
+            }
+          } else {
+            msg.textContent = text;
+          }
+
+          container.appendChild(msg);
+          container.scrollTop = container.scrollHeight;
+        },
+
+        handleSuggestion(chipEl) {
+          const text = chipEl.textContent;
+          el("chatInput").value = text;
+          this.handleSend();
+        },
+
+        showTyping(show) {
+          this.isTyping = show;
+          el("chatSendBtn").disabled = show;
+
+          const existing = document.querySelector(".typing-wrapper");
+          if (existing) existing.remove();
+
+          if (show) {
+            const wrapper = document.createElement("div");
+            wrapper.className = "typing-wrapper";
+            wrapper.innerHTML = `
+            <div class="msg bot typing">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+          `;
+            el("chatMsgs").appendChild(wrapper);
+            el("chatMsgs").scrollTop = el("chatMsgs").scrollHeight;
+          }
+        }
+      };
+
+      chatWidget.init();
+    </script>
 </body>
 
 </html>

@@ -214,7 +214,8 @@ def ai_oee_day_turn(day: str, rows: list[dict], shift_name: str | None = None) -
 
 
 # ---------- App FastAPI ----------
-app = FastAPI(title="Duma Planta Backend", version="1.0.3")
+ROOT_PATH = os.getenv("ROOT_PATH", "")
+app = FastAPI(title="Duma Planta Backend", version="1.0.3", root_path=ROOT_PATH)
 
 # CORS si vas a servir desde otro origen
 app.add_middleware(
@@ -311,17 +312,66 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
 
     fig, ax = plt.subplots(figsize=(width/100.0, height/100.0))
 
+    hue = spec.get("hue")
+    
+    # Limpieza de columnas (quitar espacios en blanco que pyodbc a veces deja)
+    df.columns = [c.strip() for c in df.columns]
+
+    # --- VERBOSE DEBUG ---
+    print(f"\n[DEBUG CHART] Generating {chart} chart: '{title}'")
+    print(f"[DEBUG CHART] spec: {json.dumps(spec)}")
+    print(f"[DEBUG CHART] columns: {df.columns.tolist()}")
+
+    # --- AGGRESSIVE SMART HUE DETECTION ---
+    if not hue and x in df.columns:
+        # Si hay duplicados en X, o si es OEE y tenemos columna de Turno, forzamos grouping
+        has_duplicates = df[x].duplicated().any()
+        is_oee = any("OEE" in str(y).upper() for y in ys)
+        
+        if has_duplicates or is_oee:
+            for potential in ["Turno", "WorkShiftName", "WorkShift", "Shift", "Linea"]:
+                if potential in df.columns and potential != x:
+                    hue = potential
+                    print(f"[DEBUG CHART] Auto-detected hue: '{hue}' (duplicates={has_duplicates}, oee={is_oee})")
+                    break
+
     if chart in ("line", "bar"):
         if not (x and ys):
             raise ValueError("Para line/bar especifica 'x' y 'ys'")
-        for y in ys:
-            if chart == "line":
-                ax.plot(df[x], df[y], label=y, marker="o")
+
+        if hue and hue in df.columns:
+            print(f"[DEBUG CHART] Using Hue grouping by: '{hue}'")
+            # Una serie por cada valor único del hue, ordenados si son turnos
+            unique_hues = df[hue].dropna().unique()
+            
+            # Ordenar los turnos lógicamente si es posible
+            if all(str(t) in ["Primer Turno", "Segundo Turno", "Tercer Turno"] for t in unique_hues):
+                order = {"Primer Turno": 1, "Segundo Turno": 2, "Tercer Turno": 3}
+                unique_hues = sorted(unique_hues, key=lambda tx: order.get(str(tx), 9))
             else:
-                ax.bar(df[x], df[y], label=y)
+                unique_hues = sorted(unique_hues)
+
+            for category in unique_hues:
+                df_cat = df[df[hue] == category].sort_values(by=x)
+                if df_cat.empty:
+                    continue
+                for y in ys:
+                    label = f"{category}" if len(ys) == 1 else f"{category} - {y}"
+                    if chart == "line":
+                        ax.plot(df_cat[x], df_cat[y], label=label, marker="o")
+                    else:
+                        ax.bar(df_cat[x], df_cat[y], label=label, alpha=0.7)
+        else:
+            print(f"[DEBUG CHART] No hue grouping applied (Single series). Hue: {hue}, Columns: {df.columns.tolist()}")
+            for y in ys:
+                if chart == "line":
+                    ax.plot(df[x], df[y], label=y, marker="o")
+                else:
+                    ax.bar(df[x], df[y], label=y, alpha=0.8)
+
         ax.set_xlabel(x or "")
         ax.set_ylabel(", ".join(ys))
-        ax.legend()
+        ax.legend(loc="best", fontsize="small")
     elif chart == "heatmap":
         data = df.select_dtypes(include="number")
         im = ax.imshow(data.values, aspect="auto")
@@ -367,7 +417,7 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     plt.savefig(fpath, dpi=120)
     plt.close(fig)
 
-    return f"/static/plots/{fname}"
+    return f"static/plots/{fname}"
 
 
 # ---------- Core assistant step ----------
@@ -520,18 +570,12 @@ ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
                             # ------------------------------------------------------------------
                             # 2) HISTÓRICO POR TURNO / DÍA (H1.1)
                             # ------------------------------------------------------------------
-                            else:  # mode == "hist_turno_dia"
-                                # ----------------------------------------------------------
-                                # Fecha base (@day): si viene day la usamos; si no, asumimos AYER
-                                # ❗ NO se hace day+1 aquí. El ajuste del Tercer Turno
-                                # se resuelve 100% en SQL con la "fecha técnica".
-                                # ----------------------------------------------------------
+                            elif mode == "hist_turno_dia":
                                 if day:
                                     day_sql = f"CONVERT(date, '{day}')"
                                 else:
                                     day_sql = "CAST(GETDATE()-1 AS date)"
 
-                                # Filtro opcional por nombre de turno
                                 shift_filter = ""
                                 if shift_name:
                                     safe_shift = str(shift_name).replace("'", "''")
@@ -542,10 +586,11 @@ DECLARE @day DATE = {day_sql};
 
 SELECT
     wst.Name AS Turno,
-
-    -- ✅ Fecha técnica (simplificada): 
-    -- Se usa StartDate para todos los turnos.
-    CONVERT(date, wse.StartDate) AS Fecha,
+    -- ✅ Fecha técnica (Fecha Operativa): 
+    CASE
+        WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+        ELSE CAST(wse.StartDate AS date)
+    END AS Fecha,
 
     wses.Oee                       AS OEE,
     wses.Availability              AS Disponibilidad,
@@ -570,9 +615,13 @@ WHERE
     AND wse.Active = 1
     AND wses.Active = 1
     AND wst.Active = 1
-
-    -- ✅ Filtro por fecha de inicio (StartDate)
-    AND CONVERT(date, wse.StartDate) = @day
+    -- ✅ Filtro por Fecha Operativa
+    AND (
+        CASE
+            WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+        END
+    ) = @day
     {shift_filter}
 ORDER BY
     Fecha,
@@ -582,6 +631,58 @@ ORDER BY
         WHEN N'Tercer Turno' THEN 3
         ELSE 9
     END;
+"""
+
+                            # ------------------------------------------------------------------
+                            # 3) HISTÓRICO POR RANGO (H1.2)
+                            # ------------------------------------------------------------------
+                            elif mode == "hist_turno_rango":
+                                from_sql = f"CONVERT(date, '{from_day}')" if from_day else "DATEADD(day, -7, CAST(GETDATE() AS date))"
+                                to_sql = f"CONVERT(date, '{to_day}')" if to_day else "CAST(GETDATE() AS date)"
+                                
+                                shift_filter = ""
+                                if shift_name:
+                                    safe_shift = str(shift_name).replace("'", "''")
+                                    shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+
+                                select_sql = f"""
+DECLARE @fromDay DATE = {from_sql};
+DECLARE @toDay DATE = {to_sql};
+
+SELECT
+    CASE
+        WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+        ELSE CAST(wse.StartDate AS date)
+    END                                   AS Fecha,
+    wst.Name                              AS Turno,
+    wses.Oee                              AS OEE,
+    wses.Availability                     AS Disponibilidad,
+    wses.Performance                      AS Desempeno,
+    wses.Quality                          AS [Producto Conforme]
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions      AS wse
+    ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates       AS wst
+    ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE
+    wse.Status = 'closed'
+    AND wse.Active = 1
+    AND wses.Active = 1
+    AND wst.Active = 1
+    AND (
+        CASE
+            WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+        END
+    ) >= @fromDay
+    AND (
+        CASE
+            WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+        END
+    ) <= @toDay
+    {shift_filter}
+ORDER BY Fecha, Turno;
 """
 
 
@@ -601,6 +702,52 @@ ORDER BY
                                 )
                             })
 
+                        elif name == "get_control_variables":
+                            day = args.get("day")
+                            if not day:
+                                day = date.today().isoformat()
+                            
+                            try:
+                                # Usar lógica existente en main.py para variables críticas
+                                from main import load_critical_reads_for_day, summarize_critical_day, plot_critical_timeseries_day, CRITICAL_VARS
+                                import os, re
+
+                                df_day = load_critical_reads_for_day(day)
+                                summary_df = summarize_critical_day(df_day)
+                                summary = summary_df.to_dict(orient="records")
+
+                                # Generar o encontrar los plots para que Duma los pueda mostrar
+                                out_dir = os.path.join("static", "plots")
+                                os.makedirs(out_dir, exist_ok=True)
+                                plots = []
+                                
+                                if not df_day.empty:
+                                    var_ids = sorted(df_day["ProductionLineControlVariableId"].dropna().astype(str).str.lower().unique().tolist())
+                                    for vid in var_ids:
+                                        meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.lower() == vid), None)
+                                        safe_name = (meta.get("device", "var") + "_" + meta.get("name", "var")) if meta else vid
+                                        safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", safe_name.strip().lower()).strip("_")
+                                        filename = f"{day}_dia_{safe_name}.html"
+                                        out_path = os.path.join(out_dir, filename)
+                                        
+                                        # Generar si no existe o forzar actualización
+                                        plot_critical_timeseries_day(df_day, vid, out_path)
+                                        plots.append({
+                                            "var_id": vid,
+                                            "title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid,
+                                            "url": f"static/plots/{filename}"
+                                        })
+
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({"day": day, "summary": summary, "plots": plots}, ensure_ascii=False)
+                                })
+                            except Exception as e:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({"error": str(e)}, ensure_ascii=False)
+                                })
+
                         elif name == "viz_render":
                             rows = args.get("rows")
                             columns = args.get("columns")
@@ -616,7 +763,9 @@ ORDER BY
                             else:
                                 raise ValueError("Proporciona 'rows/columns' o 'select_sql'.")
 
+                            print(f"DEBUG viz_render tool called with spec: {json.dumps(spec, indent=2)}")
                             img_url = render_chart_from_df(df, spec)
+                            print(f"DEBUG viz_render DataFrame columns: {df.columns.tolist()}")
                             images_out.append(img_url)
                             captions_out.append(spec.get("title") or "Gráfico")
 
@@ -704,24 +853,26 @@ ORDER BY
 
         extra_instructions = (
             f"{system_prompt_content}\n\n"
+            "CATÁLOGO DE SENSORES (VARIABLES DE CONTROL):\n"
+            f"{json.dumps(CRITICAL_VARS, indent=2, ensure_ascii=False)}\n\n"
             "INSTRUCCIONES ADICIONALES DE SESIÓN:\n"
             "Responde en español. "
             "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
-            "NO muestres consultas SQL en la respuesta final (salvo que el usuario lo pida explícitamente). "
-            "Cuando la pregunta requiera datos de la base, DEBES llamar a la función sql_query con UNA sola SELECT. "
+            "NO muestres consultas SQL en la respuesta final. "
+            "Para OEE, disponibilidad, desempeño y calidad, usa sql_query. "
+            "Para rangos de fechas (ej. 'la semana pasada', 'últimos 7 días'), usa mode='hist_turno_rango' con from_day y to_day. "
+            "**REGLA CRÍTICA DE GRÁFICAS:** Si usas una herramienta que genera una gráfica (como `viz_render` o `get_control_variables`), **PROHIBIDO** usar la sintaxis de imagen markdown `![]()`. "
+            "NUNCA escribas enlaces que empiecen por `sandbox:/static/plots/...`. "
+            "Simplemente menciona en tu respuesta que has generado la gráfica (ej: 'Aquí tienes la gráfica del OEE...'). "
+            "El sistema detectará automáticamente la imagen y mostrará un botón de 'Ver gráfica' debajo de tu mensaje. No intentes generarlo tú mismo."
+            "Usa rutas relativas directas (ej: static/plots/archivo.png o .html) solo dentro de las llamadas a herramientas, nunca en el texto final. "
+            "IMPORTANTE: Para gráficas de OEE por turno/día (serie de tiempo), usa `chart: 'line'`, `x: 'Fecha'`, `ys: ['OEE']` y ESENCIAL usar `hue: 'Turno'`. Sin el parámetro `hue`, la gráfica será ilegible y confusa. "
+            "Usa siempre los nombres de columna `Fecha` y `Turno` tal cual aparecen en el cookbook. "
+            "Para comparaciones de barras entre turnos, usa `chart: 'bar'`, `x: 'Turno'`, `ys: ['OEE']`. "
             "Consulta los documentos adjuntos (schema/cookbook) y CONFÍA en ellos. "
-            "Tablas disponibles (con esquema): dbo.ProductionLineIntervals, dbo.ProductionLines, "
-            "dbo.WorkShiftExecutions, dbo.WorkShiftTemplates, ind.WorkShiftExecutionSummaries. "
-            "No pidas confirmación de nombres de columnas: úsalos tal cual. "
             "Si una consulta falla por nombre inválido, corrígelo tú mismo según el esquema y reintenta. "
-            "Para TIEMPO REAL / ACTUAL debes usar SIEMPRE la receta RT.1 del archivo duma_cookbook.txt "
-            "sobre dbo.ProductionLineIntervals (TOP 1 ordenado por IntervalBegin DESC, CreatedAt DESC). "
-            "Para cualquier pregunta de TURNOS o FECHAS (día específico, rango de fechas, 'ayer', 'primer turno del 27 al 30', etc.), "
-            "usa EXCLUSIVAMENTE las recetas H1.x del duma_cookbook.txt (H1.1, H1.2, H1.3), "
-            "basadas en dbo.WorkShiftExecutions + dbo.WorkShiftTemplates + ind.WorkShiftExecutionSummaries. "
-            "No inventes nuevas consultas: copia la receta que corresponda y solo ajusta @day, @fromDay, @toDay y @shiftName. "
-            "Tras ejecutar sql_query, resume OEE, Disponibilidad, Desempeño y Producto Conforme en % (2 decimales) y "
-            "menciona el nombre del turno (Primer/Segundo/Tercero) y la fecha local correspondiente. "
+            "Para TIEMPO REAL / ACTUAL de OEE debes usar RT.1. "
+            "Para cualquier pregunta de TURNOS o FECHAS de OEE, usa H1.x. "
             "Usa viz_render sólo si el usuario pide comparaciones, tendencias o gráficas."
         )
 
@@ -875,6 +1026,41 @@ ORDER BY
                             break
             except Exception as e:
                 logging.error(f"Error leyendo mensajes del hilo (run3 por SQL literal/error): {e}")
+
+        # 8) Scanner de imágenes post-proceso: mueve links de plots a la lista de imágenes para que el frontend los embeba
+        if last_text:
+            import re
+            # Buscamos cualquier link que contenga /static/plots/... (incluyendo sandbox: o dominios)
+            # Ahora detectamos .html, .png, .jpg, .jpeg
+            plot_pattern = r"(?:(?:https?://[^\s)\]]+)|sandbox:)?(?:/)?static/plots/[^\s)\]]+\.(?:html|png|jpg|jpeg)"
+            found_plots = re.findall(plot_pattern, last_text, re.IGNORECASE)
+            
+            for p_url in found_plots:
+                # Normalizamos a ruta relativa del servidor
+                if "static/plots/" in p_url:
+                    parts = p_url.split("static/plots/")
+                    # Limpiamos el nombre del archivo de caracteres de cierre de markdown o paréntesis
+                    filename = parts[-1].split("?")[0].split("#")[0].strip(")] \t\r\n")
+                    clean_url = f"static/plots/{filename}"
+                    
+                    if clean_url not in images_out:
+                        images_out.append(clean_url)
+                        # Intentar extraer caption si estaba en formato markdown ![caption](url)
+                        cap_match = re.search(r"!\[([^\]]*)\]\(" + re.escape(p_url) + r"\)", last_text)
+                        if cap_match and cap_match.group(1):
+                            captions_out.append(cap_match.group(1))
+                        else:
+                            is_oee = "oee" in filename.lower()
+                            captions_out.append("Gráfico de OEE" if is_oee else "Gráfico de Sensor")
+            
+            # Limpieza robusta del texto final
+            last_text = re.sub(r"!\[[^\]]*\]\(" + plot_pattern + r"\)", "", last_text, flags=re.IGNORECASE)
+            last_text = re.sub(r"\[[^\]]*\]\(" + plot_pattern + r"\)", "", last_text, flags=re.IGNORECASE) 
+            last_text = re.sub(plot_pattern, "", last_text, flags=re.IGNORECASE)
+            # Eliminar restos de sintaxis markdown vacía
+            last_text = last_text.replace("()", "").replace("[]", "").replace("![]", "").strip()
+            # Limpiar posibles dobles saltos de línea generados por la eliminación
+            last_text = re.sub(r"\n\s*\n", "\n\n", last_text)
 
         if not last_text:
             last_text = "No se recibió respuesta del asistente."
@@ -1095,13 +1281,13 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         ))
 
     fig.update_layout(
-        title=dict(text=title, x=0.01, y=0.98, xanchor="left"),
+        title=dict(text=title, x=0.01, y=0.96, xanchor="left", yanchor="top"),
         xaxis_title="Hora local",
         yaxis_title="Valor",
         template="plotly_dark",
         hovermode="x unified",
-        margin=dict(l=55, r=25, t=165, b=50),
-        legend=dict(orientation="h", yanchor="bottom", y=1.35, xanchor="left", x=0.01, font=dict(size=11))
+        margin=dict(l=55, r=25, t=160, b=50),  # Aumentamos margen superior
+        legend=dict(orientation="h", yanchor="top", y=0.88, xanchor="left", x=0.01, font=dict(size=11))
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
@@ -1449,7 +1635,7 @@ async def api_control_variables_day(payload: dict):
             plots.append({
                 "var_id": vid,
                 "title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid,
-                "url": f"/static/plots/{filename}"
+                "url": f"static/plots/{filename}"
             })
 
     summary_df = summarize_critical_day(df_day)
