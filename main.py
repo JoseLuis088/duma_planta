@@ -1286,13 +1286,18 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         ))
 
     fig.update_layout(
-        title=dict(text=title, x=0.01, y=0.96, xanchor="left", yanchor="top"),
-        xaxis_title="Hora local",
         yaxis_title="Valor",
         template="plotly_dark",
         hovermode="x unified",
-        margin=dict(l=55, r=25, t=160, b=50),  # Aumentamos margen superior
-        legend=dict(orientation="h", yanchor="top", y=0.88, xanchor="left", x=0.01, font=dict(size=11))
+        margin=dict(l=55, r=25, t=40, b=50),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(size=11)
+        )
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)

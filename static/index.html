@@ -863,7 +863,6 @@
     .md p {
       margin: 16px 0;
       color: var(--text) !important;
-      text-align: justify;
     }
 
     .md h3 {
@@ -1892,6 +1891,12 @@
           .replace(/!\[.*?\]\(.*?\)/g, "")
           .replace(/\r\n/g, "\n")
           .replace(/\r/g, "\n");
+
+        // Pre-procesamiento: Unir líneas fragmentadas (especialmente tiempos como 15:\n30.)
+        processedMd = processedMd
+          .replace(/:\s*\n\s*(\d+)/g, ": $1") // Unir si hay colon seguido de números
+          .replace(/(\d+)\s*\n\s*(\d+)/g, "$1$2") // Unir números cortados
+          .replace(/([a-záéíóúñ])\s*\n\s*([a-záéíóúñ])/g, "$1 $2"); // Unir palabras cortadas a mitad (minúsculas)
 
         // SEPARACIÓN INTELIGENTE (Lista solo si viene después de un separador natural o puntuación)
         // Esto evita romper oraciones a la mitad.
