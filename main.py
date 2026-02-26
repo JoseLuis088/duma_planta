@@ -363,7 +363,10 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
                 for y in ys:
                     label = f"{category}" if len(ys) == 1 else f"{category} - {y}"
                     if chart == "line":
-                        ax.plot(all_x, df_cat[y], label=label, marker="o")
+                        # Replace 0 with NaN so non-production dates show as gaps
+                        series = df_cat[y].copy()
+                        series = series.replace(0, float("nan"))
+                        ax.plot(all_x, series, label=label, marker="o")
                     else:
                         ax.bar(all_x, df_cat[y], label=label, alpha=0.7)
         else:
