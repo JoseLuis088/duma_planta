@@ -351,16 +351,21 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
             else:
                 unique_hues = sorted(unique_hues)
 
+            # Build complete X axis for proper gap handling
+            all_x = sorted(df[x].dropna().unique())
+
             for category in unique_hues:
                 df_cat = df[df[hue] == category].sort_values(by=x)
                 if df_cat.empty:
                     continue
+                # Reindex to the full X axis so missing dates become NaN (gaps)
+                df_cat = df_cat.set_index(x).reindex(all_x)
                 for y in ys:
                     label = f"{category}" if len(ys) == 1 else f"{category} - {y}"
                     if chart == "line":
-                        ax.plot(df_cat[x], df_cat[y], label=label, marker="o")
+                        ax.plot(all_x, df_cat[y], label=label, marker="o")
                     else:
-                        ax.bar(df_cat[x], df_cat[y], label=label, alpha=0.7)
+                        ax.bar(all_x, df_cat[y], label=label, alpha=0.7)
         else:
             print(f"[DEBUG CHART] No hue grouping applied (Single series). Hue: {hue}, Columns: {df.columns.tolist()}")
             for y in ys:
