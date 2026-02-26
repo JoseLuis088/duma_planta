@@ -2178,7 +2178,7 @@
         setBtnBusy("btnGenCV", true);
 
         try {
-          const res = await fetch("api/control-variables/day/", {
+          const res = await fetch("api/cv/day/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ day })
@@ -2361,7 +2361,7 @@
         if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
         setBtnBusy("btnDlCvPdf", true, "Descargando...");
         try {
-          await downloadFrom(`api/report/control-variables/day/`, `control_vars_${lastCvDay}.pdf`, {
+          await downloadFrom(`api/report/cv/day/`, `control_vars_${lastCvDay}.pdf`, {
             day: lastCvDay,
             format: "pdf",
             summary: lastCvData.summary,

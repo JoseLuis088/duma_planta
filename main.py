@@ -1593,7 +1593,7 @@ async def api_oee_day_turn(payload: dict):
     return {"day": day, "shift_name": shift_name, "rows": rows, "columns": cols, "ai_analysis": ai}
 
 
-@app.post("/api/control-variables/day/")
+@app.post("/api/cv/day/")
 async def api_control_variables_day(payload: dict):
     """Devuelve plots + resumen para TODO el día (3 turnos) de variables críticas."""
     day = normalize_day_str(payload.get("day") or "")
@@ -2066,7 +2066,7 @@ def _as_file_response(content: bytes, filename: str, media_type: str):
     return FileResponse(full, media_type=media_type, filename=filename)
 
 
-@app.post("/api/report/control-variables/day/")
+@app.post("/api/report/cv/day/")
 async def report_control_variables_day(payload: dict):
     """Descarga reporte (PDF/DOCX) de Variables de Control para un día completo."""
     day = normalize_day_str(payload.get("day") or "")
