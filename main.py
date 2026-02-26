@@ -358,17 +358,12 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
                 df_cat = df[df[hue] == category].sort_values(by=x)
                 if df_cat.empty:
                     continue
-                # Reindex to the full X axis so missing dates become NaN (gaps)
-                df_cat = df_cat.set_index(x).reindex(all_x)
                 for y in ys:
                     label = f"{category}" if len(ys) == 1 else f"{category} - {y}"
                     if chart == "line":
-                        # Replace 0 with NaN so non-production dates show as gaps
-                        series = df_cat[y].copy()
-                        series = series.replace(0, float("nan"))
-                        ax.plot(all_x, series, label=label, marker="o")
+                        ax.plot(df_cat[x], df_cat[y], label=label, marker="o")
                     else:
-                        ax.bar(all_x, df_cat[y], label=label, alpha=0.7)
+                        ax.bar(df_cat[x], df_cat[y], label=label, alpha=0.7)
         else:
             print(f"[DEBUG CHART] No hue grouping applied (Single series). Hue: {hue}, Columns: {df.columns.tolist()}")
             for y in ys:
@@ -400,16 +395,18 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     else:
         raise ValueError(f"Tipo de gráfico no soportado: {chart}")
 
-    # —— NUEVO: formateo del eje Y como porcentaje y límites 0–100 ——
+    # —— Formateo del eje Y como porcentaje con límites dinámicos ——
     if y_format == "percent":
         # Si tus KPIs vienen 0–1, conviértelos a 0–100 automáticamente
         if ys and df[ys].max(numeric_only=True).max() <= 1.0:
             for y in ys:
                 df[y] = df[y] * 100.0
         ax.yaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
-        # Si no se pasan límites, fuerza 0–100 para que el eje quede limpio
+        # Límite inferior 0, superior dinámico según los datos (mínimo 100)
         if y_min is None and y_max is None:
-            ax.set_ylim(0, 100)
+            data_max = df[ys].max(numeric_only=True).max()
+            upper = max(105, data_max * 1.05) if not pd.isna(data_max) else 105
+            ax.set_ylim(0, upper)
 
     # Límites manuales si se pasaron
     if y_min is not None or y_max is not None:
