@@ -1783,7 +1783,7 @@
       let lastOeeDay = null;
       let lastOeeShift = null;
 
-      let lastCvData = null;    // Para guardar la respuesta de /api/control-variables/day
+      let lastCvData = null;    // Para guardar la respuesta de /api/control-variables/day/
       let lastOeeRtData = null; // Para guardar la respuesta de /api/oee/realtime
       let lastOeeDayData = null;// Para guardar la respuesta de /api/oee/day-turn
 
@@ -2178,7 +2178,7 @@
         setBtnBusy("btnGenCV", true);
 
         try {
-          const res = await fetch("api/control-variables/day", {
+          const res = await fetch("api/control-variables/day/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ day })
@@ -2230,7 +2230,7 @@
         setStatus("busy", "Consultando...");
         setBtnBusy("btnFetchOeeRT", true, "Consultando...");
         try {
-          const res = await fetch("api/oee/realtime");
+          const res = await fetch("api/oee/realtime/");
           const data = await res.json();
           if (!res.ok) {
             throw new Error(data.detail || data.error || "Error en /api/oee/realtime");
@@ -2310,7 +2310,7 @@
           const body = { day: day };
           if (shift) body.shift_name = shift;
 
-          const res = await fetch("api/oee/day-turn", {
+          const res = await fetch("api/oee/day-turn/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
@@ -2361,7 +2361,7 @@
         if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
         setBtnBusy("btnDlCvPdf", true, "Descargando...");
         try {
-          await downloadFrom(`api/report/control-variables/day`, `control_vars_${lastCvDay}.pdf`, {
+          await downloadFrom(`api/report/control-variables/day/`, `control_vars_${lastCvDay}.pdf`, {
             day: lastCvDay,
             format: "pdf",
             summary: lastCvData.summary,
@@ -2378,7 +2378,7 @@
         if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
         setBtnBusy("btnDlOeeRtPdf", true, "Descargando...");
         try {
-          await downloadFrom(`api/report/oee/realtime`, `oee_realtime.pdf`, {
+          await downloadFrom(`api/report/oee/realtime/`, `oee_realtime.pdf`, {
             format: "pdf",
             rows: lastOeeRtData.rows,
             columns: lastOeeRtData.columns,
@@ -2395,7 +2395,7 @@
         if (!lastOeeDay || !lastOeeDayData) return alert("Consulta primero un día/turno.");
         setBtnBusy("btnDlOeeDayPdf", true, "Descargando...");
         try {
-          await downloadFrom(`api/report/oee/day`, `oee_day_${lastOeeDay}.pdf`, {
+          await downloadFrom(`api/report/oee/day/`, `oee_day_${lastOeeDay}.pdf`, {
             day: lastOeeDay,
             shift_name: lastOeeShift,
             format: "pdf",

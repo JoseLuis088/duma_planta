@@ -1560,7 +1560,7 @@ ORDER BY
 """
 
 
-@app.get("/api/oee/realtime")
+@app.get("/api/oee/realtime/")
 async def api_oee_realtime():
     """OEE en tiempo real (último snapshot)."""
     rows, cols = run_sql(_sql_oee_realtime())
@@ -1575,7 +1575,7 @@ async def api_oee_realtime():
 
     return {"rows": rows, "columns": cols, "snapshot": snap, "ai_analysis": ai}
 
-@app.post("/api/oee/day-turn")
+@app.post("/api/oee/day-turn/")
 async def api_oee_day_turn(payload: dict):
     """
     OEE por día/turno. Body: { "day": "YYYY-MM-DD", "shift_name"?: "Primer Turno"|"Segundo Turno"|"Tercer Turno" }
@@ -1593,7 +1593,7 @@ async def api_oee_day_turn(payload: dict):
     return {"day": day, "shift_name": shift_name, "rows": rows, "columns": cols, "ai_analysis": ai}
 
 
-@app.post("/api/control-variables/day")
+@app.post("/api/control-variables/day/")
 async def api_control_variables_day(payload: dict):
     """Devuelve plots + resumen para TODO el día (3 turnos) de variables críticas."""
     day = normalize_day_str(payload.get("day") or "")
@@ -1681,7 +1681,7 @@ async def bafar_page():
     return FileResponse("static/index.html")
 
 
-@app.post("/chat")
+@app.post("/chat/")
 async def chat(request: Request):
     """
     Body esperado: { "input": string, "thread_id"?: string }
@@ -2066,7 +2066,7 @@ def _as_file_response(content: bytes, filename: str, media_type: str):
     return FileResponse(full, media_type=media_type, filename=filename)
 
 
-@app.post("/api/report/control-variables/day")
+@app.post("/api/report/control-variables/day/")
 async def report_control_variables_day(payload: dict):
     """Descarga reporte (PDF/DOCX) de Variables de Control para un día completo."""
     day = normalize_day_str(payload.get("day") or "")
@@ -2187,7 +2187,7 @@ async def report_control_variables_day(payload: dict):
     )
 
 
-@app.post("/api/report/oee/realtime")
+@app.post("/api/report/oee/realtime/")
 async def report_oee_realtime(payload: dict):
     """Descarga reporte (PDF/DOCX) de OEE en tiempo real (último snapshot)."""
     fmt = (payload.get("format") or "pdf").lower()
@@ -2258,7 +2258,7 @@ async def report_oee_realtime(payload: dict):
 from fastapi import Response, HTTPException
 import re
 
-@app.post("/api/report/oee/day")
+@app.post("/api/report/oee/day/")
 async def report_oee_day(payload: dict):
     """Descarga el análisis (PDF/Word) para OEE por día/turno."""
     day = normalize_day_str(payload.get("day") or "")
