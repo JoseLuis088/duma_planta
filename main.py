@@ -50,10 +50,12 @@ SQL_DRIVER   = os.getenv("SQL_ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
 CONN_STR = (
     f"DRIVER={{{SQL_DRIVER}}};"
     f"SERVER={SQL_SERVER};"
-    f"DATABASE={SQL_DB};"
-    f"UID={SQL_USER};"
-    f"PWD={SQL_PASS};"
+    f"DATABASE={{{SQL_DB}}};"
+    f"UID={{{SQL_USER}}};"
+    f"PWD={{{SQL_PASS}}};"
+    "Encrypt=yes;"
     "TrustServerCertificate=yes;"
+    "Connect Timeout=30;"
 )
 
 # Ruta absoluta al logo de DUMA (para PDF y Word)
