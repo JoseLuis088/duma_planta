@@ -21,6 +21,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY Sidon_logo.png .
 COPY static ./static
+COPY DUMA_EXECUTIVE_PROMPT.txt .
+COPY schema.md .
+COPY duma_cookbook.txt .
+COPY "System prompt.txt" .
 
 EXPOSE 8000
 
