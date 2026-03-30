@@ -1716,10 +1716,14 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
         yaxis=dict(range=[0, max(105, max(oee_values or [0]) + 10)], ticksuffix="%")
     )
     oee_fname = f"oee_kpi_{day}.html"
+    oee_png = f"oee_kpi_{day}.png"
     fig_oee.write_html(os.path.join(out_dir, oee_fname))
-    plots.append({"title": "Indicador OEE (%)", "url": f"static/plots/{oee_fname}"})
+    try:
+        fig_oee.write_image(os.path.join(out_dir, oee_png), engine="kaleido")
+    except Exception: pass
+    plots.append({"title": "Indicador OEE (%)", "url": f"static/plots/{oee_fname}", "path": os.path.join(out_dir, oee_png)})
 
-    # --- 2. Producción (Real vs Esperada) ---
+    # --- 2. Producción ---
     real_prod = [to_f(r.get("ProduccionRealKg")) for r in data]
     est_prod = [to_f(r.get("ProduccionEstimadaKg")) for r in data]
     fig_prod = go.Figure(data=[
@@ -1728,10 +1732,14 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     ])
     fig_prod.update_layout(title="Producción Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     prod_fname = f"oee_prod_{day}.html"
+    prod_png = f"oee_prod_{day}.png"
     fig_prod.write_html(os.path.join(out_dir, prod_fname))
-    plots.append({"title": "Comparativa de Producción", "url": f"static/plots/{prod_fname}"})
+    try:
+        fig_prod.write_image(os.path.join(out_dir, prod_png), engine="kaleido")
+    except Exception: pass
+    plots.append({"title": "Comparativa de Producción", "url": f"static/plots/{prod_fname}", "path": os.path.join(out_dir, prod_png)})
     
-    # --- 3. Velocidad (Real vs Esperada) ---
+    # --- 3. Velocidad ---
     real_vel = [to_f(r.get("VelocidadPromedioRealKgHr")) for r in data]
     est_vel = [to_f(r.get("VelocidadPromedioEstimadaKgHr")) for r in data]
     fig_vel = go.Figure(data=[
@@ -1740,10 +1748,14 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     ])
     fig_vel.update_layout(title="Velocidad Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     vel_fname = f"oee_vel_{day}.html"
+    vel_png = f"oee_vel_{day}.png"
     fig_vel.write_html(os.path.join(out_dir, vel_fname))
-    plots.append({"title": "Comparativa de Velocidad", "url": f"static/plots/{vel_fname}"})
+    try:
+        fig_vel.write_image(os.path.join(out_dir, vel_png), engine="kaleido")
+    except Exception: pass
+    plots.append({"title": "Comparativa de Velocidad", "url": f"static/plots/{vel_fname}", "path": os.path.join(out_dir, vel_png)})
 
-    # --- 4. Paros (Minutos) ---
+    # --- 4. Paros ---
     un_stop = [to_f(r.get("TiempoNoProdNoProgramadoMin")) for r in data]
     sch_stop = [to_f(r.get("TiempoNoProdProgramadoMin")) for r in data]
     fig_stop = go.Figure(data=[
@@ -1752,10 +1764,14 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     ])
     fig_stop.update_layout(title="Tiempo de Paro por Turno (Minutos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     stop_fname = f"oee_stops_{day}.html"
+    stop_png = f"oee_stops_{day}.png"
     fig_stop.write_html(os.path.join(out_dir, stop_fname))
-    plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}"})
+    try:
+        fig_stop.write_image(os.path.join(out_dir, stop_png), engine="kaleido")
+    except Exception: pass
+    plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}", "path": os.path.join(out_dir, stop_png)})
     
-    # --- 5. Frecuencia de Paros (Eventos) ---
+    # --- 5. Frecuencia de Paros ---
     un_stop_cnt = [to_f(r.get("ParosNoProgramadosCont")) for r in data]
     sch_stop_cnt = [to_f(r.get("ParosProgramadosCont")) for r in data]
     fig_stop_cnt = go.Figure(data=[
@@ -1764,8 +1780,12 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     ])
     fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     stop_cnt_fname = f"oee_stop_counts_{day}.html"
+    stop_cnt_png = f"oee_stop_counts_{day}.png"
     fig_stop_cnt.write_html(os.path.join(out_dir, stop_cnt_fname))
-    plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{stop_cnt_fname}"})
+    try:
+        fig_stop_cnt.write_image(os.path.join(out_dir, stop_cnt_png), engine="kaleido")
+    except Exception: pass
+    plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{stop_cnt_fname}", "path": os.path.join(out_dir, stop_cnt_png)})
     
     return plots
 
@@ -2538,9 +2558,28 @@ async def report_oee_day(payload: dict):
     # El análisis ya viene en data["ai_analysis"] (markdown) desde /api/oee/day-turn
     ai_text = provided_ai or ""
 
+    # SECCIÓN: Gráficas de Desempeño
+    # Obtenemos las imágenes (PNG) regenerándolas si es necesario
+    # Para asegurar que tenemos las rutas de los PNG locales, llamamos a api_oee_day_turn si no tenemos los plots
+    plots_meta = []
+    try:
+        # Llamamos de nuevo pero sin esperar que el front nos dé los plots
+        # (Así nos aseguramos de que los PNG existen en disco en este momento)
+        oee_data = await api_oee_day_turn({"day": day, "shift_name": shift_name})
+        plots_meta = oee_data.get("plots") or []
+    except Exception: pass
+
     sections = [
         {"title": "Resumen", "text": "Indicadores calculados por turno para la fecha seleccionada."}
     ]
+    
+    if plots_meta:
+        sections.append({
+            "title": "Gráficas de Desempeño",
+            "text": "Comparativa visual de eficiencia, producción, velocidad y paros.",
+            "images": [p["path"] for p in plots_meta if p.get("path")]
+        })
+
     if ai_text.strip():
         sections.append({"title": "Análisis y recomendaciones (IA)", "text": ai_text})
 
