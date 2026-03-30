@@ -1657,12 +1657,127 @@ ORDER BY
 """
 
 
+    return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai}
+
+def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
+    """Genera gráficas Plotly para el snapshot de tiempo real (Turno Actual)."""
+    import plotly.graph_objects as go
+    
+    if not snap_dict:
+        return []
+        
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Helper para asegurar valores numéricos
+    def to_f(v):
+        try:
+            return float(v) if v is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    plots = []
+    # Usaremos una marca de tiempo para evitar caché
+    ts = int(time.time() * 1000)
+    
+    # --- 1. Eficiencia (OEE %) ---
+    oee_val = to_f(snap_dict.get("OEE"))
+    fig_oee = go.Figure(data=[
+        go.Bar(
+            name='OEE (%)', 
+            x=["Turno Actual"], 
+            y=[oee_val], 
+            marker_color='#1abc9c', 
+            text=[f"{oee_val:.1f}%"], 
+            textposition='outside',
+            width=0.4
+        )
+    ])
+    fig_oee.update_layout(
+        title="Eficiencia Global (OEE %) - Snapshot", 
+        template="plotly_dark", 
+        margin=dict(l=40, r=40, t=60, b=40), 
+        yaxis=dict(range=[0, max(110, oee_val + 10)], ticksuffix="%")
+    )
+    oee_fname = f"oee_rt_kpi_{ts}.html"
+    fig_oee.write_html(os.path.join(out_dir, oee_fname))
+    plots.append({"title": "OEE (%)", "url": f"static/plots/{oee_fname}"})
+
+    # --- 2. Producción (Kg) ---
+    prod_real = to_f(snap_dict.get("CurrentShiftProduction"))
+    prod_expected = to_f(snap_dict.get("ExpectedShiftProduction"))
+    fig_prod = go.Figure(data=[
+        go.Bar(name='Real', x=["Producción"], y=[prod_real], marker_color='#1abc9c'),
+        go.Bar(name='Esperada', x=["Producción"], y=[prod_expected], marker_color='#34495e')
+    ])
+    fig_prod.update_layout(
+        title="Producción del Turno (Kg) - Snapshot", 
+        template="plotly_dark", barmode='group',
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    prod_fname = f"oee_rt_prod_{ts}.html"
+    fig_prod.write_html(os.path.join(out_dir, prod_fname))
+    plots.append({"title": "Producción (Kg)", "url": f"static/plots/{prod_fname}"})
+
+    # --- 3. Velocidad (Kg/h) ---
+    vel_real = to_f(snap_dict.get("CurrentRate"))
+    vel_expected = to_f(snap_dict.get("ExpectedRate"))
+    fig_vel = go.Figure(data=[
+        go.Bar(name='Real', x=["Velocidad"], y=[vel_real], marker_color='#1abc9c'),
+        go.Bar(name='Esperada', x=["Velocidad"], y=[vel_expected], marker_color='#34495e')
+    ])
+    fig_vel.update_layout(
+        title="Velocidad Promedio (Kg/h) - Snapshot", 
+        template="plotly_dark", barmode='group',
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    vel_fname = f"oee_rt_vel_{ts}.html"
+    fig_vel.write_html(os.path.join(out_dir, vel_fname))
+    plots.append({"title": "Velocidad (Kg/h)", "url": f"static/plots/{vel_fname}"})
+
+    # --- 4. Paros (Duración min) ---
+    dur_unsched = to_f(snap_dict.get("UnscheduledStopageMin"))
+    dur_sched = to_f(snap_dict.get("ScheduledStopageMin"))
+    fig_stops = go.Figure(data=[
+        go.Bar(name='No Programado', x=["Paros"], y=[dur_unsched], marker_color='#e74c3c'),
+        go.Bar(name='Programado', x=["Paros"], y=[dur_sched], marker_color='#f1c40f')
+    ])
+    fig_stops.update_layout(
+        title="Distribución de Paros (Minutos) - Snapshot", 
+        template="plotly_dark", barmode='group',
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    stops_fname = f"oee_rt_stops_{ts}.html"
+    fig_stops.write_html(os.path.join(out_dir, stops_fname))
+    plots.append({"title": "Tiempos de Paro (Min)", "url": f"static/plots/{stops_fname}"})
+
+    # --- 5. Frecuencia de Paros (Eventos) ---
+    cnt_unsched = to_f(snap_dict.get("ParosNoProgramadosCont"))
+    cnt_sched = to_f(snap_dict.get("ParosProgramadosCont"))
+    fig_freq = go.Figure(data=[
+        go.Bar(name='No Programado', x=["Eventos"], y=[cnt_unsched], marker_color='#e74c3c'),
+        go.Bar(name='Programado', x=["Eventos"], y=[cnt_sched], marker_color='#f1c40f')
+    ])
+    fig_freq.update_layout(
+        title="Frecuencia de Paros (Eventos) - Snapshot", 
+        template="plotly_dark", barmode='group',
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    freq_fname = f"oee_rt_freq_{ts}.html"
+    fig_freq.write_html(os.path.join(out_dir, freq_fname))
+    plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{freq_fname}"})
+    
+    return plots
+
 @app.get("/api/oee/realtime/")
 async def api_oee_realtime():
     """OEE en tiempo real (último snapshot)."""
     rows, cols = run_sql(_sql_oee_realtime())
     if not rows:
-        return {"rows": [], "columns": cols, "snapshot": None, "ai_analysis": ""}
+        return {"rows": [], "columns": cols, "snapshot": None, "ai_analysis": "", "plots": []}
+
+    # Registro original para las gráficas (antes de formatear tiempos)
+    raw_snap = dict(zip(cols, rows[0]))
 
     # Identificamos columnas de duración para formatear
     duration_cols = [
@@ -1682,10 +1797,13 @@ async def api_oee_realtime():
     # Snapshot = primer registro formateado para la IA y los KPIs
     snap_formatted = dict(zip(cols, rows_formatted[0]))
 
+    # Gráficas
+    plots = plot_oee_realtime_snapshot(raw_snap)
+
     # IA (si está configurada)
     ai = ai_oee_realtime(snap_formatted)
 
-    return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai}
+    return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai, "plots": plots}
 
 def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dict]:
     """Genera gráficas Plotly para comparar métricas por turno."""

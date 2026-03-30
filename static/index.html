@@ -1579,6 +1579,9 @@
                 </div>
               </div>
 
+              <!-- Contenedor para gráficas OEE Tiempo Real -->
+              <div class="grid" id="oeeRtGrid" style="margin-top:20px"></div>
+
               <div class="card" id="oeeRtAICard" style="display:none; margin-top:20px">
                 <div class="card-head">
                   <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
@@ -2079,6 +2082,8 @@
         el("oeeRtTableCard").style.display = "none";
         el("oeeRtAICard").style.display = "none";
         el("oeeRtAI").innerHTML = "";
+        el("oeeRtGrid").innerHTML = "";
+        el("oeeDayGrid").innerHTML = "";
 
         el("oeeDayInfo").textContent = "";
         el("oeeDayTableCard").style.display = "none";
@@ -2319,12 +2324,49 @@
             el("oeeRtAICard").style.display = "";
           }
 
+          if (Array.isArray(data.plots)) {
+            renderOeeRtPlots(data.plots);
+          }
+
           setStatus("ok", "Listo");
         } catch (err) {
           el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
           setStatus("err", "Error");
         } finally {
           setBtnBusy("btnFetchOeeRT", false);
+        }
+      }
+
+      function renderOeeRtPlots(plots) {
+        const grid = el("oeeRtGrid");
+        grid.innerHTML = "";
+        for (const p of plots) {
+          const card = document.createElement("div");
+          card.className = "plot-card";
+
+          const header = document.createElement("div");
+          header.className = "plot-header";
+
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "plot-title";
+          titleDiv.textContent = p.title || "";
+
+          const btn = document.createElement("button");
+          btn.className = "plot-expand-btn";
+          btn.innerHTML = "⛶";
+          btn.title = "Ver en pantalla completa";
+          btn.onclick = () => openFullScreen(p.url, p.title || "");
+
+          header.appendChild(titleDiv);
+          header.appendChild(btn);
+
+          const iframe = document.createElement("iframe");
+          iframe.className = "plot-frame";
+          iframe.src = p.url;
+
+          card.appendChild(header);
+          card.appendChild(iframe);
+          grid.appendChild(card);
         }
       }
 
