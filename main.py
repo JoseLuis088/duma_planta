@@ -587,7 +587,11 @@ SELECT TOP (1)
     pli.CurrentShiftProduction        AS CurrentShiftProduction,
     pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
     pli.CurrentProduction             AS CurrentProduction,
-    pli.ExpectedDayProduction         AS ExpectedDayProduction
+    pli.ExpectedDayProduction         AS ExpectedDayProduction,
+
+    -- Conteo de Paros
+    pli.ParosProgramadosCont          AS ParosProgramadosCont,
+    pli.ParosNoProgramadosCont        AS ParosNoProgramadosCont
 
 FROM dbo.ProductionLineIntervals AS pli
 INNER JOIN dbo.ProductionLines AS pl
@@ -873,10 +877,11 @@ ORDER BY Fecha, Turno;
         # 3) Instrucciones base (Carga desde archivo + saludo mínimo + reglas SQL por turno)
         system_prompt_content = ""
         try:
-            with open("System prompt.txt", "r", encoding="utf-8") as f:
+            # ✅ Redirigido al nuevo prompt ejecutivo para evitar bloqueos
+            with open("DUMA_EXECUTIVE_PROMPT.txt", "r", encoding="utf-8") as f:
                 system_prompt_content = f.read()
         except Exception as e:
-            logging.error(f"No se pudo leer System prompt.txt: {e}")
+            logging.error(f"No se pudo leer DUMA_EXECUTIVE_PROMPT.txt: {e}")
 
         msg = user_text.strip().lower()
         greeting_set = {

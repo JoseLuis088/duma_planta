@@ -90,7 +90,7 @@ def main():
             sftp.put(local_env, remote_env)
             
             # Upload ignored but critical AI files
-            critical_files = ["main.py", "requirements.txt", "System prompt.txt", "duma_cookbook.txt", "schema.md"]
+            critical_files = ["main.py", "requirements.txt", "System prompt.txt", "DUMA_EXECUTIVE_PROMPT.txt", "duma_cookbook.txt", "schema.md"]
             for f in critical_files:
                 if os.path.exists(f):
                     remote_f = f"/home/{USER}/{APP_NAME}/{f}"
