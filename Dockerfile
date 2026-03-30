@@ -24,7 +24,7 @@ COPY static ./static
 COPY DUMA_EXECUTIVE_PROMPT.txt .
 COPY schema.md .
 COPY duma_cookbook.txt .
-COPY "System prompt.txt" .
+COPY ["System prompt.txt", "."]
 
 EXPOSE 8000
 
