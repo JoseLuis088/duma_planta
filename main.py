@@ -1495,6 +1495,38 @@ SELECT TOP (1)
     ROUND(pli.OEEPerformance,2)       AS Performance,
     ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
+    -- Conteo de eventos de paros (No programados US y Programados SS)
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = pli.ProductionLineId
+              AND IntervalBegin >= DATEADD(MINUTE, -(
+                  CASE 
+                      WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL 
+                      THEN DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+                      ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+                  END
+              ), pli.IntervalBegin)
+              AND IntervalBegin <= pli.IntervalBegin
+        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+     (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = pli.ProductionLineId
+              AND IntervalBegin >= DATEADD(MINUTE, -(
+                  CASE 
+                      WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL 
+                      THEN DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+                      ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+                  END
+              ), pli.IntervalBegin)
+              AND IntervalBegin <= pli.IntervalBegin
+        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont,
+
     -- Estado de la línea (con nombres completos)
     CASE pli.IntervalProductionLineStatus
         WHEN 'US' THEN N'Paro No Programado'
