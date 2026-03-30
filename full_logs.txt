@@ -1,0 +1,106 @@
+C:\anaconda3\Lib\site-packages\paramiko\transport.py:219: CryptographyDeprecationWarning: Blowfish has been deprecated and will be removed in a future release
+  "class": algorithms.Blowfish,
+
+--- Checking Container Logs ---
+DECLARE @linePattern NVARCHAR(100) = NULL;
+
+SELECT TOP (1)
+    pl.Name                           AS LineName,
+    pli.IntervalBegin                 AS SnapshotAtLocal,
+
+    ROUND(pli.OEE,2)                  AS OEE,
+    ROUND(pli.OEEAvailability,2)      AS Availability,
+    ROUND(pli.OEEPerformance,2)       AS Performance,
+    ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
+
+    pli.ProductionLineStatus          AS StatusCode,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+WHERE
+    (@linePattern IS NULL OR pl.Name LIKE N'%' + @linePattern + N'%')
+ORDER BY
+    pli.IntervalBegin DESC,
+    pli.CreatedAt DESC;
+
+======================================
+INFO:     10.250.50.212:61530 - "GET /api/oee/realtime/ HTTP/1.1" 500 Internal Server Error
+
+[sudo] password for warehouseai: ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 399, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 70, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/applications.py", line 123, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.12/site-packages/starlette/routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.12/site-packages/starlette/routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/fastapi/routing.py", line 278, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/app/main.py", line 1576, in api_oee_realtime
+    rows, cols = run_sql(_sql_oee_realtime())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/app/main.py", line 239, in run_sql
+    with pyodbc.connect(CONN_STR) as conn:
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+pyodbc.OperationalError: ('HYT00', '[HYT00] [Microsoft][ODBC Driver 18 for SQL Server]Login timeout expired (0) (SQLDriverConnect)')
+

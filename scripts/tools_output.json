@@ -1,0 +1,160 @@
+Assistant Name: DumaPlanta_OEE
+Tools:
+ - Tool: file_search
+ - Function: sql_query
+{
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "realtime",
+        "hist_turno_dia",
+        "hist_turno_rango"
+      ]
+    },
+    "day": {
+      "type": "string",
+      "description": "YYYY-MM-DD (solo para hist_turno_dia)"
+    },
+    "from_day": {
+      "type": "string",
+      "description": "YYYY-MM-DD (inicio del rango; solo para hist_turno_rango)"
+    },
+    "to_day": {
+      "type": "string",
+      "description": "YYYY-MM-DD (fin del rango; solo para hist_turno_rango)"
+    },
+    "shift_name": {
+      "type": "string",
+      "description": "Primer Turno | Segundo Turno | Tercer Turno"
+    }
+  },
+  "required": [
+    "mode"
+  ]
+}
+ - Function: viz_render
+{
+  "type": "object",
+  "properties": {
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Nombres de las columnas si se proporcionan datos tabulares manualmente."
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "description": "Filas de datos tabulares. Debe alinear con 'columns'."
+    },
+    "select_sql": {
+      "type": "string",
+      "description": "Consulta SQL SELECT que devuelve los datos para graficar (alternativa a columns+rows)."
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "chart": {
+          "type": "string",
+          "enum": [
+            "line",
+            "bar",
+            "heatmap",
+            "corr"
+          ],
+          "description": "Tipo de gr\u00e1fico a generar."
+        },
+        "title": {
+          "type": "string",
+          "description": "T\u00edtulo del gr\u00e1fico."
+        },
+        "x": {
+          "type": "string",
+          "description": "Columna para eje X (cuando aplique)."
+        },
+        "ys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Columnas para eje Y (una o varias)."
+        },
+        "agg": {
+          "type": "string",
+          "enum": [
+            "none",
+            "sum",
+            "mean",
+            "max",
+            "min"
+          ],
+          "description": "Agregaci\u00f3n opcional para series."
+        },
+        "pivot": {
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "string"
+            },
+            "values": {
+              "type": "string"
+            }
+          },
+          "description": "Par\u00e1metros de pivoteo (\u00fatil para heatmap)."
+        },
+        "normalize": {
+          "type": "boolean",
+          "description": "Normaliza datos (\u00fatil para heatmap/corr)."
+        },
+        "style": {
+          "type": "object",
+          "properties": {
+            "height": {
+              "type": "integer"
+            },
+            "width": {
+              "type": "integer"
+            }
+          },
+          "description": "Tama\u00f1o del gr\u00e1fico en pixeles."
+        }
+      },
+      "required": [
+        "chart"
+      ],
+      "description": "Especificaci\u00f3n del gr\u00e1fico a renderizar."
+    }
+  },
+  "required": [
+    "spec"
+  ]
+}
+ - Function: get_control_variables
+{
+  "type": "object",
+  "properties": {
+    "day": {
+      "type": "string",
+      "description": "Fecha en formato YYYY-MM-DD"
+    }
+  },
+  "required": [
+    "day"
+  ]
+}

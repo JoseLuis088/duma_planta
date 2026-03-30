@@ -1625,6 +1625,9 @@
                 </div>
               </div>
 
+              <!-- Contenedor para gráficas OEE Histórico -->
+              <div class="grid" id="oeeDayGrid" style="margin-top:20px"></div>
+
               <div class="card" id="oeeDayAICard" style="display:none; margin-top:20px">
                 <div class="card-head">
                   <h2 style="margin:0">Análisis y Recomendaciones (IA)</h2>
@@ -1823,7 +1826,9 @@
         ProduccionEstimadaKg: "Producción esperada (kg)",
         ProduccionRealKg: "Producción real (kg)",
         VelocidadPromedioEstimadaKgHr: "Velocidad prom. esperada (kg/h)",
-        VelocidadPromedioRealKgHr: "Velocidad prom. real (kg/h)"
+        VelocidadPromedioRealKgHr: "Velocidad prom. real (kg/h)",
+        ParosNoProgramadosCont: "Paros no programados (Eventos)",
+        ParosProgramadosCont: "Paros programados (Eventos)"
       };
 
       async function downloadFrom(url, filename, body = null) {
@@ -2222,6 +2227,39 @@
 
       el("btnGenCV").addEventListener("click", generateControlVars);
 
+      function renderOeeDayPlots(plots) {
+        const grid = el("oeeDayGrid");
+        grid.innerHTML = "";
+        for (const p of plots) {
+          const card = document.createElement("div");
+          card.className = "plot-card";
+
+          const header = document.createElement("div");
+          header.className = "plot-header";
+
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "plot-title";
+          titleDiv.textContent = p.title || "";
+
+          const btn = document.createElement("button");
+          btn.className = "plot-expand-btn";
+          btn.innerHTML = "⛶";
+          btn.title = "Ver en pantalla completa";
+          btn.onclick = () => openFullScreen(p.url, p.title || "");
+
+          header.appendChild(titleDiv);
+          header.appendChild(btn);
+
+          const iframe = document.createElement("iframe");
+          iframe.className = "plot-frame";
+          iframe.src = p.url;
+
+          card.appendChild(header);
+          card.appendChild(iframe);
+          grid.appendChild(card);
+        }
+      }
+
       // ===========================
       // OEE REALTIME
       // ===========================
@@ -2343,6 +2381,12 @@
           if (data.ai_analysis && String(data.ai_analysis).trim()) {
             el("oeeDayAI").innerHTML = mdToHtml(String(data.ai_analysis));
             el("oeeDayAICard").style.display = "";
+          }
+
+          if (Array.isArray(data.plots)) {
+            renderOeeDayPlots(data.plots);
+          } else {
+            el("oeeDayGrid").innerHTML = "";
           }
 
           setStatus("ok", "Listo");

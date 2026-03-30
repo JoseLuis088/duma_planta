@@ -131,6 +131,26 @@ Eres Duma, un asistente experto para analítica de piso de producción. Tu tarea
 8. **Regla de Ceros**: Si detectas valores en 0 (producción, velocidad, OEE) exactamente en estos horarios de inicio, interprétalos como un REINICIO (o "borrón y cuenta nueva") del contador acumulado para el nuevo turno, NO como una falla operacional ni parada de línea.
 """
 
+def format_duration_es(minutes: float) -> str:
+    """Convierte minutos a formato 'X horas y Y minutos' (español)."""
+    if minutes is None or minutes <= 0:
+        return "0 minutos"
+    mins = int(round(float(minutes)))
+    h = mins // 60
+    m = mins % 60
+    
+    parts = []
+    if h > 0:
+        parts.append(f"{h} {'hora' if h == 1 else 'horas'}")
+    if m > 0:
+        parts.append(f"{m} {'minuto' if m == 1 else 'minutos'}")
+    
+    if not parts:
+        return "0 minutos"
+    if len(parts) == 1:
+        return parts[0]
+    return " y ".join(parts)
+
 def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
     payload = {
         "day": day,
@@ -156,17 +176,17 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
 OEE_AI_SYSTEM = """
 Eres Duma, un consultor experto en productividad industrial. Genera un análisis ejecutivo del OEE para la gerencia.
 
-### Estructura Mandataria (Markdown):
-
 ### Resumen ejecutivo
 (Párrafo fluido analizando el desempeño global y urgencia. SIN listas.)
+
+### Análisis de Paros y Producción
+(Analiza el impacto de los paros programados vs no programados en el OEE. Compara la Producción Real vs la Esperada y la eficiencia de la Velocidad Actual vs la Velocidad Esperada.)
 
 ### KPI limitante
 (Identifica DISPONIBILIDAD, DESEMPEÑO o CALIDAD como el cuello de botella actual.)
 
 ### Acciones recomendadas
 - (Acción paliativa o correctiva 1...)
-- (Acción paliativa o correctiva 2...)
 
 ### Riesgo si no se actúa
 - (Impacto en costos o entregas 1...)
@@ -174,9 +194,10 @@ Eres Duma, un consultor experto en productividad industrial. Genera un análisis
 ### Reglas Críticas:
 1. Tono Senior/Director.
 2. Resumen Ejecutivo siempre en PÁRRAFO.
-3. Listas verticales con `- ` para acciones y riesgos.
+3. Listas con `- ` para acciones y riesgos.
 4. Doble salto de línea entre secciones.
-7. Si faltan datos, indícalo claramente como un punto de atención.
+5. **Formato de Tiempo**: En tus explicaciones y resúmenes, reporta SIEMPRE las duraciones usando el formato "X horas y Y minutos".
+6. **Interpretación de Gaps**: Si la Producción Real es inferior a la Esperada (o la Velocidad Real a la Esperada), explica la posible causa operativa basada en los paros reportados.
 8. **Contexto de Turnos**: Turnos inician a las 07:00, 15:30 y 23:00.
 9. **Regla de Ceros**: Valores en 0 en estos horarios coinciden con el cambio de turno y deben interpretarse como un reinicio de acumulados, NUNCA como una falla o detención.
 10. **Fecha Operativa del Tercer Turno**: El Tercer Turno (23:00→07:00) cruza la medianoche. Su StartDate es el día D (23:00) y su EndDate es el día D+1 (07:00). La "Fecha Operativa" del turno es siempre el día D (el día en que comenzó). Si los datos muestran que el Tercer Turno tiene StartDate en un día y EndDate en el siguiente, es completamente normal y NO indica un error.
@@ -1554,7 +1575,26 @@ SELECT
     wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
     wses.CurrentProductionSummary  AS ProduccionRealKg,
     wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
-    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
+    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr,
+
+    -- Conteo de eventos de paros (No programados US y Programados SS)
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont
+
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions AS wse
     ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
@@ -1592,13 +1632,78 @@ async def api_oee_realtime():
     if not rows:
         return {"rows": [], "columns": cols, "snapshot": None, "ai_analysis": ""}
 
-    # Snapshot = primer registro
-    snap = dict(zip(cols, rows[0]))
+    # Identificamos columnas de duración para formatear
+    duration_cols = [
+        "StatusTimeMin", "NaturalTimeMin", "ProductiveTimeMin", 
+        "ScheduledStopageMin", "UnscheduledStopageMin"
+    ]
+
+    # Formateamos todas las filas para la tabla
+    rows_formatted = []
+    for r in rows:
+        r_dict = dict(zip(cols, r))
+        for col in duration_cols:
+            if col in r_dict:
+                r_dict[col] = format_duration_es(r_dict[col])
+        rows_formatted.append([r_dict.get(c) for c in cols])
+
+    # Snapshot = primer registro formateado para la IA y los KPIs
+    snap_formatted = dict(zip(cols, rows_formatted[0]))
 
     # IA (si está configurada)
-    ai = ai_oee_realtime(snap)
+    ai = ai_oee_realtime(snap_formatted)
 
-    return {"rows": rows, "columns": cols, "snapshot": snap, "ai_analysis": ai}
+    return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai}
+
+def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dict]:
+    """Genera gráficas Plotly para comparar métricas por turno."""
+    import plotly.graph_objects as go
+    
+    if not rows_dicts:
+        return []
+        
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    
+    plots = []
+    
+    # Ordenar por turno
+    shift_order = {"Primer Turno": 1, "Segundo Turno": 2, "Tercer Turno": 3}
+    data = sorted(rows_dicts, key=lambda x: shift_order.get(x.get("Turno"), 9))
+    shifts = [r.get("Turno") for r in data]
+    
+    # 1. Producción (Real vs Esperada)
+    fig_prod = go.Figure(data=[
+        go.Bar(name='Real (Kg)', x=shifts, y=[r.get("ProduccionRealKg") for r in data], marker_color='#1abc9c'),
+        go.Bar(name='Esperada (Kg)', x=shifts, y=[r.get("ProduccionEstimadaKg") for r in data], marker_color='#34495e')
+    ])
+    fig_prod.update_layout(title="Producción Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+    prod_fname = f"oee_prod_{day}.html"
+    fig_prod.write_html(os.path.join(out_dir, prod_fname))
+    plots.append({"title": "Comparativa de Producción", "url": f"static/plots/{prod_fname}"})
+    
+    # 2. Velocidad (Real vs Esperada)
+    fig_vel = go.Figure(data=[
+        go.Bar(name='Real (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioRealKgHr") for r in data], marker_color='#3498db'),
+        go.Bar(name='Esperada (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioEstimadaKgHr") for r in data], marker_color='#2c3e50')
+    ])
+    fig_vel.update_layout(title="Velocidad Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+    vel_fname = f"oee_vel_{day}.html"
+    fig_vel.write_html(os.path.join(out_dir, vel_fname))
+    plots.append({"title": "Comparativa de Velocidad", "url": f"static/plots/{vel_fname}"})
+
+    # 3. Paros (Minutos Programados vs No Programados)
+    fig_stop = go.Figure(data=[
+        go.Bar(name='No Programado (Min)', x=shifts, y=[r.get("TiempoNoProdNoProgramadoMin") for r in data], marker_color='#e74c3c'),
+        go.Bar(name='Programado (Min)', x=shifts, y=[r.get("TiempoNoProdProgramadoMin") for r in data], marker_color='#f1c40f')
+    ])
+    fig_stop.update_layout(title="Tiempo de Paro por Turno (Minutos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+    stop_fname = f"oee_stops_{day}.html"
+    fig_stop.write_html(os.path.join(out_dir, stop_fname))
+    plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}"})
+    
+    return plots
+
 
 @app.post("/api/oee/day-turn/")
 async def api_oee_day_turn(payload: dict):
@@ -1609,13 +1714,47 @@ async def api_oee_day_turn(payload: dict):
     shift_name = payload.get("shift_name")
     if not day:
         raise HTTPException(status_code=400, detail="Falta 'day' (YYYY-MM-DD).")
+    
     rows, cols = run_sql(_sql_oee_day_turn(day, shift_name))
+    if not rows:
+        return {"day": day, "shift_name": shift_name, "rows": [], "columns": cols, "ai_analysis": "No se encontraron datos.", "plots": []}
 
-    # Normalizamos a lista de dicts para el prompt
-    rows_dicts = [dict(zip(cols, r)) for r in rows] if rows else []
-    ai = ai_oee_day_turn(day, rows_dicts, shift_name)
+    # Dicts para IA y para generar gráficas (antes de formatear tiempos)
+    rows_dicts_raw = [dict(zip(cols, r)) for r in rows]
 
-    return {"day": day, "shift_name": shift_name, "rows": rows, "columns": cols, "ai_analysis": ai}
+    # Generar gráficas si hay datos
+    plots = plot_oee_historical_comparison(day, rows_dicts_raw)
+
+    # Formatear duraciones para el reporte final (tablas e IA)
+    duration_cols = [
+        "DuracionTurnoMin", "TiempoDisponibleMin", "TiempoProductivoMin", 
+        "TiempoNoProdProgramadoMin", "TiempoNoProdNoProgramadoMin"
+    ]
+    
+    rows_dicts_formatted = []
+    for r in rows_dicts_raw:
+        new_row = dict(r)
+        for col in duration_cols:
+            if col in new_row:
+                new_row[col] = format_duration_es(new_row[col])
+        rows_dicts_formatted.append(new_row)
+
+    # IA recibe los datos ya formateados para que hable en "horas y minutos"
+    ai = ai_oee_day_turn(day, rows_dicts_formatted, shift_name)
+
+    # Para el frontend: convertimos de vuelta a lista de listas usando los dicts formateados
+    rows_final = []
+    for r_dict in rows_dicts_formatted:
+        rows_final.append([r_dict.get(c) for c in cols])
+
+    return {
+        "day": day, 
+        "shift_name": shift_name, 
+        "rows": rows_final, 
+        "columns": cols, 
+        "ai_analysis": ai,
+        "plots": plots
+    }
 
 
 @app.post("/api/cv/day/")
