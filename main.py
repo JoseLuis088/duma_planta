@@ -1690,8 +1690,7 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
         title="Eficiencia Global (OEE %) por Turno", 
         template="plotly_dark", 
         margin=dict(l=40, r=40, t=60, b=40), 
-        yaxis_range=[0, max(105, max(oee_values or [0]) + 10)],
-        yaxis_suffix="%"
+        yaxis=dict(range=[0, max(105, max(oee_values or [0]) + 10)], ticksuffix="%")
     )
     oee_fname = f"oee_kpi_{day}.html"
     fig_oee.write_html(os.path.join(out_dir, oee_fname))
