@@ -1672,9 +1672,32 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     data = sorted(rows_dicts, key=lambda x: shift_order.get(x.get("Turno"), 9))
     shifts = [r.get("Turno") for r in data]
     
-    # --- 1. Eficiencia (OEE %) - AHORA AL PRINCIPIO ---
-    # Aseguramos que los valores sean numéricos para evitar errores de renderizado
-    oee_values = [float(r.get("OEE") or 0) for r in data]
+def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dict]:
+    """Genera gráficas Plotly para comparar métricas por turno."""
+    import plotly.graph_objects as go
+    
+    if not rows_dicts:
+        return []
+        
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    
+    plots = []
+    
+    # Helper para asegurar valores numéricos
+    def to_f(v):
+        try:
+            return float(v) if v is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    # Ordenar por turno
+    shift_order = {"Primer Turno": 1, "Segundo Turno": 2, "Tercer Turno": 3}
+    data = sorted(rows_dicts, key=lambda x: shift_order.get(x.get("Turno"), 9))
+    shifts = [r.get("Turno") for r in data]
+    
+    # --- 1. Eficiencia (OEE %) ---
+    oee_values = [to_f(r.get("OEE")) for r in data]
     fig_oee = go.Figure(data=[
         go.Bar(
             name='OEE (%)', 
@@ -1697,9 +1720,11 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     plots.append({"title": "Indicador OEE (%)", "url": f"static/plots/{oee_fname}"})
 
     # --- 2. Producción (Real vs Esperada) ---
+    real_prod = [to_f(r.get("ProduccionRealKg")) for r in data]
+    est_prod = [to_f(r.get("ProduccionEstimadaKg")) for r in data]
     fig_prod = go.Figure(data=[
-        go.Bar(name='Real (Kg)', x=shifts, y=[r.get("ProduccionRealKg") for r in data], marker_color='#3498db'),
-        go.Bar(name='Esperada (Kg)', x=shifts, y=[r.get("ProduccionEstimadaKg") for r in data], marker_color='#34495e')
+        go.Bar(name='Real (Kg)', x=shifts, y=real_prod, marker_color='#3498db'),
+        go.Bar(name='Esperada (Kg)', x=shifts, y=est_prod, marker_color='#34495e')
     ])
     fig_prod.update_layout(title="Producción Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     prod_fname = f"oee_prod_{day}.html"
@@ -1707,9 +1732,11 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     plots.append({"title": "Comparativa de Producción", "url": f"static/plots/{prod_fname}"})
     
     # --- 3. Velocidad (Real vs Esperada) ---
+    real_vel = [to_f(r.get("VelocidadPromedioRealKgHr")) for r in data]
+    est_vel = [to_f(r.get("VelocidadPromedioEstimadaKgHr")) for r in data]
     fig_vel = go.Figure(data=[
-        go.Bar(name='Real (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioRealKgHr") for r in data], marker_color='#9b59b6'),
-        go.Bar(name='Esperada (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioEstimadaKgHr") for r in data], marker_color='#2c3e50')
+        go.Bar(name='Real (Kg/h)', x=shifts, y=real_vel, marker_color='#9b59b6'),
+        go.Bar(name='Esperada (Kg/h)', x=shifts, y=est_vel, marker_color='#2c3e50')
     ])
     fig_vel.update_layout(title="Velocidad Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     vel_fname = f"oee_vel_{day}.html"
@@ -1717,9 +1744,11 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     plots.append({"title": "Comparativa de Velocidad", "url": f"static/plots/{vel_fname}"})
 
     # --- 4. Paros (Minutos) ---
+    un_stop = [to_f(r.get("TiempoNoProdNoProgramadoMin")) for r in data]
+    sch_stop = [to_f(r.get("TiempoNoProdProgramadoMin")) for r in data]
     fig_stop = go.Figure(data=[
-        go.Bar(name='No Programado (Min)', x=shifts, y=[r.get("TiempoNoProdNoProgramadoMin") for r in data], marker_color='#e74c3c'),
-        go.Bar(name='Programado (Min)', x=shifts, y=[r.get("TiempoNoProdProgramadoMin") for r in data], marker_color='#f1c40f')
+        go.Bar(name='No Programado (Min)', x=shifts, y=un_stop, marker_color='#e74c3c'),
+        go.Bar(name='Programado (Min)', x=shifts, y=sch_stop, marker_color='#f1c40f')
     ])
     fig_stop.update_layout(title="Tiempo de Paro por Turno (Minutos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     stop_fname = f"oee_stops_{day}.html"
@@ -1727,9 +1756,11 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}"})
     
     # --- 5. Frecuencia de Paros (Eventos) ---
+    un_stop_cnt = [to_f(r.get("ParosNoProgramadosCont")) for r in data]
+    sch_stop_cnt = [to_f(r.get("ParosProgramadosCont")) for r in data]
     fig_stop_cnt = go.Figure(data=[
-        go.Bar(name='Eventos No Programados', x=shifts, y=[r.get("ParosNoProgramadosCont") for r in data], marker_color='#e67e22'),
-        go.Bar(name='Eventos Programados', x=shifts, y=[r.get("ParosProgramadosCont") for r in data], marker_color='#d35400')
+        go.Bar(name='Eventos No Programados', x=shifts, y=un_stop_cnt, marker_color='#e67e22'),
+        go.Bar(name='Eventos Programados', x=shifts, y=sch_stop_cnt, marker_color='#d35400')
     ])
     fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     stop_cnt_fname = f"oee_stop_counts_{day}.html"
