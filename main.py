@@ -589,9 +589,25 @@ SELECT TOP (1)
     pli.CurrentProduction             AS CurrentProduction,
     pli.ExpectedDayProduction         AS ExpectedDayProduction,
 
-    -- Conteo de Paros
-    pli.ParosProgramadosCont          AS ParosProgramadosCont,
-    pli.ParosNoProgramadosCont        AS ParosNoProgramadosCont
+    -- Conteo de eventos de paros (Lógica calculada oficial)
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = pli.ProductionLineId
+              AND IntervalBegin >= DATEADD(MINUTE, -60, pli.IntervalBegin)
+              AND IntervalBegin <= pli.IntervalBegin
+        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = pli.ProductionLineId
+              AND IntervalBegin >= DATEADD(MINUTE, -60, pli.IntervalBegin)
+              AND IntervalBegin <= pli.IntervalBegin
+        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont
 
 FROM dbo.ProductionLineIntervals AS pli
 INNER JOIN dbo.ProductionLines AS pl
