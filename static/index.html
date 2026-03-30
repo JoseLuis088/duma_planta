@@ -2037,10 +2037,8 @@
         } else {
           el("topTitle").textContent = "OEE (Eficiencia)";
           el("topSubtitle").textContent = "Desempeño global y por turno";
-          // Solo consultar automáticamente la primera vez
-          if (!lastOeeRtData) {
-            fetchOeeRealtime();
-          }
+          // Ya no se consulta automáticamente al entrar (a petición del usuario)
+          // Solo se disparará al dar click en 'Actualizar Ahora'
         }
       }
 
