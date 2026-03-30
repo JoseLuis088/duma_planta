@@ -1672,9 +1672,34 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     data = sorted(rows_dicts, key=lambda x: shift_order.get(x.get("Turno"), 9))
     shifts = [r.get("Turno") for r in data]
     
-    # 1. Producción (Real vs Esperada)
+    # --- 1. Eficiencia (OEE %) - AHORA AL PRINCIPIO ---
+    # Aseguramos que los valores sean numéricos para evitar errores de renderizado
+    oee_values = [float(r.get("OEE") or 0) for r in data]
+    fig_oee = go.Figure(data=[
+        go.Bar(
+            name='OEE (%)', 
+            x=shifts, 
+            y=oee_values, 
+            marker_color='#1abc9c', 
+            text=[f"{v:.1f}%" for v in oee_values], 
+            textposition='outside',
+            width=0.5
+        )
+    ])
+    fig_oee.update_layout(
+        title="Eficiencia Global (OEE %) por Turno", 
+        template="plotly_dark", 
+        margin=dict(l=40, r=40, t=60, b=40), 
+        yaxis_range=[0, max(105, max(oee_values or [0]) + 10)],
+        yaxis_suffix="%"
+    )
+    oee_fname = f"oee_kpi_{day}.html"
+    fig_oee.write_html(os.path.join(out_dir, oee_fname))
+    plots.append({"title": "Indicador OEE (%)", "url": f"static/plots/{oee_fname}"})
+
+    # --- 2. Producción (Real vs Esperada) ---
     fig_prod = go.Figure(data=[
-        go.Bar(name='Real (Kg)', x=shifts, y=[r.get("ProduccionRealKg") for r in data], marker_color='#1abc9c'),
+        go.Bar(name='Real (Kg)', x=shifts, y=[r.get("ProduccionRealKg") for r in data], marker_color='#3498db'),
         go.Bar(name='Esperada (Kg)', x=shifts, y=[r.get("ProduccionEstimadaKg") for r in data], marker_color='#34495e')
     ])
     fig_prod.update_layout(title="Producción Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
@@ -1682,9 +1707,9 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     fig_prod.write_html(os.path.join(out_dir, prod_fname))
     plots.append({"title": "Comparativa de Producción", "url": f"static/plots/{prod_fname}"})
     
-    # 2. Velocidad (Real vs Esperada)
+    # --- 3. Velocidad (Real vs Esperada) ---
     fig_vel = go.Figure(data=[
-        go.Bar(name='Real (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioRealKgHr") for r in data], marker_color='#3498db'),
+        go.Bar(name='Real (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioRealKgHr") for r in data], marker_color='#9b59b6'),
         go.Bar(name='Esperada (Kg/h)', x=shifts, y=[r.get("VelocidadPromedioEstimadaKgHr") for r in data], marker_color='#2c3e50')
     ])
     fig_vel.update_layout(title="Velocidad Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
@@ -1692,7 +1717,7 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     fig_vel.write_html(os.path.join(out_dir, vel_fname))
     plots.append({"title": "Comparativa de Velocidad", "url": f"static/plots/{vel_fname}"})
 
-    # 3. Paros (Minutos Programados vs No Programados)
+    # --- 4. Paros (Minutos) ---
     fig_stop = go.Figure(data=[
         go.Bar(name='No Programado (Min)', x=shifts, y=[r.get("TiempoNoProdNoProgramadoMin") for r in data], marker_color='#e74c3c'),
         go.Bar(name='Programado (Min)', x=shifts, y=[r.get("TiempoNoProdProgramadoMin") for r in data], marker_color='#f1c40f')
@@ -1702,16 +1727,7 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     fig_stop.write_html(os.path.join(out_dir, stop_fname))
     plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}"})
     
-    # 4. OEE (%) por Turno
-    fig_oee = go.Figure(data=[
-        go.Bar(name='OEE (%)', x=shifts, y=[r.get("OEE") for r in data], marker_color='#9b59b6', text=[f"{r.get('OEE')}%" for r in data], textposition='auto')
-    ])
-    fig_oee.update_layout(title="OEE (%) por Turno", template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40), yaxis_range=[0, 105])
-    oee_fname = f"oee_kpi_{day}.html"
-    fig_oee.write_html(os.path.join(out_dir, oee_fname))
-    plots.append({"title": "Eficiencia (OEE %)", "url": f"static/plots/{oee_fname}"})
-
-    # 5. Frecuencia de Paros (No programados US y Programados SS)
+    # --- 5. Frecuencia de Paros (Eventos) ---
     fig_stop_cnt = go.Figure(data=[
         go.Bar(name='Eventos No Programados', x=shifts, y=[r.get("ParosNoProgramadosCont") for r in data], marker_color='#e67e22'),
         go.Bar(name='Eventos Programados', x=shifts, y=[r.get("ParosProgramadosCont") for r in data], marker_color='#d35400')
