@@ -532,8 +532,14 @@ SELECT TOP (1)
     ROUND(pli.OEEPerformance,2)       AS Performance,
     ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
-    -- Estado de la línea
-    pli.ProductionLineStatus          AS StatusCode,
+    -- Estado de la línea (con nombres completos)
+    CASE pli.IntervalProductionLineStatus
+        WHEN 'US' THEN N'Paro No Programado'
+        WHEN 'SS' THEN N'Paro Programado'
+        WHEN 'LP' THEN N'Baja Producción'
+        WHEN 'AV' THEN N'Disponible'
+        ELSE pli.IntervalProductionLineStatus
+    END                                              AS StatusCode,
 
     -- Tiempos (calculados desde HH:MM:SS reales o minutos sueltos)
     CASE 
@@ -1468,7 +1474,14 @@ SELECT TOP (1)
     ROUND(pli.OEEPerformance,2)       AS Performance,
     ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
-    pli.ProductionLineStatus          AS StatusCode,
+    -- Estado de la línea (con nombres completos)
+    CASE pli.IntervalProductionLineStatus
+        WHEN 'US' THEN N'Paro No Programado'
+        WHEN 'SS' THEN N'Paro Programado'
+        WHEN 'LP' THEN N'Baja Producción'
+        WHEN 'AV' THEN N'Disponible'
+        ELSE pli.IntervalProductionLineStatus
+    END                                              AS StatusCode,
 
     CASE 
         WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
