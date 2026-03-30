@@ -1567,17 +1567,8 @@ SELECT
     wses.Availability              AS Disponibilidad,
     wses.Performance               AS Desempeno,
     wses.Quality                   AS [Producto Conforme],
-    wses.WorkshiftDurationMin      AS DuracionTurnoMin,
-    wses.AvailableTimeMin          AS TiempoDisponibleMin,
-    wses.ProductiveTimeMin         AS TiempoProductivoMin,
-    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
-    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
-    wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
-    wses.CurrentProductionSummary  AS ProduccionRealKg,
-    wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
-    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr,
 
-    -- Conteo de eventos de paros (No programados US y Programados SS)
+    -- Conteo de eventos de paros (No programados US y Programados SS) - MOVED UP
     (
         SELECT COUNT(*) FROM (
             SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
@@ -1593,8 +1584,17 @@ SELECT
             WHERE ProductionLineId = wses.ProductionLineId
               AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
         ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
-    ) AS ParosProgramadosCont
+    ) AS ParosProgramadosCont,
 
+    wses.WorkshiftDurationMin      AS DuracionTurnoMin,
+    wses.AvailableTimeMin          AS TiempoDisponibleMin,
+    wses.ProductiveTimeMin         AS TiempoProductivoMin,
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
+    wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
+    wses.CurrentProductionSummary  AS ProduccionRealKg,
+    wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
+    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions AS wse
     ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
@@ -1701,6 +1701,25 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     stop_fname = f"oee_stops_{day}.html"
     fig_stop.write_html(os.path.join(out_dir, stop_fname))
     plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}"})
+    
+    # 4. OEE (%) por Turno
+    fig_oee = go.Figure(data=[
+        go.Bar(name='OEE (%)', x=shifts, y=[r.get("OEE") for r in data], marker_color='#9b59b6', text=[f"{r.get('OEE')}%" for r in data], textposition='auto')
+    ])
+    fig_oee.update_layout(title="OEE (%) por Turno", template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40), yaxis_range=[0, 105])
+    oee_fname = f"oee_kpi_{day}.html"
+    fig_oee.write_html(os.path.join(out_dir, oee_fname))
+    plots.append({"title": "Eficiencia (OEE %)", "url": f"static/plots/{oee_fname}"})
+
+    # 5. Frecuencia de Paros (No programados US y Programados SS)
+    fig_stop_cnt = go.Figure(data=[
+        go.Bar(name='Eventos No Programados', x=shifts, y=[r.get("ParosNoProgramadosCont") for r in data], marker_color='#e67e22'),
+        go.Bar(name='Eventos Programados', x=shifts, y=[r.get("ParosProgramadosCont") for r in data], marker_color='#d35400')
+    ])
+    fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+    stop_cnt_fname = f"oee_stop_counts_{day}.html"
+    fig_stop_cnt.write_html(os.path.join(out_dir, stop_cnt_fname))
+    plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{stop_cnt_fname}"})
     
     return plots
 
