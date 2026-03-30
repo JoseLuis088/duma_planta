@@ -2586,6 +2586,70 @@ async def report_control_variables_day(payload: dict):
     )
 
 
+def _generate_oee_rt_pngs(snap_dict: dict) -> List[str]:
+    """Genera versiones estáticas (PNG) de las gráficas de tiempo real para el PDF."""
+    import plotly.graph_objects as go
+    import os, uuid
+    
+    if not snap_dict: return []
+    
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    
+    def to_f(v):
+        try: return float(v) if v is not None else 0.0
+        except: return 0.0
+
+    image_paths = []
+    uid = uuid.uuid4().hex[:8]
+
+    # 1. OEE %
+    oee_val = to_f(snap_dict.get("OEE"))
+    fig = go.Figure(go.Bar(x=["Turno Actual"], y=[oee_val], marker_color='#1abc9c', text=[f"{oee_val:.1f}%"], textposition='outside'))
+    fig.update_layout(template="plotly_dark", title="Eficiencia OEE (%)", margin=dict(l=20, r=20, t=40, b=20), height=300)
+    p1 = os.path.join(out_dir, f"oee_rt_kpi_{uid}.png")
+    fig.write_image(p1, engine="kaleido")
+    image_paths.append(p1)
+
+    # 2. Producción
+    prod_real = to_f(snap_dict.get("CurrentShiftProduction"))
+    prod_exp = to_f(snap_dict.get("ExpectedShiftProduction"))
+    fig = go.Figure([go.Bar(name='Real', x=["Prod"], y=[prod_real], marker_color='#1abc9c'), go.Bar(name='Esperado', x=["Prod"], y=[prod_exp], marker_color='#34495e')])
+    fig.update_layout(template="plotly_dark", barmode='group', title="Producción Turno (Kg)", margin=dict(l=20, r=20, t=40, b=20), height=300)
+    p2 = os.path.join(out_dir, f"oee_rt_prod_{uid}.png")
+    fig.write_image(p2, engine="kaleido")
+    image_paths.append(p2)
+
+    # 3. Velocidad
+    vel_real = to_f(snap_dict.get("CurrentRate"))
+    vel_exp = to_f(snap_dict.get("ExpectedRate"))
+    fig = go.Figure([go.Bar(name='Real', x=["Velocidad"], y=[vel_real], marker_color='#1abc9c'), go.Bar(name='Esperado', x=["Velocidad"], y=[vel_exp], marker_color='#34495e')])
+    fig.update_layout(template="plotly_dark", barmode='group', title="Velocidad (Kg/h)", margin=dict(l=20, r=20, t=40, b=20), height=300)
+    p3 = os.path.join(out_dir, f"oee_rt_vel_{uid}.png")
+    fig.write_image(p3, engine="kaleido")
+    image_paths.append(p3)
+
+    # 4. Paros
+    dur_us = to_f(snap_dict.get("UnscheduledStopageMin"))
+    dur_ss = to_f(snap_dict.get("ScheduledStopageMin"))
+    fig = go.Figure([go.Bar(name='No Prog', x=["Mins"], y=[dur_us], marker_color='#e74c3c'), go.Bar(name='Prog', x=["Mins"], y=[dur_ss], marker_color='#f1c40f')])
+    fig.update_layout(template="plotly_dark", barmode='group', title="Tiempos Paros (Min)", margin=dict(l=20, r=20, t=40, b=20), height=300)
+    p4 = os.path.join(out_dir, f"oee_rt_stops_{uid}.png")
+    fig.write_image(p4, engine="kaleido")
+    image_paths.append(p4)
+
+    # 5. Frecuencia
+    cnt_us = to_f(snap_dict.get("ParosNoProgramadosCont"))
+    cnt_ss = to_f(snap_dict.get("ParosProgramadosCont"))
+    fig = go.Figure([go.Bar(name='No Prog', x=["Eventos"], y=[cnt_us], marker_color='#e74c3c'), go.Bar(name='Prog', x=["Eventos"], y=[cnt_ss], marker_color='#f1c40f')])
+    fig.update_layout(template="plotly_dark", barmode='group', title="Frecuencia Paros", margin=dict(l=20, r=20, t=40, b=20), height=300)
+    p5 = os.path.join(out_dir, f"oee_rt_freq_{uid}.png")
+    fig.write_image(p5, engine="kaleido")
+    image_paths.append(p5)
+
+    return image_paths
+
+
 @app.post("/api/report/oee/realtime/")
 async def report_oee_realtime(payload: dict):
     """Descarga reporte (PDF/DOCX) de OEE en tiempo real (último snapshot)."""
@@ -2606,25 +2670,47 @@ async def report_oee_realtime(payload: dict):
     if not rows or not cols:
         raise HTTPException(status_code=404, detail="No hay datos de OEE en tiempo real.")
 
+    # Usamos el primer snapshot para el reporte
     row = dict(zip(cols, rows[0]))
 
-    # Mapeo a nombres cliente (ajusta si quieres)
-    def fmt_pct(x):
+    def fmt_num(x, suffix=""):
         try:
-            return round(float(x), 2)
-        except Exception:
-            return x
+            val = float(x)
+            return f"{val:.2f}{suffix}"
+        except:
+            return str(x)
 
+    # Tabla ampliada de métricas
     table = [
-        {"Métrica": "OEE", "Valor": fmt_pct(row.get("OEE"))},
-        {"Métrica": "Disponibilidad", "Valor": fmt_pct(row.get("Availability"))},
-        {"Métrica": "Desempeño", "Valor": fmt_pct(row.get("Performance"))},
-        {"Métrica": "Producto Conforme", "Valor": fmt_pct(row.get("Producto Conforme"))},
-        {"Métrica": "Estado de línea", "Valor": row.get("IntervalProductionLineStatus") or row.get("StatusCode")},
-        {"Métrica": "Snapshot (local)", "Valor": row.get("SnapshotAtLocal")},
+        {"Métrica": "OEE (%)", "Valor": fmt_num(row.get("OEE"), "%")},
+        {"Métrica": "Disponibilidad (%)", "Valor": fmt_num(row.get("Availability"), "%")},
+        {"Métrica": "Desempeño (%)", "Valor": fmt_num(row.get("Performance"), "%")},
+        {"Métrica": "Producto Conforme (%)", "Valor": fmt_num(row.get("Producto Conforme"), "%")},
+        {"Métrica": "Estatus Actual", "Valor": row.get("StatusCode") or "N/A"},
+        {"Métrica": "Snapshot (Local)", "Valor": row.get("SnapshotAtLocal") or "N/A"},
+        {"Métrica": "Línea", "Valor": row.get("LineName") or "N/A"},
+        {"Métrica": "Producción Real (Kg)", "Valor": fmt_num(row.get("CurrentShiftProduction"))},
+        {"Métrica": "Producción Esperada (Kg)", "Valor": fmt_num(row.get("ExpectedShiftProduction"))},
+        {"Métrica": "Velocidad Real (Kg/h)", "Valor": fmt_num(row.get("CurrentRate"))},
+        {"Métrica": "Velocidad Esperada (Kg/h)", "Valor": fmt_num(row.get("ExpectedRate"))},
+        {"Métrica": "Paros US (Eventos)", "Valor": row.get("ParosNoProgramadosCont") or 0},
+        {"Métrica": "Paros SS (Eventos)", "Valor": row.get("ParosProgramadosCont") or 0},
+        {"Métrica": "Duración US", "Valor": row.get("UnscheduledStopageMin") or "0 minutos"},
+        {"Métrica": "Duración SS", "Valor": row.get("ScheduledStopageMin") or "0 minutos"},
     ]
 
-    # IA (al final)
+    # Gráficas PNG (Backend)
+    image_paths = []
+    try:
+        from main import _sql_oee_realtime, run_sql
+        rows_raw, cols_raw = run_sql(_sql_oee_realtime())
+        if rows_raw:
+            raw_snap = dict(zip(cols_raw, rows_raw[0]))
+            image_paths = _generate_oee_rt_pngs(raw_snap)
+    except Exception as e:
+        print(f"Error generando PNGs para tiempo real: {e}")
+
+    # IA (Texto)
     ai_text = provided_ai if provided_ai is not None else ""
     if provided_ai is None:
         try:
@@ -2632,26 +2718,25 @@ async def report_oee_realtime(payload: dict):
         except Exception:
             ai_text = ""
 
-    title = "Reporte — OEE en tiempo real"
-    subtitle = f"Último snapshot disponible"
+    title = "Reporte Ejecutivo — OEE Tiempo Real"
+    subtitle = f"Snapshot extraído a las {row.get('SnapshotAtLocal') or 'N/A'}"
 
     sections = [
-        {"title": "Resumen", "text": "Indicadores calculados sobre el último snapshot minuto a minuto."}
+        {"title": "Resumen Operativo", "text": "Estado actual de la línea de producción basado en el último snapshot de telemetría."}
     ]
-    if ai_text:
-        sections.append({"title": "Análisis mediante IA (Duma)", "text": ai_text})
+    
+    if image_paths:
+        sections.append({
+            "title": "Análisis Visual de Desempeño",
+            "text": "Comparativa de eficiencia, producción y velocidad del turno actual:",
+            "images": image_paths
+        })
 
-    if fmt in ("docx", "word"):
-        content = _build_docx_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH)
-        filename = "oee_tiempo_real.docx"
-        return Response(
-            content=content,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-        )
+    if ai_text:
+        sections.append({"title": "Análisis y Recomendaciones (IA)", "text": ai_text})
 
     content = _build_pdf_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH)
-    filename = "oee_tiempo_real.pdf"
+    filename = "reporte_oee_realtime.pdf"
     return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 from fastapi import Response, HTTPException
