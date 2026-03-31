@@ -537,7 +537,7 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
 
 
                             # ------------------------------------------------------------------
-                            # 1) TIEMPO REAL (RT.1)
+                            # 1) REALTIME (RT.1)
                             # ------------------------------------------------------------------
                             if mode == "realtime":
                                 select_sql = """
@@ -553,6 +553,28 @@ SELECT TOP (1)
     ROUND(pli.OEEPerformance,2)       AS Performance,
     ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
+    -- Conteo de eventos de paros y duraciones (AGRUPADOS)
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = pli.ProductionLineId
+              AND IntervalBegin >= DATEADD(MINUTE, -60, pli.IntervalBegin)
+              AND IntervalBegin <= pli.IntervalBegin
+        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = pli.ProductionLineId
+              AND IntervalBegin >= DATEADD(MINUTE, -60, pli.IntervalBegin)
+              AND IntervalBegin <= pli.IntervalBegin
+        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+
     -- Estado de la línea (con nombres completos)
     CASE pli.IntervalProductionLineStatus
         WHEN 'US' THEN N'Paro No Programado'
@@ -562,7 +584,7 @@ SELECT TOP (1)
         ELSE pli.IntervalProductionLineStatus
     END                                              AS StatusCode,
 
-    -- Tiempos (calculados desde HH:MM:SS reales o minutos sueltos)
+    -- Tiempos adicionales
     CASE 
         WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
             DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
@@ -576,8 +598,6 @@ SELECT TOP (1)
     END                                              AS NaturalTimeMin,
 
     DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
-    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
-    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
 
     -- Velocidades
     pli.CurrentRate                   AS CurrentRate,
@@ -587,27 +607,7 @@ SELECT TOP (1)
     pli.CurrentShiftProduction        AS CurrentShiftProduction,
     pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
     pli.CurrentProduction             AS CurrentProduction,
-    pli.ExpectedDayProduction         AS ExpectedDayProduction,
-
-    -- Conteo de eventos de paros (Lógica calculada oficial)
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = pli.ProductionLineId
-              AND IntervalBegin >= DATEADD(MINUTE, -60, pli.IntervalBegin)
-              AND IntervalBegin <= pli.IntervalBegin
-        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
-    ) AS ParosNoProgramadosCont,
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = pli.ProductionLineId
-              AND IntervalBegin >= DATEADD(MINUTE, -60, pli.IntervalBegin)
-              AND IntervalBegin <= pli.IntervalBegin
-        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
-    ) AS ParosProgramadosCont
+    pli.ExpectedDayProduction         AS ExpectedDayProduction
 
 FROM dbo.ProductionLineIntervals AS pli
 INNER JOIN dbo.ProductionLines AS pl
@@ -618,7 +618,6 @@ WHERE
         OR pl.Name LIKE N'%' + @linePattern + N'%')
 
 ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
-
 """
 
                             # ------------------------------------------------------------------
@@ -650,11 +649,30 @@ SELECT
     wses.Availability              AS Disponibilidad,
     wses.Performance               AS Desempeno,
     wses.Quality                   AS [Producto Conforme],
+
+    -- Conteo de eventos y duraciones (AGRUPADOS)
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont,
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
     wses.ProductiveTimeMin         AS TiempoProductivoMin,
-    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
-    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
     wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
     wses.CurrentProductionSummary  AS ProduccionRealKg,
     wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
@@ -712,7 +730,26 @@ SELECT
     wses.Oee                              AS OEE,
     wses.Availability                     AS Disponibilidad,
     wses.Performance                      AS Desempeno,
-    wses.Quality                          AS [Producto Conforme]
+    wses.Quality                          AS [Producto Conforme],
+    -- Conteo de eventos de paros y duraciones (AGRUPADOS)
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont,
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions      AS wse
     ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
@@ -738,8 +775,6 @@ WHERE
     {shift_filter}
 ORDER BY Fecha, Turno;
 """
-
-
 
                             # 🔍 DEBUG: ver qué SQL se está ejecutando
                             print("\n========== SQL GENERADO POR BACKEND ==========")
@@ -1516,7 +1551,7 @@ SELECT TOP (1)
     ROUND(pli.OEEPerformance,2)       AS Performance,
     ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
 
-    -- Conteo de eventos de paros (No programados US y Programados SS)
+    -- Conteo de eventos de paros y duraciones (AGRUPADOS)
     (
         SELECT COUNT(*) FROM (
             SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
@@ -1532,7 +1567,8 @@ SELECT TOP (1)
               AND IntervalBegin <= pli.IntervalBegin
         ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
     ) AS ParosNoProgramadosCont,
-     (
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+    (
         SELECT COUNT(*) FROM (
             SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
             FROM dbo.ProductionLineIntervals
@@ -1547,6 +1583,7 @@ SELECT TOP (1)
               AND IntervalBegin <= pli.IntervalBegin
         ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
     ) AS ParosProgramadosCont,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
 
     -- Estado de la línea (con nombres completos)
     CASE pli.IntervalProductionLineStatus
@@ -1570,8 +1607,6 @@ SELECT TOP (1)
     END                                              AS NaturalTimeMin,
 
     DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
-    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
-    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
 
     pli.CurrentRate                   AS CurrentRate,
     pli.ExpectedRate                  AS ExpectedRate,
@@ -1621,7 +1656,7 @@ SELECT
     wses.Performance               AS Desempeno,
     wses.Quality                   AS [Producto Conforme],
 
-    -- Conteo de eventos de paros (No programados US y Programados SS) - MOVED UP
+    -- Conteo de eventos y duraciones (AGRUPADOS)
     (
         SELECT COUNT(*) FROM (
             SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
@@ -1630,6 +1665,7 @@ SELECT
               AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
         ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
     ) AS ParosNoProgramadosCont,
+    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
     (
         SELECT COUNT(*) FROM (
             SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
@@ -1638,12 +1674,11 @@ SELECT
               AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
         ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
     ) AS ParosProgramadosCont,
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
 
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
     wses.ProductiveTimeMin         AS TiempoProductivoMin,
-    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
-    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
     wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
     wses.CurrentProductionSummary  AS ProduccionRealKg,
     wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
@@ -2714,10 +2749,10 @@ async def report_oee_realtime(payload: dict):
         {"Métrica": "Producción Esperada (Kg)", "Valor": fmt_num(row.get("ExpectedShiftProduction"))},
         {"Métrica": "Velocidad Real (Kg/h)", "Valor": fmt_num(row.get("CurrentRate"))},
         {"Métrica": "Velocidad Esperada (Kg/h)", "Valor": fmt_num(row.get("ExpectedRate"))},
-        {"Métrica": "Paros US (Eventos)", "Valor": row.get("ParosNoProgramadosCont") or 0},
-        {"Métrica": "Paros SS (Eventos)", "Valor": row.get("ParosProgramadosCont") or 0},
-        {"Métrica": "Duración US", "Valor": row.get("UnscheduledStopageMin") or "0 minutos"},
-        {"Métrica": "Duración SS", "Valor": row.get("ScheduledStopageMin") or "0 minutos"},
+        {"Métrica": "Paros No Programados (Eventos)", "Valor": row.get("ParosNoProgramadosCont") or 0},
+        {"Métrica": "Duración Paros No Prog.", "Valor": row.get("UnscheduledStopageMin") or "0 minutos"},
+        {"Métrica": "Paros Programados (Eventos)", "Valor": row.get("ParosProgramadosCont") or 0},
+        {"Métrica": "Duración Paros Prog.", "Valor": row.get("ScheduledStopageMin") or "0 minutos"},
     ]
 
     # Gráficas PNG (Backend)
