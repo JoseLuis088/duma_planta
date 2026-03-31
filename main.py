@@ -1764,7 +1764,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     prod_expected = to_f(snap_dict.get("ExpectedShiftProduction"))
     fig_prod = go.Figure(data=[
         go.Bar(name='Real', x=["Producción"], y=[prod_real], marker_color='#1abc9c'),
-        go.Bar(name='Esperada', x=["Producción"], y=[prod_expected], marker_color='#64748b')
+        go.Bar(name='Esperada', x=["Producción"], y=[prod_expected], marker_color='#6366f1')
     ])
     fig_prod.update_layout(
         title="Producción del Turno (Kg) - Snapshot", 
@@ -1780,7 +1780,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     vel_expected = to_f(snap_dict.get("ExpectedRate"))
     fig_vel = go.Figure(data=[
         go.Bar(name='Real', x=["Velocidad"], y=[vel_real], marker_color='#1abc9c'),
-        go.Bar(name='Esperada', x=["Velocidad"], y=[vel_expected], marker_color='#64748b')
+        go.Bar(name='Esperada', x=["Velocidad"], y=[vel_expected], marker_color='#6366f1')
     ])
     fig_vel.update_layout(
         title="Velocidad Promedio (Kg/h) - Snapshot", 
@@ -1795,8 +1795,8 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     dur_unsched = to_f(snap_dict.get("UnscheduledStopageMin"))
     dur_sched = to_f(snap_dict.get("ScheduledStopageMin"))
     fig_stops = go.Figure(data=[
-        go.Bar(name='No Programado', x=["Paros"], y=[dur_unsched], marker_color='#e74c3c'),
-        go.Bar(name='Programado', x=["Paros"], y=[dur_sched], marker_color='#f1c40f')
+        go.Bar(name='No Programado', x=["Paros"], y=[dur_unsched], marker_color='#ef4444'),
+        go.Bar(name='Programado', x=["Paros"], y=[dur_sched], marker_color='#f59e0b')
     ])
     fig_stops.update_layout(
         title="Distribución de Paros (Minutos) - Snapshot", 
@@ -1811,14 +1811,15 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     cnt_unsched = to_f(snap_dict.get("ParosNoProgramadosCont"))
     cnt_sched = to_f(snap_dict.get("ParosProgramadosCont"))
     fig_freq = go.Figure(data=[
-        go.Bar(name='No Programado', x=["Eventos"], y=[cnt_unsched], marker_color='#e74c3c'),
-        go.Bar(name='Programado', x=["Eventos"], y=[cnt_sched], marker_color='#f1c40f')
+        go.Bar(name='No Programado', x=["Eventos"], y=[cnt_unsched], marker_color='#ef4444'),
+        go.Bar(name='Programado', x=["Eventos"], y=[cnt_sched], marker_color='#f59e0b')
     ])
     fig_freq.update_layout(
         title="Frecuencia de Paros (Eventos) - Snapshot", 
         template="plotly_dark", barmode='group',
         margin=dict(l=40, r=40, t=60, b=40)
     )
+
     freq_fname = f"oee_rt_freq_{ts}.html"
     fig_freq.write_html(os.path.join(out_dir, freq_fname))
     plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{freq_fname}"})
@@ -1933,8 +1934,8 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     real_prod = [to_f(r.get("ProduccionRealKg")) for r in data]
     est_prod = [to_f(r.get("ProduccionEstimadaKg")) for r in data]
     fig_prod = go.Figure(data=[
-        go.Bar(name='Real (Kg)', x=shifts, y=real_prod, marker_color='#3498db'),
-        go.Bar(name='Esperada (Kg)', x=shifts, y=est_prod, marker_color='#64748b')
+        go.Bar(name='Real (Kg)', x=shifts, y=real_prod, marker_color='#1abc9c'),
+        go.Bar(name='Esperada (Kg)', x=shifts, y=est_prod, marker_color='#6366f1')
     ])
     fig_prod.update_layout(title="Producción Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     prod_fname = f"oee_prod_{day}.html"
@@ -1949,8 +1950,8 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     real_vel = [to_f(r.get("VelocidadPromedioRealKgHr")) for r in data]
     est_vel = [to_f(r.get("VelocidadPromedioEstimadaKgHr")) for r in data]
     fig_vel = go.Figure(data=[
-        go.Bar(name='Real (Kg/h)', x=shifts, y=real_vel, marker_color='#9b59b6'),
-        go.Bar(name='Esperada (Kg/h)', x=shifts, y=est_vel, marker_color='#64748b')
+        go.Bar(name='Real (Kg/h)', x=shifts, y=real_vel, marker_color='#1abc9c'),
+        go.Bar(name='Esperada (Kg/h)', x=shifts, y=est_vel, marker_color='#6366f1')
     ])
     fig_vel.update_layout(title="Velocidad Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     vel_fname = f"oee_vel_{day}.html"
@@ -1965,8 +1966,8 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     un_stop = [to_f(r.get("TiempoNoProdNoProgramadoMin")) for r in data]
     sch_stop = [to_f(r.get("TiempoNoProdProgramadoMin")) for r in data]
     fig_stop = go.Figure(data=[
-        go.Bar(name='No Programado (Min)', x=shifts, y=un_stop, marker_color='#e74c3c'),
-        go.Bar(name='Programado (Min)', x=shifts, y=sch_stop, marker_color='#f1c40f')
+        go.Bar(name='No Programado (Min)', x=shifts, y=un_stop, marker_color='#ef4444'),
+        go.Bar(name='Programado (Min)', x=shifts, y=sch_stop, marker_color='#f59e0b')
     ])
     fig_stop.update_layout(title="Tiempo de Paro por Turno (Minutos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
     stop_fname = f"oee_stops_{day}.html"
@@ -1981,10 +1982,11 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
     un_stop_cnt = [to_f(r.get("ParosNoProgramadosCont")) for r in data]
     sch_stop_cnt = [to_f(r.get("ParosProgramadosCont")) for r in data]
     fig_stop_cnt = go.Figure(data=[
-        go.Bar(name='Eventos No Programados', x=shifts, y=un_stop_cnt, marker_color='#e67e22'),
-        go.Bar(name='Eventos Programados', x=shifts, y=sch_stop_cnt, marker_color='#d35400')
+        go.Bar(name='Eventos No Programados', x=shifts, y=un_stop_cnt, marker_color='#ef4444'),
+        go.Bar(name='Eventos Programados', x=shifts, y=sch_stop_cnt, marker_color='#f59e0b')
     ])
     fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+
     stop_cnt_fname = f"oee_stop_counts_{day}.html"
     stop_cnt_png = f"oee_stop_counts_{day}.png"
     fig_stop_cnt.write_html(os.path.join(out_dir, stop_cnt_fname))
