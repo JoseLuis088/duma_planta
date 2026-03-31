@@ -1,0 +1,18 @@
+=== Duma Azure Sync ===
+[1] Instrucciones actualizadas -> DumaPlanta_OEE (asst_xLwDJ6DnSpNtsCMBCVWXFtZ6)
+[2] Archivo subido: duma_cookbook.txt -> assistant-Aab4i9zrXZ7orKt5ZkuYEL
+[2] Archivo subido: schema.md -> assistant-L8EZ2BTw6XLUjwqqLFUWKe
+
+=== COMPLETADO ===
+  Instrucciones: 2004 caracteres
+  Archivos subidos: 2
+    duma_cookbook.txt: assistant-Aab4i9zrXZ7orKt5ZkuYEL
+    schema.md: assistant-L8EZ2BTw6XLUjwqqLFUWKe
+
+SIGUIENTE PASO (MANUAL - 2 minutos):
+  1. Abre https://oai.azure.com/
+  2. Ve a tu asistente DumaPlanta_OEE
+  3. En 'Archivos de busqueda', elimina los archivos viejos
+  4. Agrega los nuevos: duma_cookbook.txt y schema.md
+  5. Guarda
+

@@ -1,5 +1,200 @@
-INFO:     172.17.0.1:48482 - "HEAD / HTTP/1.1" 405 Method Not Allowed
-INFO:     Started server process [1]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+    -- Estado de la línea (con nombres completos)
+    CASE pli.IntervalProductionLineStatus
+        WHEN 'US' THEN N'Paro No Programado'
+        WHEN 'SS' THEN N'Paro Programado'
+        WHEN 'LP' THEN N'Baja Producción'
+        WHEN 'AV' THEN N'Disponible'
+        ELSE pli.IntervalProductionLineStatus
+    END                                              AS StatusCode,
+
+    -- Tiempos (calculados desde HH:MM:SS reales o minutos sueltos)
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    -- Velocidades
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    -- Producción
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction,
+
+    -- Conteo de Paros
+    pli.ParosProgramadosCont          AS ParosProgramadosCont,
+    pli.ParosNoProgramadosCont        AS ParosNoProgramadosCont
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+
+WHERE
+    (@linePattern IS NULL
+        OR pl.Name LIKE N'%' + @linePattern + N'%')
+
+ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
+
+
+======================================
+
+========== SQL GENERADO POR BACKEND ==========
+
+DECLARE @linePattern NVARCHAR(100) = NULL;
+
+SELECT TOP (1)
+    pl.Name                           AS LineName,
+    pli.IntervalBegin                 AS SnapshotAtLocal,
+
+    -- KPIs
+    ROUND(pli.OEE,2)                  AS OEE,
+    ROUND(pli.OEEAvailability,2)      AS Availability,
+    ROUND(pli.OEEPerformance,2)       AS Performance,
+    ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
+
+    -- Estado de la línea (con nombres completos)
+    CASE pli.IntervalProductionLineStatus
+        WHEN 'US' THEN N'Paro No Programado'
+        WHEN 'SS' THEN N'Paro Programado'
+        WHEN 'LP' THEN N'Baja Producción'
+        WHEN 'AV' THEN N'Disponible'
+        ELSE pli.IntervalProductionLineStatus
+    END                                              AS StatusCode,
+
+    -- Tiempos (calculados desde HH:MM:SS reales o minutos sueltos)
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    -- Velocidades
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    -- Producción
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction,
+
+    -- Conteo de Paros
+    pli.ParosProgramadosCont          AS ParosProgramadosCont,
+    pli.ParosNoProgramadosCont        AS ParosNoProgramadosCont
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+
+WHERE
+    (@linePattern IS NULL
+        OR pl.Name LIKE N'%' + @linePattern + N'%')
+
+ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
+
+
+==============================================
+
+
+====== EJECUTANDO EN SQL SERVER ======
+
+DECLARE @linePattern NVARCHAR(100) = NULL;
+
+SELECT TOP (1)
+    pl.Name                           AS LineName,
+    pli.IntervalBegin                 AS SnapshotAtLocal,
+
+    -- KPIs
+    ROUND(pli.OEE,2)                  AS OEE,
+    ROUND(pli.OEEAvailability,2)      AS Availability,
+    ROUND(pli.OEEPerformance,2)       AS Performance,
+    ROUND(pli.OEEQuality,2)           AS [Producto Conforme],
+
+    -- Estado de la línea (con nombres completos)
+    CASE pli.IntervalProductionLineStatus
+        WHEN 'US' THEN N'Paro No Programado'
+        WHEN 'SS' THEN N'Paro Programado'
+        WHEN 'LP' THEN N'Baja Producción'
+        WHEN 'AV' THEN N'Disponible'
+        ELSE pli.IntervalProductionLineStatus
+    END                                              AS StatusCode,
+
+    -- Tiempos (calculados desde HH:MM:SS reales o minutos sueltos)
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastStatusChange) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastStatusChange))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastStatusChange, 2))
+    END                                              AS StatusTimeMin,
+
+    CASE 
+        WHEN TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin) IS NOT NULL THEN
+            DATEDIFF(MINUTE, 0, TRY_CONVERT(time, pli.TimeSinceLastWorkshiftBegin))
+        ELSE TRY_CONVERT(int, RIGHT(pli.TimeSinceLastWorkshiftBegin, 2))
+    END                                              AS NaturalTimeMin,
+
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductiveTimeMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ScheduledStopageMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS UnscheduledStopageMin,
+
+    -- Velocidades
+    pli.CurrentRate                   AS CurrentRate,
+    pli.ExpectedRate                  AS ExpectedRate,
+
+    -- Producción
+    pli.CurrentShiftProduction        AS CurrentShiftProduction,
+    pli.ExpectedShiftProduction       AS ExpectedShiftProduction,
+    pli.CurrentProduction             AS CurrentProduction,
+    pli.ExpectedDayProduction         AS ExpectedDayProduction,
+
+    -- Conteo de Paros
+    pli.ParosProgramadosCont          AS ParosProgramadosCont,
+    pli.ParosNoProgramadosCont        AS ParosNoProgramadosCont
+
+FROM dbo.ProductionLineIntervals AS pli
+INNER JOIN dbo.ProductionLines AS pl
+    ON pli.ProductionLineId = pl.ProductionLineId
+
+WHERE
+    (@linePattern IS NULL
+        OR pl.Name LIKE N'%' + @linePattern + N'%')
+
+ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
+
+
+======================================
+INFO:     192.168.200.210:53972 - "POST /chat/ HTTP/1.1" 200 OK
+INFO:httpx:HTTP Request: POST https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6/submit_tool_outputs?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6/submit_tool_outputs?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/runs/run_jVCOZFpnVqbtRsgHJodkZYi6?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://ecosatai.openai.azure.com/openai/threads/thread_fUexHsDp2ibz2GJs5zHzltSV/messages?api-version=2024-12-01-preview&limit=10&order=desc "HTTP/1.1 200 OK"
