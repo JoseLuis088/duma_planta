@@ -1134,6 +1134,9 @@
       right: 0;
       width: 400px;
       height: 600px;
+      min-width: 300px;
+      min-height: 400px;
+      max-width: 90vw;
       max-height: calc(100vh - 120px);
       background: var(--panel);
       backdrop-filter: blur(24px);
@@ -1147,6 +1150,26 @@
       animation: chatOpen 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       overflow: hidden;
     }
+
+    /* Resize handle — esquina superior izquierda */
+    .chat-resize-handle {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 28px;
+      height: 28px;
+      cursor: nw-resize;
+      z-index: 10;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 6px;
+      border-radius: 24px 0 8px 0;
+      transition: opacity 0.2s;
+      opacity: 0.4;
+    }
+    .chat-resize-handle:hover { opacity: 1; }
+    .chat-resize-handle svg { pointer-events: none; }
 
     @keyframes chatOpen {
       from {
@@ -1667,6 +1690,12 @@
         <span>💬</span>
       </button>
       <div class="chat-window" id="chatWindow">
+        <!-- Resize handle -->
+        <div class="chat-resize-handle" id="chatResizeHandle" title="Arrastra para cambiar tamaño">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M1 11L11 1M6 11L11 6" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
         <div class="chat-header">
           <div class="chat-header-info">
             <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-header-img">
@@ -2646,6 +2675,68 @@
       };
 
       chatWidget.init();
+
+      // ── Chat Window Resize (drag top-left handle) ────────────────
+      (function() {
+        const handle = document.getElementById('chatResizeHandle');
+        const win    = document.getElementById('chatWindow');
+        if (!handle || !win) return;
+
+        let isResizing = false;
+        let startX, startY, startW, startH;
+
+        handle.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          isResizing = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          startW = parseInt(getComputedStyle(win).width,  10);
+          startH = parseInt(getComputedStyle(win).height, 10);
+          document.body.style.userSelect = 'none';
+          document.body.style.cursor = 'nw-resize';
+        });
+
+        document.addEventListener('mousemove', function(e) {
+          if (!isResizing) return;
+          // Dragging left  → increase width;  dragging right → decrease
+          const dx = startX - e.clientX;
+          // Dragging up    → increase height; dragging down  → decrease
+          const dy = startY - e.clientY;
+          const newW = Math.max(300, Math.min(window.innerWidth  * 0.9, startW + dx));
+          const newH = Math.max(400, Math.min(window.innerHeight - 120, startH + dy));
+          win.style.width  = newW + 'px';
+          win.style.height = newH + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+          if (!isResizing) return;
+          isResizing = false;
+          document.body.style.userSelect = '';
+          document.body.style.cursor = '';
+        });
+
+        // Touch support (mobile)
+        handle.addEventListener('touchstart', function(e) {
+          const t = e.touches[0];
+          isResizing = true;
+          startX = t.clientX; startY = t.clientY;
+          startW = parseInt(getComputedStyle(win).width,  10);
+          startH = parseInt(getComputedStyle(win).height, 10);
+        }, { passive: true });
+
+        document.addEventListener('touchmove', function(e) {
+          if (!isResizing) return;
+          const t = e.touches[0];
+          const dx = startX - t.clientX;
+          const dy = startY - t.clientY;
+          const newW = Math.max(300, Math.min(window.innerWidth  * 0.9, startW + dx));
+          const newH = Math.max(400, Math.min(window.innerHeight - 120, startH + dy));
+          win.style.width  = newW + 'px';
+          win.style.height = newH + 'px';
+        }, { passive: true });
+
+        document.addEventListener('touchend', function() { isResizing = false; });
+      })();
     </script>
 </body>
 
