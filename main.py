@@ -1663,7 +1663,7 @@ SELECT
             FROM dbo.ProductionLineIntervals
             WHERE ProductionLineId = wses.ProductionLineId
               AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+        ) sub WHERE RTRIM(LTRIM(IntervalProductionLineStatus)) = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
     ) AS ParosNoProgramadosCont,
     wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
     (
@@ -1672,7 +1672,7 @@ SELECT
             FROM dbo.ProductionLineIntervals
             WHERE ProductionLineId = wses.ProductionLineId
               AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+        ) sub WHERE RTRIM(LTRIM(IntervalProductionLineStatus)) = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
     ) AS ParosProgramadosCont,
     wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
 
@@ -1800,7 +1800,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     ])
     fig_stops.update_layout(
         title="Distribución de Paros (Minutos) - Snapshot", 
-        template="plotly_dark", barmode='group',
+        template="plotly_dark", barmode='stack',
         margin=dict(l=40, r=40, t=60, b=40)
     )
     stops_fname = f"oee_rt_stops_{ts}.html"
@@ -1816,7 +1816,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     ])
     fig_freq.update_layout(
         title="Frecuencia de Paros (Eventos) - Snapshot", 
-        template="plotly_dark", barmode='group',
+        template="plotly_dark", barmode='stack',
         margin=dict(l=40, r=40, t=60, b=40)
     )
 
@@ -1985,7 +1985,7 @@ def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dic
         go.Bar(name='Eventos No Programados', x=shifts, y=un_stop_cnt, marker_color='#ef4444'),
         go.Bar(name='Eventos Programados', x=shifts, y=sch_stop_cnt, marker_color='#f59e0b')
     ])
-    fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+    fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
 
     stop_cnt_fname = f"oee_stop_counts_{day}.html"
     stop_cnt_png = f"oee_stop_counts_{day}.png"
