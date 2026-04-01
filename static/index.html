@@ -1109,22 +1109,41 @@
     }
 
     .chat-bubble-btn {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
-      color: white;
-      border: none;
-      box-shadow: 0 8px 32px var(--brand-glow);
+      padding: 10px 20px;
+      border-radius: 40px;
+      background: white;
+      color: #0f172a;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 24px var(--shadow);
       cursor: pointer;
-      display: grid;
-      place-items: center;
+      display: flex;
+      align-items: center;
+      gap: 10px;
       transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-      font-size: 28px;
+      font-size: 15px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    [data-theme="dark"] .chat-bubble-btn {
+      background: var(--brand);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 8px 32px var(--brand-glow);
+    }
+
+    .chat-btn-logo {
+      height: 24px;
+      width: auto;
+      border-radius: 4px;
     }
 
     .chat-bubble-btn:hover {
-      transform: scale(1.1) rotate(5deg);
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 12px 40px var(--shadow-lg);
+    }
+
+    [data-theme="dark"] .chat-bubble-btn:hover {
       box-shadow: 0 12px 40px var(--brand-glow);
     }
 
@@ -1687,7 +1706,8 @@
     <!-- DUNA CHAT WIDGET -->
     <div id="duma-chat-widget">
       <button class="chat-bubble-btn" id="chatBubbleBtn">
-        <span>💬</span>
+        <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-btn-logo">
+        <span style="letter-spacing: -0.2px;">Ask Duma</span>
       </button>
       <div class="chat-window" id="chatWindow">
         <!-- Resize handle -->
