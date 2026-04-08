@@ -50,12 +50,12 @@ SQL_DRIVER   = os.getenv("SQL_ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
 CONN_STR = (
     f"DRIVER={{{SQL_DRIVER}}};"
     f"SERVER={SQL_SERVER};"
-    f"DATABASE={{{SQL_DB}}};"
-    f"UID={{{SQL_USER}}};"
-    f"PWD={{{SQL_PASS}}};"
+    f"DATABASE={SQL_DB};"
+    f"UID={SQL_USER};"
+    f"PWD={SQL_PASS};"
     "Encrypt=yes;"
     "TrustServerCertificate=yes;"
-    "Connect Timeout=30;"
+    "Connect Timeout=60;"
 )
 
 # Ruta absoluta al logo de DUMA (para PDF y Word)
@@ -132,14 +132,19 @@ Eres Duma, un asistente experto para analítica de piso de producción. Tu tarea
 """
 
 def format_duration_es(minutes: float) -> str:
-    """Convierte minutos a formato 'X horas y Y minutos' (español)."""
+    """Convierte minutos a formato 'X días, Y horas y Z minutos' (español)."""
     if minutes is None or minutes <= 0:
         return "0 minutos"
     mins = int(round(float(minutes)))
-    h = mins // 60
-    m = mins % 60
+    
+    d = mins // (24 * 60)
+    remain = mins % (24 * 60)
+    h = remain // 60
+    m = remain % 60
     
     parts = []
+    if d > 0:
+        parts.append(f"{d} {'día' if d == 1 else 'días'}")
     if h > 0:
         parts.append(f"{h} {'hora' if h == 1 else 'horas'}")
     if m > 0:
@@ -149,7 +154,8 @@ def format_duration_es(minutes: float) -> str:
         return "0 minutos"
     if len(parts) == 1:
         return parts[0]
-    return " y ".join(parts)
+    
+    return ", ".join(parts[:-1]) + " y " + parts[-1]
 
 def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
     payload = {
@@ -174,33 +180,41 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
 # -----------------------------------------------------------------------------
 
 OEE_AI_SYSTEM = """
-Eres Duma, un consultor experto en productividad industrial. Genera un análisis ejecutivo del OEE para la gerencia.
+Eres **Duma**, el Agente de Inteligencia Operacional de nivel ejecutivo (Director de Excelencia Operacional). Tu objetivo es convertir datos crudos en diagnóstico de causa raíz (RCA) y decisiones estratégicas.
 
-### Resumen ejecutivo
-(Párrafo fluido analizando el desempeño global y urgencia. SIN listas.)
+## ROL Y TONO:
+- Actúa como un Director de Planta o Consultor Senior.
+- Tono sobrio, preciso, orientado a resultados y crítico ante desviaciones.
+- NUNCA inventes datos. Si falta algo, menciónalo como una brecha de información.
 
-### Análisis de Paros y Producción
-(Analiza el impacto de los paros programados vs no programados en el OEE. Compara la Producción Real vs la Esperada y la eficiencia de la Velocidad Actual vs la Velocidad Esperada.)
+## ESTRUCTURA OBLIGATORIA (markdown, español):
 
-### KPI limitante
-(Identifica DISPONIBILIDAD, DESEMPEÑO o CALIDAD como el cuello de botella actual.)
+### 🏢 Resumen de Inteligencia Operacional
+(UN párrafo fluido. Sintetiza el OEE global del periodo y compáralo con el estándar de Clase Mundial (≥65%). Identifica de inmediato el impacto principal: "se perdieron X kg de producción potencial debido a Y".)
 
-### Acciones recomendadas
-- (Acción paliativa o correctiva 1...)
+### 📉 Diagnóstico de Indicadores (KPIs)
+- **Disponibilidad**: ¿Se cumplió el tiempo productivo? (Correlaciona con Motivos de Paro).
+- **Desempeño**: ¿La línea corrió a la velocidad nominal? (Identifica micro-paros o lentitud).
+- **Producto conforme**: Estado del descarte o pérdidas de proceso (Calidad).
 
-### Riesgo si no se actúa
-- (Impacto en costos o entregas 1...)
+### 🚨 Análisis de Causa Raíz (Pareto 80/20)
+(Analiza los **Motivos de Paro (Pareto)** proporcionados. Identifica el 20% de las causas que generan el 80% del tiempo perdido. Sé específico con los nombres de los fallos técnicos.)
 
-### Reglas Críticas:
-1. Tono Senior/Director.
-2. Resumen Ejecutivo siempre en PÁRRAFO.
-3. Listas con `- ` para acciones y riesgos.
-4. Doble salto de línea entre secciones.
-5. **Formato de Tiempo**: En tus explicaciones y resúmenes, reporta SIEMPRE las duraciones usando el formato "X horas y Y minutos".
-6. **Interpretación de Gaps**: Si la Producción Real es inferior a la Esperada (o la Velocidad Real a la Esperada), explica la posible causa operativa basada en los paros reportados.
-8. **Contexto de Turnos**: Turnos inician a las 07:00, 15:30 y 23:00.
-9. **Regla de Ceros**: Valores en 0 en estos horarios coinciden con el cambio de turno y deben interpretarse como un reinicio de acumulados, NUNCA como una falla o detención.
-10. **Fecha Operativa del Tercer Turno**: El Tercer Turno (23:00→07:00) cruza la medianoche. Su StartDate es el día D (23:00) y su EndDate es el día D+1 (07:00). La "Fecha Operativa" del turno es siempre el día D (el día en que comenzó). Si los datos muestran que el Tercer Turno tiene StartDate en un día y EndDate en el siguiente, es completamente normal y NO indica un error.
+### 📉 Hipótesis de Correlación (Sensores/Control)
+(Relaciona los paros técnicos con posibles desviaciones en variables de control como Temperatura IQF, Chiller, Mezclador, etc. Sugiere investigar con 'get_control_variables_correlation' si detectas patrones de inestabilidad.)
+
+### ✅ Plan de Acción Ejecutivo
+- **Prioridad Crítica**: Acción inmediata para mitigar el problema recurrente más grave.
+- **Mejora de Proceso**: Recomendación estructural para evitar la recurrencia.
+
+### 💬 Mensaje Contundente
+(Una sola frase final que resuma el estado y el paso más urgente.)
+
+## REGLAS CRÍTICAS:
+1. **Regla de Oro**: NO promedies porcentajes. Los OEEs consolidados ya vienen calculados correctamente del backend.
+2. **Formato de Tiempo**: SIEMPRE usa el formato humano: **"X días, Y horas y Z minutos"**. NUNCA reportes solo minutos si el valor es mayor a 60. Convierte 1440 min a 1 día, etc.
+3. **Escala**: OEE >65% (Excelente), 50-65% (En Riesgo), <50% (Crítico).
+4. **Terminología**: Usa siempre "Producto conforme" en lugar de "Calidad".
 """.strip()
 
 
@@ -218,21 +232,43 @@ def ai_oee_realtime(snapshot: dict) -> str:
     return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.2, max_tokens=700)
 
 
-def ai_oee_day_turn(day: str, rows: list[dict], shift_name: str | None = None) -> str:
-    """Genera análisis ejecutivo para OEE por día/turno(s)."""
+def ai_oee_range_analysis(range_data: dict) -> str:
+    """Genera análisis ejecutivo de alto nivel para OEE en un rango de fechas."""
+    summary = range_data.get("summary", {})
+    worst = range_data.get("worst_days", {})
+    details = range_data.get("details", [])
+    stops = range_data.get("stop_reasons", [])
+
+    real_kg = float(summary.get("TotalRealKg") or 0)
+    exp_kg = float(summary.get("TotalExpectedKg") or 0)
+    gap_kg = round(exp_kg - real_kg, 1)
+    cumplimiento = round(real_kg / exp_kg * 100, 1) if exp_kg > 0 else 0
+    total_unsch = sum(float(r.get("TiempoNoProdNoProgramadoMin") or 0) for r in details)
+    total_sch = sum(float(r.get("TiempoNoProdProgramadoMin") or 0) for r in details)
+
+    enriched = {
+        **summary,
+        "CumplimientoPlan_Pct": cumplimiento,
+        "GapProduccion_Kg": gap_kg,
+        "TotalParosNoProgramadosMin": round(total_unsch, 1),
+        "TotalParosProgramadosMin": round(total_sch, 1),
+    }
+
     user_prompt = (
-        "Analiza el siguiente resumen de OEE por turno para un día.\n"
-        "Devuelve un análisis ejecutivo con la estructura indicada.\n\n"
-        f"DIA: {day}\n"
-        f"TURNO_SOLICITADO: {shift_name or 'Todos'}\n\n"
-        "ROWS (JSON array):\n"
-        f"{json.dumps(rows, ensure_ascii=False, indent=2)}\n\n"
-        "Reglas adicionales:\n"
-        "- Ordena mentalmente turnos 1→2→3 si vienen varios.\n"
-        "- KPI limitante por turno y KPI limitante del día (peor caso).\n"
-        "- No inventes valores que no estén en el JSON."
+        f"Genera el informe ejecutivo de OEE para el periodo.\n\n"
+        f"KPIs CONSOLIDADOS:\n{json.dumps(enriched, ensure_ascii=False, indent=2)}\n\n"
+        f"PRINCIPALES MOTIVOS DE PARO (PARETO):\n{json.dumps(stops, ensure_ascii=False, indent=2)}\n\n"
+        f"DÍAS CRÍTICOS (menor OEE primero):\n{json.dumps(worst, ensure_ascii=False, indent=2)}\n\n"
+        f"DETALLE POR TURNO ({len(details)} registros):\n{json.dumps(details[:20], ensure_ascii=False, indent=2)}\n\n"
+        "Instrucciones:\n"
+        "- Analiza prioritariamente los MOTIVOS DE PARO para explicar la baja disponibilidad.\n"
+        "- OEE<50% es estado CRÍTICO. Reporta gap en kg y % cumplimiento.\n"
+        "- Si los paros no programados son altos, correlaciona con los motivos encontrados.\n"
+        "- HIPÓTESIS DE CONTROL: Menciona explícitamente variables de control (sensores) que podrían estar fallando (IQF, Chiller, etc.) según los tipos de paros.\n"
+        "- Cuantifica siempre: kg perdidos, horas de paro, % de cumplimiento.\n"
+        "- Usa el término 'Producto conforme' en el reporte."
     )
-    return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.2, max_tokens=900)
+    return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.15, max_tokens=1400)
 
 
 
@@ -259,14 +295,27 @@ def run_sql(select_sql: str):
     print(select_sql)
     print("======================================")
 
-    with pyodbc.connect(CONN_STR) as conn:
-        cur = conn.cursor()
-        cur.execute(select_sql)
-        rows_raw = cur.fetchall()
-        cols = [c[0] for c in cur.description]
+    rows_raw = None
+    cols = None
+    MAX_RETRIES = 3
+    for attempt in range(MAX_RETRIES):
+        try:
+            with pyodbc.connect(CONN_STR) as conn:
+                cur = conn.cursor()
+                cur.execute(select_sql)
+                rows_raw = cur.fetchall()
+                cols = [c[0] for c in cur.description] if cur.description else []
+                break # Éxito
+        except pyodbc.OperationalError as e:
+            if attempt < MAX_RETRIES - 1:
+                print(f"⚠️ Error SQL ({e}), reintentando {attempt+1}/{MAX_RETRIES}...")
+                time.sleep(1)
+                continue
+            raise e
 
-        # Convertir tipos a algo serializable
-        rows = []
+    # Convertir tipos a algo serializable
+    rows = []
+    if rows_raw is not None:
         for r in rows_raw:
             out_row = []
             for v in r:
@@ -280,14 +329,14 @@ def run_sql(select_sql: str):
                         out_row.append(str(v))
             rows.append(out_row)
 
-        # 🔍 DEBUG: ver cuántas filas regresó y un ejemplo
-        print(f"--> Filas devueltas: {len(rows)}")
-        if rows:
-            print(f"--> Primera fila: {rows[0]}")
-        else:
-            print("--> SIN filas (resultado vacío)")
+    # 🔍 DEBUG: ver cuántas filas regresó y un ejemplo
+    print(f"--> Filas devueltas: {len(rows)}")
+    if rows:
+        print(f"--> Primera fila: {rows[0]}")
+    else:
+        print("--> SIN filas (resultado vacío)")
 
-        return rows, cols
+    return rows, cols or []
 
 
 # ---------- Helpers gráficos ----------
@@ -863,6 +912,123 @@ ORDER BY Fecha, Turno;
                                 "output": json.dumps({"image_url": img_url}, ensure_ascii=False)
                             })
 
+                        elif name == "get_stopages_pareto":
+                            day_from  = args.get("from_day") or date.today().isoformat()
+                            day_to    = args.get("to_day") or day_from
+                            shift     = args.get("shift_name")
+                            stop_type = (args.get("type") or "todos").upper()
+
+                            from_sql_t = f"CONVERT(date, '{day_from}')"
+                            to_sql_t   = f"CONVERT(date, '{day_to}')"
+                            sf = ""
+                            if shift and shift not in ("todos", "(Todos)"):
+                                sf = f"\n    AND wst.Name = N'{str(shift).replace(chr(39), chr(39)*2)}'"
+                            tf = ""
+                            if stop_type == "NP":
+                                tf = "\n    AND m.StoppageType = 'NP'"
+                            elif stop_type == "P":
+                                tf = "\n    AND m.StoppageType = 'P'"
+
+                            sp_sql = f"""
+DECLARE @fromDay DATE = {from_sql_t}, @toDay DATE = {to_sql_t};
+SELECT TOP 15
+    mt.Name        AS Tipo_General,
+    m.Name         AS Motivo_Particular,
+    m.StoppageType AS Clasificacion,
+    SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
+    COUNT(*)                                              AS Eventos,
+    AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
+FROM dbo.Stopages s
+JOIN dbo.Motives m            ON s.MotiveId            = m.MotiveId
+JOIN dbo.MotivesType mt       ON m.MotiveTypeId         = mt.MotiveTypeId
+JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
+JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE s.Active = 1
+  AND (CASE WHEN wst.EndTime < wst.StartTime
+            THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+       END) BETWEEN @fromDay AND @toDay
+{sf}{tf}
+GROUP BY mt.Name, m.Name, m.StoppageType
+ORDER BY Duracion_Min DESC;
+"""
+                            sp_rows, sp_cols = run_sql(sp_sql)
+                            sp_data = [dict(zip(sp_cols, r)) for r in sp_rows]
+                            total_min = sum(float(r.get("Duracion_Min") or 0) for r in sp_data)
+                            cumsum_t = 0.0
+                            for r in sp_data:
+                                dur = float(r.get("Duracion_Min") or 0)
+                                cumsum_t += dur
+                                r["Pct_Total"]    = round(dur / total_min * 100, 1) if total_min > 0 else 0
+                                r["Pct_Acumulado"] = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
+                            tool_outputs.append({
+                                "tool_call_id": tool.id,
+                                "output": json.dumps({
+                                    "from_day": day_from, "to_day": day_to,
+                                    "total_paro_min": round(total_min, 1),
+                                    "stop_reasons": sp_data,
+                                    "pareto_80_causas": [r for r in sp_data if r.get("Pct_Acumulado", 101) <= 80]
+                                }, ensure_ascii=False, default=str)
+                            })
+
+                        elif name == "get_control_variables_correlation":
+                            cv_day = args.get("day") or date.today().isoformat()
+                            try:
+                                from main import load_critical_reads_for_day, summarize_critical_day, CRITICAL_VARS
+                                df_cv = load_critical_reads_for_day(cv_day)
+                                summary_cv = summarize_critical_day(df_cv).to_dict(orient="records")
+                                high_out = [r for r in summary_cv if float(r.get("out_pct", 0)) > 5]
+
+                                # Paros del mismo día
+                                stops_corr_sql = f"""
+DECLARE @day DATE = CONVERT(date, '{cv_day}');
+SELECT TOP 10
+    mt.Name AS Tipo_General, m.Name AS Motivo_Particular,
+    m.StoppageType AS Clasificacion,
+    SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
+    COUNT(*) AS Eventos
+FROM dbo.Stopages s
+JOIN dbo.Motives m   ON s.MotiveId=m.MotiveId
+JOIN dbo.MotivesType mt ON m.MotiveTypeId=mt.MotiveTypeId
+JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId=wse.WorkshiftExecutionId
+JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId=wst.WorkShiftTemplateId
+WHERE s.Active=1
+  AND (CASE WHEN wst.EndTime<wst.StartTime
+            THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date) END) = @day
+GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
+"""
+                                sc_rows, sc_cols = run_sql(stops_corr_sql)
+                                stops_corr = [dict(zip(sc_cols, r)) for r in sc_rows]
+
+                                # OEE del día
+                                oee_corr_rows, oee_corr_cols = run_sql(_sql_oee_day_turn(cv_day))
+                                oee_corr = [dict(zip(oee_corr_cols, r)) for r in oee_corr_rows]
+
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({
+                                        "day": cv_day,
+                                        "sensor_summary": summary_cv,
+                                        "sensors_with_deviations": [
+                                            f"{r['device']} — {r['name']}: {r['out_pct']}% fuera de rango "
+                                            f"(avg={r['avg_value']}, min={r['min_value']}, max={r['max_value']})"
+                                            for r in high_out
+                                        ],
+                                        "top_paros_del_dia": stops_corr,
+                                        "oee_por_turno": oee_corr,
+                                        "hipotesis_de_correlacion": (
+                                            "Analiza si los sensores con alta desviación coinciden temporalmente "
+                                            "con los motivos de paro de mayor duración."
+                                        )
+                                    }, ensure_ascii=False, default=str)
+                                })
+                            except FileNotFoundError as e:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({"error": f"Sin datos de parquet para {cv_day}: {e}"})
+                                })
+
                         else:
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
@@ -949,21 +1115,26 @@ ORDER BY Fecha, Turno;
             "Responde en español. "
             "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
             "NO muestres consultas SQL en la respuesta final. "
-            "Para OEE, disponibilidad, desempeño y calidad, usa sql_query. "
-            "Para rangos de fechas (ej. 'la semana pasada', 'últimos 7 días'), usa mode='hist_turno_rango' con from_day y to_day. "
-            "**REGLA CRÍTICA DE GRÁFICAS:** Si usas una herramienta que genera una gráfica (como `viz_render` o `get_control_variables`), **PROHIBIDO** usar la sintaxis de imagen markdown `![]()`. "
-            "NUNCA escribas enlaces que empiecen por `sandbox:/static/plots/...`. "
-            "Simplemente menciona en tu respuesta que has generado la gráfica (ej: 'Aquí tienes la gráfica del OEE...'). "
-            "El sistema detectará automáticamente la imagen y mostrará un botón de 'Ver gráfica' debajo de tu mensaje. No intentes generarlo tú mismo."
-            "Usa rutas relativas directas (ej: static/plots/archivo.png o .html) solo dentro de las llamadas a herramientas, nunca en el texto final. "
-            "IMPORTANTE: Para gráficas de OEE por turno/día (serie de tiempo), usa `chart: 'line'`, `x: 'Fecha'`, `ys: ['OEE']` y ESENCIAL usar `hue: 'Turno'`. Sin el parámetro `hue`, la gráfica será ilegible y confusa. "
-            "Usa siempre los nombres de columna `Fecha` y `Turno` tal cual aparecen en el cookbook. "
-            "Para comparaciones de barras entre turnos, usa `chart: 'bar'`, `x: 'Turno'`, `ys: ['OEE']`. "
-            "Consulta los documentos adjuntos (schema/cookbook) y CONFÍA en ellos. "
-            "Si una consulta falla por nombre inválido, corrígelo tú mismo según el esquema y reintenta. "
-            "Para TIEMPO REAL / ACTUAL de OEE debes usar RT.1. "
-            "Para cualquier pregunta de TURNOS o FECHAS de OEE, usa H1.x. "
-            "Usa viz_render sólo si el usuario pide comparaciones, tendencias o gráficas."
+            "HERRAMIENTAS DISPONIBLES Y CUÁNDO USARLAS:\n"
+            "  • sql_query (modos: realtime|hist_turno_dia|hist_turno_rango): Para consultar OEE, producción y tiempos de turno.\n"
+            "  • get_stopages_pareto (from_day, to_day, shift_name?, type?): Para responder preguntas sobre motivos de paro, "
+            "causas más frecuentes, paros no programados, análisis 80/20. ÚSALO cuando el usuario pregunte por causas de paros.\n"
+            "  • get_control_variables_correlation (day): Para correlacionar lecturas de sensores con paros y OEE. "
+            "ÚSALO cuando el usuario pregunte por variables de control, sensores, o pida correlaciones.\n"
+            "  • get_control_variables (day): Para ver datos detallados de sensores de un día específico.\n"
+            "  • viz_render: Solo si el usuario pide explícitamente una gráfica.\n\n"
+            "PROTOCOLO AGÉNTICO (sigue estos pasos cuando detectes OEE bajo o preguntas de rendimiento):\n"
+            "1. Consulta OEE con sql_query → 2. Identifica KPI limitante → "
+            "3. Si disponibilidad baja, usa get_stopages_pareto → "
+            "4. Usa get_control_variables_correlation para correlacionar sensores → "
+            "5. Presenta hipótesis causa-efecto y recomendaciones cuantificadas.\n\n"
+            "**REGLA CRÍTICA DE GRÁFICAS:** Si usas viz_render o get_control_variables, PROHIBIDO usar sintaxis `![]()`. "
+            "El sistema detecta la imagen automáticamente. "
+            "Usa rutas relativas (ej: static/plots/archivo.png) solo en herramientas, nunca en el texto final. "
+            "Para OEE por turno/día usa chart='line', x='Fecha', ys=['OEE'], hue='Turno'. "
+            "Para comparaciones usa chart='bar', x='Turno', ys=['OEE']. "
+            "Para TIEMPO REAL usa RT.1 del cookbook. "
+            "Para TURNOS/FECHAS usa H1.x del cookbook."
         )
 
 
@@ -1713,8 +1884,6 @@ ORDER BY
 """
 
 
-    return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai}
-
 def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     """Genera gráficas Plotly para el snapshot de tiempo real (Turno Actual)."""
     import plotly.graph_objects as go
@@ -1862,192 +2031,603 @@ async def api_oee_realtime():
 
     return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai, "plots": plots}
 
-def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dict]:
-    """Genera gráficas Plotly para comparar métricas por turno."""
+def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> List[dict]:
+    """Genera gráficas de serie de tiempo por día: OEE, Producción y Paros."""
     import plotly.graph_objects as go
-    
+    from collections import defaultdict
+
     if not rows_dicts:
         return []
-        
+
     out_dir = os.path.join("static", "plots")
     os.makedirs(out_dir, exist_ok=True)
-    
     plots = []
-    
-    # Ordenar por turno
-    shift_order = {"Primer Turno": 1, "Segundo Turno": 2, "Tercer Turno": 3}
-    data = sorted(rows_dicts, key=lambda x: shift_order.get(x.get("Turno"), 9))
-    shifts = [r.get("Turno") for r in data]
-    
-def plot_oee_historical_comparison(day: str, rows_dicts: List[dict]) -> List[dict]:
-    """Genera gráficas Plotly para comparar métricas por turno."""
-    import plotly.graph_objects as go
-    
-    if not rows_dicts:
-        return []
-        
-    out_dir = os.path.join("static", "plots")
-    os.makedirs(out_dir, exist_ok=True)
-    
-    plots = []
-    
-    # Helper para asegurar valores numéricos
+    ts = int(time.time() * 1000)
+
     def to_f(v):
-        try:
-            return float(v) if v is not None else 0.0
-        except (ValueError, TypeError):
-            return 0.0
+        try: return float(v) if v is not None else 0.0
+        except: return 0.0
 
-    # Ordenar por turno
-    shift_order = {"Primer Turno": 1, "Segundo Turno": 2, "Tercer Turno": 3}
-    data = sorted(rows_dicts, key=lambda x: shift_order.get(x.get("Turno"), 9))
-    shifts = [r.get("Turno") for r in data]
-    
-    # --- 1. Eficiencia (OEE %) ---
-    oee_values = [to_f(r.get("OEE")) for r in data]
-    fig_oee = go.Figure(data=[
-        go.Bar(
-            name='OEE (%)', 
-            x=shifts, 
-            y=oee_values, 
-            marker_color='#1abc9c', 
-            text=[f"{v:.1f}%" for v in oee_values], 
-            textposition='outside',
-            width=0.5
-        )
-    ])
-    fig_oee.update_layout(
-        title="Eficiencia Global (OEE %) por Turno", 
-        template="plotly_dark", 
-        margin=dict(l=40, r=40, t=60, b=40), 
-        yaxis=dict(range=[0, max(105, max(oee_values or [0]) + 10)], ticksuffix="%")
+    # ── Agregar por día (suma de todos los turnos) ──────────────────
+    daily: dict = defaultdict(lambda: {
+        "prod_min": 0.0, "avail_min": 0.0,
+        "real_kg": 0.0, "exp_kg": 0.0,
+        "np_min": 0.0, "p_min": 0.0,
+        "np_cnt": 0.0, "p_cnt": 0.0,
+    })
+    for r in rows_dicts:
+        f = str(r.get("Fecha", ""))[:10]
+        daily[f]["prod_min"]  += to_f(r.get("ProductiveTimeMin"))
+        daily[f]["avail_min"] += to_f(r.get("AvailableTimeMin"))
+        daily[f]["real_kg"]   += to_f(r.get("CurrentProduction"))
+        daily[f]["exp_kg"]    += to_f(r.get("ExpectedProduction"))
+        daily[f]["np_min"]    += to_f(r.get("TiempoNoProdNoProgramadoMin"))
+        daily[f]["p_min"]     += to_f(r.get("TiempoNoProdProgramadoMin"))
+        daily[f]["np_cnt"]    += to_f(r.get("ParosNoProgramadosCont"))
+        daily[f]["p_cnt"]     += to_f(r.get("ParosProgramadosCont"))
+
+    dates = sorted(daily.keys())
+    if not dates:
+        return []
+
+    oee_v, disp_v, desemp_v = [], [], []
+    real_v, exp_v, np_v, p_v = [], [], [], []
+
+    for d in dates:
+        dv = daily[d]
+        avail, prod = dv["avail_min"], dv["prod_min"]
+        real, exp   = dv["real_kg"], dv["exp_kg"]
+        disp   = round(prod / avail * 100, 1)   if avail > 0 else 0.0
+        desemp = round(real / exp  * 100, 1)    if exp   > 0 else 0.0
+        oee    = round((prod / avail) * (real / exp) * 100, 1) if avail > 0 and exp > 0 else 0.0
+        oee_v.append(oee); disp_v.append(disp); desemp_v.append(desemp)
+        real_v.append(round(real, 0)); exp_v.append(round(exp, 0))
+        np_v.append(round(dv["np_min"], 1)); p_v.append(round(dv["p_min"], 1))
+
+    # ── GRÁFICA 1: OEE + Disponibilidad + Desempeño por día ─────────
+    COLORS = {"OEE": "#ef4444", "Disponibilidad": "#34d399", "Desempeño": "#60a5fa"}
+    fig1 = go.Figure()
+    for label, vals, color in [
+        ("OEE",           oee_v,   COLORS["OEE"]),
+        ("Disponibilidad", disp_v, COLORS["Disponibilidad"]),
+        ("Desempeño",     desemp_v, COLORS["Desempeño"]),
+    ]:
+        fig1.add_trace(go.Scatter(
+            x=dates, y=vals, name=label,
+            mode="lines+markers+text",
+            line=dict(color=color, width=2.5),
+            marker=dict(size=7, color=color),
+            text=[f"{v}" for v in vals],
+            textposition="top center",
+            textfont=dict(size=9),
+            hovertemplate=f"<b>{label}</b><br>%{{x}}<br>%{{y:.1f}}%<extra></extra>"
+        ))
+    fig1.update_layout(
+        title="Histórico OEE global por día",
+        template="plotly_dark", height=420,
+        margin=dict(l=40, r=40, t=60, b=60),
+        legend=dict(orientation="h", y=1.12, x=0),
+        xaxis=dict(title="Fecha", tickangle=-30),
+        yaxis=dict(title="% KPI", ticksuffix="%"),
+        hovermode="x unified",
     )
-    oee_fname = f"oee_kpi_{day}.html"
-    oee_png = f"oee_kpi_{day}.png"
-    fig_oee.write_html(os.path.join(out_dir, oee_fname))
-    try:
-        fig_oee.write_image(os.path.join(out_dir, oee_png), engine="kaleido")
-    except Exception: pass
-    plots.append({"title": "Indicador OEE (%)", "url": f"static/plots/{oee_fname}", "path": os.path.join(out_dir, oee_png)})
+    fname1 = f"oee_ts_kpi_{ts}.html"
+    fig1.write_html(os.path.join(out_dir, fname1), include_plotlyjs="cdn")
+    plots.append({"title": "📈 Histórico OEE por Día", "url": f"static/plots/{fname1}"})
 
-    # --- 2. Producción ---
-    real_prod = [to_f(r.get("ProduccionRealKg")) for r in data]
-    est_prod = [to_f(r.get("ProduccionEstimadaKg")) for r in data]
-    fig_prod = go.Figure(data=[
-        go.Bar(name='Real (Kg)', x=shifts, y=real_prod, marker_color='#1abc9c'),
-        go.Bar(name='Esperada (Kg)', x=shifts, y=est_prod, marker_color='#6366f1')
-    ])
-    fig_prod.update_layout(title="Producción Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
-    prod_fname = f"oee_prod_{day}.html"
-    prod_png = f"oee_prod_{day}.png"
-    fig_prod.write_html(os.path.join(out_dir, prod_fname))
-    try:
-        fig_prod.write_image(os.path.join(out_dir, prod_png), engine="kaleido")
-    except Exception: pass
-    plots.append({"title": "Comparativa de Producción", "url": f"static/plots/{prod_fname}", "path": os.path.join(out_dir, prod_png)})
-    
-    # --- 3. Velocidad ---
-    real_vel = [to_f(r.get("VelocidadPromedioRealKgHr")) for r in data]
-    est_vel = [to_f(r.get("VelocidadPromedioEstimadaKgHr")) for r in data]
-    fig_vel = go.Figure(data=[
-        go.Bar(name='Real (Kg/h)', x=shifts, y=real_vel, marker_color='#1abc9c'),
-        go.Bar(name='Esperada (Kg/h)', x=shifts, y=est_vel, marker_color='#6366f1')
-    ])
-    fig_vel.update_layout(title="Velocidad Real vs Esperada por Turno", barmode='group', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
-    vel_fname = f"oee_vel_{day}.html"
-    vel_png = f"oee_vel_{day}.png"
-    fig_vel.write_html(os.path.join(out_dir, vel_fname))
-    try:
-        fig_vel.write_image(os.path.join(out_dir, vel_png), engine="kaleido")
-    except Exception: pass
-    plots.append({"title": "Comparativa de Velocidad", "url": f"static/plots/{vel_fname}", "path": os.path.join(out_dir, vel_png)})
+    # ── GRÁFICA 2: Producción Real vs Esperada por día ───────────────
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(
+        x=dates, y=exp_v, name="Esperada (Kg)",
+        marker_color="#6366f1", opacity=0.8,
+        hovertemplate="Esperada: %{y:,.0f} Kg<extra></extra>"
+    ))
+    fig2.add_trace(go.Bar(
+        x=dates, y=real_v, name="Real (Kg)",
+        marker_color="#1abc9c",
+        text=[f"{v:,.0f}" for v in real_v], textposition="outside",
+        hovertemplate="Real: %{y:,.0f} Kg<extra></extra>"
+    ))
+    fig2.update_layout(
+        title="Producción Real vs Esperada por Día",
+        template="plotly_dark", barmode="group",
+        height=380, margin=dict(l=40, r=40, t=60, b=60),
+        xaxis=dict(title="Fecha", tickangle=-30),
+        yaxis=dict(title="Kg"),
+    )
+    fname2 = f"oee_ts_prod_{ts}.html"
+    fig2.write_html(os.path.join(out_dir, fname2), include_plotlyjs="cdn")
+    plots.append({"title": "📦 Producción Real vs Esperada", "url": f"static/plots/{fname2}"})
 
-    # --- 4. Paros ---
-    un_stop = [to_f(r.get("TiempoNoProdNoProgramadoMin")) for r in data]
-    sch_stop = [to_f(r.get("TiempoNoProdProgramadoMin")) for r in data]
-    fig_stop = go.Figure(data=[
-        go.Bar(name='No Programado (Min)', x=shifts, y=un_stop, marker_color='#ef4444'),
-        go.Bar(name='Programado (Min)', x=shifts, y=sch_stop, marker_color='#f59e0b')
-    ])
-    fig_stop.update_layout(title="Tiempo de Paro por Turno (Minutos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
-    stop_fname = f"oee_stops_{day}.html"
-    stop_png = f"oee_stops_{day}.png"
-    fig_stop.write_html(os.path.join(out_dir, stop_fname))
-    try:
-        fig_stop.write_image(os.path.join(out_dir, stop_png), engine="kaleido")
-    except Exception: pass
-    plots.append({"title": "Distribución de Paros", "url": f"static/plots/{stop_fname}", "path": os.path.join(out_dir, stop_png)})
-    
-    # --- 5. Frecuencia de Paros ---
-    un_stop_cnt = [to_f(r.get("ParosNoProgramadosCont")) for r in data]
-    sch_stop_cnt = [to_f(r.get("ParosProgramadosCont")) for r in data]
-    fig_stop_cnt = go.Figure(data=[
-        go.Bar(name='Eventos No Programados', x=shifts, y=un_stop_cnt, marker_color='#ef4444'),
-        go.Bar(name='Eventos Programados', x=shifts, y=sch_stop_cnt, marker_color='#f59e0b')
-    ])
-    fig_stop_cnt.update_layout(title="Frecuencia de Paros por Turno (Eventos)", barmode='stack', template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
+    # ── GRÁFICA 3: Paros No Prog + Prog por día (barras agrupadas min) ─
+    fig3 = go.Figure()
+    fig3.add_trace(go.Bar(
+        x=dates, y=np_v, name="No Programados (min)",
+        marker_color="#ef4444",
+        text=[f"{v:.1f}" if v > 0 else "" for v in np_v], 
+        textposition="outside",
+        textfont=dict(color="white", size=10, family="Arial Black"),
+        hovertemplate="NP: %{y:.1f} min<extra></extra>"
+    ))
+    fig3.add_trace(go.Bar(
+        x=dates, y=p_v, name="Programados (min)",
+        marker_color="#f59e0b",
+        text=[f"{v:.1f}" if v > 0 else "" for v in p_v], 
+        textposition="outside",
+        textfont=dict(color="white", size=10, family="Arial Black"),
+        hovertemplate="P: %{y:.1f} min<extra></extra>"
+    ))
+    fig3.update_layout(
+        title="Tiempos de Paro por Día (minutos)",
+        template="plotly_dark", barmode="group",
+        height=400, margin=dict(l=50, r=50, t=80, b=80),
+        xaxis=dict(title="Fecha", tickangle=-30, showgrid=False),
+        yaxis=dict(title="Minutos", showgrid=True, gridcolor="#333"),
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        bargap=0.2,
+        bargroupgap=0.05
+    )
+    fname3 = f"oee_ts_stops_{ts}.html"
+    fig3.write_html(os.path.join(out_dir, fname3), include_plotlyjs="cdn")
+    plots.append({"title": "⏱️ Tiempos de Paro por Día", "url": f"static/plots/{fname3}"})
 
-    stop_cnt_fname = f"oee_stop_counts_{day}.html"
-    stop_cnt_png = f"oee_stop_counts_{day}.png"
-    fig_stop_cnt.write_html(os.path.join(out_dir, stop_cnt_fname))
-    try:
-        fig_stop_cnt.write_image(os.path.join(out_dir, stop_cnt_png), engine="kaleido")
-    except Exception: pass
-    plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{stop_cnt_fname}", "path": os.path.join(out_dir, stop_cnt_png)})
+    # ── GRÁFICA 4: Eventos de Paro por Día (conteos) ──────────────────
+    np_cnt_v = [to_f(daily[d]["np_cnt"]) for d in dates]
+    p_cnt_v  = [to_f(daily[d]["p_cnt"]) for d in dates]
     
+    fig4 = go.Figure()
+    fig4.add_trace(go.Bar(
+        x=dates, y=np_cnt_v, name="Eventos No Programados",
+        marker_color="#ef4444", 
+        text=[f"{int(v)}" if v > 0 else "" for v in np_cnt_v], 
+        textposition="outside",
+        textfont=dict(color="white", size=11, family="Arial Black"),
+        hovertemplate="NP: %{y} eventos<extra></extra>"
+    ))
+    fig4.add_trace(go.Bar(
+        x=dates, y=p_cnt_v, name="Eventos Programados",
+        marker_color="#f59e0b", 
+        text=[f"{int(v)}" if v > 0 else "" for v in p_cnt_v], 
+        textposition="outside",
+        textfont=dict(color="white", size=11, family="Arial Black"),
+        hovertemplate="P: %{y} eventos<extra></extra>"
+    ))
+    fig4.update_layout(
+        title="Frecuencia de Paros por Día (Eventos)",
+        template="plotly_dark", barmode="group",
+        height=400, margin=dict(l=50, r=50, t=80, b=80),
+        xaxis=dict(title="Fecha", tickangle=-30, showgrid=False),
+        yaxis=dict(title="Número de Eventos", showgrid=True, gridcolor="#333"),
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        bargap=0.2,
+        bargroupgap=0.05
+    )
+    fname4 = f"oee_ts_events_{ts}.html"
+    fig4.write_html(os.path.join(out_dir, fname4), include_plotlyjs="cdn")
+    plots.append({"title": "🚨 Frecuencia de Paros (Eventos)", "url": f"static/plots/{fname4}"})
+
+    # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
+    try:
+        fnames = [fname1, fname2, fname3, fname4]
+        figs = [fig1, fig2, fig3, fig4]
+        for fn, fg in zip(fnames, figs):
+            png_name = fn.replace(".html", ".png")
+            png_path = os.path.join(out_dir, png_name)
+            fg.write_image(png_path, engine="kaleido")
+            # Encontrar el dict correspondiente en plots y añadir el path
+            for p in plots:
+                if p["url"].endswith(fn):
+                    p["path"] = png_path
+    except Exception as ex:
+        print(f"Error exportando PNG para PDF: {ex}")
+
+    return plots
+
+
+
+def plot_pareto_stop_reasons(stop_reasons: list, period_label: str) -> List[dict]:
+    """Genera gráficas Plotly: Pareto 80/20 horizontal + Treemap jerárquico de motivos de paro."""
+    try:
+        from plotly.subplots import make_subplots
+    except ImportError:
+        return []
+
+    if not stop_reasons:
+        return []
+
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    plots = []
+    ts = int(time.time() * 1000)
+
+    # --- 1. PARETO HORIZONTAL: Top motivos NP con línea acumulada ---
+    np_reasons = [r for r in stop_reasons if str(r.get("Clasificacion", "")).upper() == "NP"]
+    if not np_reasons:
+        np_reasons = stop_reasons
+    np_sorted = sorted(np_reasons, key=lambda x: float(x.get("Duracion_Min") or 0), reverse=True)[:15]
+
+    if np_sorted:
+        labels    = [str(r.get("Motivo_Particular", "?"))[:45] for r in np_sorted]
+        durations = [round(float(r.get("Duracion_Min") or 0), 1) for r in np_sorted]
+        eventos   = [int(r.get("Eventos") or 0) for r in np_sorted]
+        tipos     = [str(r.get("Tipo_General", "")) for r in np_sorted]
+
+        total = sum(durations)
+        cum_pct, cumsum = [], 0.0
+        for d in durations:
+            cumsum += d
+            cum_pct.append(round(cumsum / total * 100, 1) if total > 0 else 0)
+
+        bar_colors = ["#ef4444" if c <= 80 else "#f59e0b" for c in cum_pct]
+
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Bar(
+            x=labels, y=durations,
+            name="Duración (min)", marker_color=bar_colors,
+            customdata=tipos,
+            text=[f"{d:.1f} min | {e} ev." for d, e in zip(durations, eventos)],
+            textposition="outside",
+            hovertemplate="<b>%{x}</b><br>Duración: %{y:.1f} min<br>Categoría: %{customdata}<extra></extra>"
+        ), secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=labels, y=cum_pct, name="% Acumulado",
+            mode="lines+markers",
+            line=dict(color="#a78bfa", width=3), marker=dict(size=8, color="#a78bfa"),
+            hovertemplate="% Acumulado: %{y:.1f}%<extra></extra>"
+        ), secondary_y=True)
+        fig.add_hline(y=80, line_dash="dash", line_color="#fbbf24",
+                      annotation_text="80% (Regla de Pareto)",
+                      annotation_position="top right", secondary_y=True)
+
+        fig.update_layout(
+            title=f"🚨 Pareto 80/20 — Paros No Programados | {period_label}",
+            template="plotly_dark", height=480,
+            margin=dict(l=40, r=60, t=70, b=130),
+            showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.35, x=0),
+            bargap=0.15,
+        )
+        fig.update_xaxes(tickangle=-38, tickfont=dict(size=10))
+        fig.update_yaxes(title_text="Duración (min)", secondary_y=False)
+        fig.update_yaxes(title_text="% Acumulado", secondary_y=True, range=[0, 108], ticksuffix="%")
+
+        fname = f"pareto_np_{ts}.html"
+        fig.write_html(os.path.join(out_dir, fname), include_plotlyjs="cdn")
+        plots.append({"title": "🚨 Pareto 80/20 — Paros No Programados", "url": f"static/plots/{fname}"})
+
+    # --- 2. TREEMAP: Jerarquía MotivesType → Motivo ---
+    all_sorted = sorted(stop_reasons, key=lambda x: float(x.get("Duracion_Min") or 0), reverse=True)[:20]
+    if len(all_sorted) >= 2:
+        ids, labels_tm, parents_tm, values_tm, colors_tm, hover_tm = [], [], [], [], [], []
+        tipos_agg: dict = {}
+        for r in all_sorted:
+            t = str(r.get("Tipo_General", "Otro"))
+            tipos_agg[t] = tipos_agg.get(t, 0) + float(r.get("Duracion_Min") or 0)
+        for tipo, td in tipos_agg.items():
+            ids.append(f"T_{tipo}"); labels_tm.append(tipo); parents_tm.append("")
+            values_tm.append(round(td, 1)); colors_tm.append(round(td, 1))
+            hover_tm.append(f"<b>{tipo}</b><br>Total: {td:.1f} min")
+        for r in all_sorted:
+            tipo   = str(r.get("Tipo_General", "Otro"))
+            motivo = str(r.get("Motivo_Particular", "?"))[:45]
+            dur    = round(float(r.get("Duracion_Min") or 0), 1)
+            cls    = str(r.get("Clasificacion", "")).upper()
+            evt    = int(r.get("Eventos") or 0)
+            icon   = "🔴" if cls == "NP" else "🟡"
+            ids.append(f"M_{tipo}_{motivo}"); labels_tm.append(f"{icon} {motivo}")
+            parents_tm.append(f"T_{tipo}"); values_tm.append(dur); colors_tm.append(dur)
+            hover_tm.append(f"<b>{motivo}</b><br>Duración: {dur} min<br>Eventos: {evt}<br>Tipo: {cls}")
+
+        fig2 = go.Figure(go.Treemap(
+            ids=ids, labels=labels_tm, parents=parents_tm, values=values_tm,
+            customdata=hover_tm,
+            texttemplate="%{label}<br>%{value:.1f} min",
+            hovertemplate="%{customdata}<extra></extra>",
+            marker=dict(colorscale="RdYlGn_r", colors=colors_tm, showscale=True,
+                        colorbar=dict(title="Min")),
+        ))
+        fig2.update_layout(
+            title=f"🗺️ Mapa Jerárquico de Paros | {period_label}",
+            template="plotly_dark", height=460, margin=dict(l=20, r=20, t=60, b=20),
+        )
+        fname2 = f"pareto_treemap_{ts}.html"
+        fig2.write_html(os.path.join(out_dir, fname2), include_plotlyjs="cdn")
+        plots.append({"title": "🗺️ Mapa de Categorías de Paro", "url": f"static/plots/{fname2}"})
+
+    # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
+    try:
+        fnames_p = []
+        figs_p = []
+        if 'fname' in locals() and 'fig' in locals():
+            fnames_p.append(fname); figs_p.append(fig)
+        if 'fname2' in locals() and 'fig2' in locals():
+            fnames_p.append(fname2); figs_p.append(fig2)
+            
+        for fn, fg in zip(fnames_p, figs_p):
+            png_name = fn.replace(".html", ".png")
+            png_path = os.path.join(out_dir, png_name)
+            fg.write_image(png_path, engine="kaleido")
+            for p in plots:
+                if p["url"].endswith(fn):
+                    p["path"] = png_path
+    except Exception as ex:
+        print(f"Error exportando Pareto PNG: {ex}")
+
     return plots
 
 
 @app.post("/api/oee/day-turn/")
 async def api_oee_day_turn(payload: dict):
     """
-    OEE por día/turno. Body: { "day": "YYYY-MM-DD", "shift_name"?: "Primer Turno"|"Segundo Turno"|"Tercer Turno" }
+    OEE por rango de fechas/turnos con análisis de Pareto (RCA) e IA.
+    Body: { "from_day": "YYYY-MM-DD", "to_day"?: "YYYY-MM-DD", "shift_name"?: "..." }
     """
-    day = (payload.get("day") or "").strip()
+    from_day = (payload.get("from_day") or payload.get("day") or "").strip()
+    to_day = (payload.get("to_day") or from_day).strip()
     shift_name = payload.get("shift_name")
-    if not day:
-        raise HTTPException(status_code=400, detail="Falta 'day' (YYYY-MM-DD).")
+
+    if not from_day:
+         raise HTTPException(status_code=400, detail="Falta 'from_day' (YYYY-MM-DD).")
+
+    # 1. Parámetros de fecha para SQL (R5/R6)
+    from_sql = f"CONVERT(date, '{from_day}')"
+    to_sql = f"CONVERT(date, '{to_day}')"
     
-    rows, cols = run_sql(_sql_oee_day_turn(day, shift_name))
-    if not rows:
-        return {"day": day, "shift_name": shift_name, "rows": [], "columns": cols, "ai_analysis": "No se encontraron datos.", "plots": []}
+    shift_filter = ""
+    if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "todos", "(All)"):
+        safe_shift = str(shift_name).replace("'", "''")
+        shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
 
-    # Dicts para IA y para generar gráficas (antes de formatear tiempos)
-    rows_dicts_raw = [dict(zip(cols, r)) for r in rows]
+    # --- CONSULTA 1: CONSOLIDACIÓN (Receta R5) ---
+    consolidated_sql = f"""
+DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
+SELECT
+    ROUND(SUM(CAST(wses.AvailableTimeMin AS FLOAT)), 2) AS TotalAvailableMin,
+    ROUND(SUM(CAST(wses.ProductiveTimeMin AS FLOAT)), 2) AS TotalProductiveMin,
+    ROUND(SUM(CAST(wses.CurrentProductionSummary AS FLOAT)), 2) AS TotalRealKg,
+    ROUND(SUM(CAST(wses.ExpectedProductionSummary AS FLOAT)), 2) AS TotalExpectedKg,
+    ROUND((CASE WHEN SUM(wses.AvailableTimeMin) > 0 THEN SUM(CAST(wses.ProductiveTimeMin AS FLOAT)) / SUM(wses.AvailableTimeMin) ELSE 0 END) * 100, 2) AS Availability,
+    ROUND((CASE WHEN SUM(wses.ExpectedProductionSummary) > 0 THEN SUM(CAST(wses.CurrentProductionSummary AS FLOAT)) / SUM(wses.ExpectedProductionSummary) ELSE 0 END) * 100, 2) AS Performance,
+    ROUND(CAST(SUM(wses.CurrentProductionSummary - wses.ConfiscationKg) AS FLOAT) / NULLIF(SUM(wses.CurrentProductionSummary), 0) * 100, 2) AS Quality,
+    ROUND(
+      ((CASE WHEN SUM(wses.AvailableTimeMin) > 0 THEN SUM(CAST(wses.ProductiveTimeMin AS FLOAT)) / SUM(wses.AvailableTimeMin) ELSE 0 END)) *
+      ((CASE WHEN SUM(wses.ExpectedProductionSummary) > 0 THEN SUM(CAST(wses.CurrentProductionSummary AS FLOAT)) / SUM(wses.ExpectedProductionSummary) ELSE 0 END)) *
+      (ISNULL(CAST(SUM(wses.CurrentProductionSummary - wses.ConfiscationKg) AS FLOAT) / NULLIF(SUM(wses.CurrentProductionSummary), 0), 1.0)) * 100, 2
+    ) AS OEE
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates AS wst ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE wse.Status = 'closed' AND wse.Active = 1 AND wses.Active = 1
+AND wse.DayOff = 0
+AND (CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date)) ELSE CAST(wse.StartDate AS date) END) BETWEEN @fromDay AND @toDay
+{shift_filter};
+"""
+    rows_sum, cols_sum = run_sql(consolidated_sql)
+    summary_range = dict(zip(cols_sum, rows_sum[0])) if rows_sum else {}
 
-    # Generar gráficas si hay datos
-    plots = plot_oee_historical_comparison(day, rows_dicts_raw)
+    # --- CONSULTA 2: PARETO DE MOTIVOS (Receta R6) ---
+    pareto_sql = f"""
+DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
+SELECT TOP 20
+    mt.Name          AS Tipo_General,
+    m.Name           AS Motivo_Particular,
+    m.StoppageType   AS Clasificacion,
+    SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
+    COUNT(*)                                              AS Eventos,
+    AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
+FROM dbo.Stopages s
+JOIN dbo.Motives m            ON s.MotiveId           = m.MotiveId
+JOIN dbo.MotivesType mt       ON m.MotiveTypeId        = mt.MotiveTypeId
+JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
+JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE s.Active = 1
+  AND wse.DayOff = 0
+  AND (CASE WHEN wst.EndTime < wst.StartTime
+            THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+       END) BETWEEN @fromDay AND @toDay
+{shift_filter}
+GROUP BY mt.Name, m.Name, m.StoppageType
+ORDER BY Duracion_Min DESC;
+"""
+    rows_p, cols_p = run_sql(pareto_sql)
+    stop_reasons = [dict(zip(cols_p, r)) for r in rows_p]
 
-    # Formatear duraciones para el reporte final (tablas e IA)
-    duration_cols = [
-        "DuracionTurnoMin", "TiempoDisponibleMin", "TiempoProductivoMin", 
-        "TiempoNoProdProgramadoMin", "TiempoNoProdNoProgramadoMin"
-    ]
-    
-    rows_dicts_formatted = []
+    detail_sql = f"""
+DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
+SELECT
+    CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date)) ELSE CAST(wse.StartDate AS date) END AS Fecha,
+    wst.Name AS Turno,
+    wses.Oee AS OEE,
+    wses.AvailableTimeMin, 
+    wses.ProductiveTimeMin,
+    wses.UnscheduledStopageMin AS TiempoNoProdNoProgramadoMin, 
+    wses.ScheduledStopageMin AS TiempoNoProdProgramadoMin,
+    wses.CurrentProductionSummary AS CurrentProduction,
+    wses.ExpectedProductionSummary AS ExpectedProduction,
+    wses.Quality AS Quality,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE RTRIM(LTRIM(IntervalProductionLineStatus)) = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
+    ) AS ParosNoProgramadosCont,
+    (
+        SELECT COUNT(*) FROM (
+            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
+            FROM dbo.ProductionLineIntervals
+            WHERE ProductionLineId = wses.ProductionLineId
+              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
+        ) sub WHERE RTRIM(LTRIM(IntervalProductionLineStatus)) = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
+    ) AS ParosProgramadosCont
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates AS wst ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE wse.Status = 'closed' AND wse.Active = 1 AND wses.Active = 1
+AND wse.DayOff = 0
+AND (CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date)) ELSE CAST(wse.StartDate AS date) END) BETWEEN @fromDay AND @toDay
+{shift_filter}
+ORDER BY Fecha DESC, Turno;
+"""
+    rows_d, cols_d = run_sql(detail_sql)
+    rows_dicts_raw = [dict(zip(cols_d, r)) for r in rows_d]
+
+    # Gráficas históricas (OEE, Producción, Velocidad, Paros)
+    plots = plot_oee_historical_comparison(from_day, rows_dicts_raw)
+    # Gráficas de Pareto 80/20 + Treemap de motivos de paro
+    if stop_reasons:
+        period_label = from_day if from_day == to_day else f"{from_day} \u2013 {to_day}"
+        plots.extend(plot_pareto_stop_reasons(stop_reasons, period_label))
+
+    # IA (Duma AI Range Analysis)
+    try:
+        full_data = {
+            "summary": summary_range,
+            "worst_days": sorted(rows_dicts_raw, key=lambda x: float(x.get("OEE") or 0))[:5],
+            "details": rows_dicts_raw,
+            "stop_reasons": stop_reasons
+        }
+        ai = ai_oee_range_analysis(full_data)
+    except Exception as ex:
+        ai = f"⚠️ Error en diagnóstico de IA: {ex}"
+
+    # Formatear para tabla UI (OEE Histórico - Agrupado por Turno para el rango)
+    agg = {}
     for r in rows_dicts_raw:
-        new_row = dict(r)
-        for col in duration_cols:
-            if col in new_row:
-                new_row[col] = format_duration_es(new_row[col])
-        rows_dicts_formatted.append(new_row)
+        s = r.get("Turno")
+        if s not in agg:
+            agg[s] = {
+                "avail": 0.0, "prod": 0.0, "real": 0.0, "exp": 0.0, 
+                "np_min": 0.0, "p_min": 0.0, 
+                "np_cnt": 0.0, "p_cnt": 0.0,
+                "q_sum": 0.0, "q_count": 0
+            }
+        
+        def _f(v): 
+            try: return float(v) if v is not None else 0.0
+            except: return 0.0
 
-    # IA recibe los datos ya formateados para que hable en "horas y minutos"
-    ai = ai_oee_day_turn(day, rows_dicts_formatted, shift_name)
+        agg[s]["avail"]  += _f(r.get("AvailableTimeMin"))
+        agg[s]["prod"]   += _f(r.get("ProductiveTimeMin"))
+        agg[s]["real"]   += _f(r.get("CurrentProduction"))
+        agg[s]["exp"]    += _f(r.get("ExpectedProduction"))
+        agg[s]["np_min"] += _f(r.get("TiempoNoProdNoProgramadoMin"))
+        agg[s]["p_min"]  += _f(r.get("TiempoNoProdProgramadoMin"))
+        agg[s]["np_cnt"] += _f(r.get("ParosNoProgramadosCont"))
+        agg[s]["p_cnt"]  += _f(r.get("ParosProgramadosCont"))
+        agg[s]["q_sum"]  += _f(r.get("Quality"))
+        agg[s]["q_count"] += 1
 
-    # Para el frontend: convertimos de vuelta a lista de listas usando los dicts formateados
-    rows_final = []
-    for r_dict in rows_dicts_formatted:
-        rows_final.append([r_dict.get(c) for c in cols])
+    table_by_turn = []
+    # Ordenar por el orden estándar de turnos
+    range_label = f"{from_day} a {to_day}" if from_day != to_day else from_day
+    for s_name in ["Primer Turno", "Segundo Turno", "Tercer Turno"]:
+        if s_name in agg:
+            v = agg[s_name]
+            # OEE = (ProdTime/AvailTime) * (RealKg/ExpKg) * (Quality/100)
+            avail_safe = v["avail"] if v["avail"] > 0 else 1
+            exp_safe = v["exp"] if v["exp"] > 0 else 1
+            avg_q = (v["q_sum"] / v["q_count"]) if v["q_count"] > 0 else 100.0
+            
+            oee_c = (v["prod"]/avail_safe) * (v["real"]/exp_safe) * (avg_q/100.0) * 100
+            disp_c = (v["prod"]/avail_safe) * 100
+            
+            table_by_turn.append({
+                "Fecha": range_label,
+                "Turno": s_name,
+                "OEE (%)": f"{oee_c:.1f}%",
+                "Disponibilidad (%)": f"{disp_c:.1f}%",
+                "Producto conforme (%)": f"{avg_q:.1f}%",
+                "Producción Real (Kg)": f"{v['real']:,.0f}",
+                "Producción Esperada (Kg)": f"{v['exp']:,.0f}",
+                "Paros No Prog (Min)": format_duration_es(v["np_min"]),
+                "Paros No Prog (Eventos)": f"{int(v['np_cnt'])} ev.",
+                "Paros Prog (Min)": format_duration_es(v["p_min"]),
+                "Paros Prog (Eventos)": f"{int(v['p_cnt'])} ev."
+            })
+    
+    turn_cols = [
+        "Fecha", "Turno", "OEE (%)", "Disponibilidad (%)", "Producto conforme (%)", 
+        "Producción Real (Kg)", "Producción Esperada (Kg)", 
+        "Paros No Prog (Min)", "Paros No Prog (Eventos)", 
+        "Paros Prog (Min)", "Paros Prog (Eventos)"
+    ]
+    turn_rows = [[r.get(c) for c in turn_cols] for r in table_by_turn]
 
     return {
-        "day": day, 
-        "shift_name": shift_name, 
-        "rows": rows_final, 
-        "columns": cols, 
+        "from_day": from_day,
+        "to_day": to_day,
+        "summary": summary_range,
+        "stop_reasons": stop_reasons,
+        "rows": turn_rows,
+        "columns": turn_cols,
         "ai_analysis": ai,
         "plots": plots
     }
+
+
+@app.post("/api/oee/stop-reasons/")
+async def api_oee_stop_reasons(payload: dict):
+    """Endpoint dedicado para Pareto detallado de motivos de paro (P/NP)."""
+    from_day   = (payload.get("from_day") or payload.get("day") or "").strip()
+    to_day     = (payload.get("to_day") or from_day).strip()
+    shift_name = payload.get("shift_name")
+    stop_type  = (payload.get("type") or "todos").strip().upper()
+
+    if not from_day:
+        raise HTTPException(status_code=400, detail="Falta 'from_day' (YYYY-MM-DD).")
+
+    from_sql = f"CONVERT(date, '{from_day}')"
+    to_sql   = f"CONVERT(date, '{to_day}')"
+
+    shift_filter = ""
+    if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "todos", "(All)"):
+        safe_shift = str(shift_name).replace("'", "''")
+        shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+
+    type_filter = ""
+    if stop_type == "NP":
+        type_filter = "\n    AND m.StoppageType = 'NP'"
+    elif stop_type == "P":
+        type_filter = "\n    AND m.StoppageType = 'P'"
+
+    sql = f"""
+DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
+SELECT TOP 30
+    mt.Name          AS Tipo_General,
+    m.Name           AS Motivo_Particular,
+    m.StoppageType   AS Clasificacion,
+    SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
+    COUNT(*)                                              AS Eventos,
+    AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
+FROM dbo.Stopages s
+JOIN dbo.Motives m            ON s.MotiveId            = m.MotiveId
+JOIN dbo.MotivesType mt       ON m.MotiveTypeId         = mt.MotiveTypeId
+JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
+JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE s.Active = 1
+  AND (CASE WHEN wst.EndTime < wst.StartTime
+            THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+       END) BETWEEN @fromDay AND @toDay
+{shift_filter}{type_filter}
+GROUP BY mt.Name, m.Name, m.StoppageType
+ORDER BY Duracion_Min DESC;
+"""
+    rows, cols = run_sql(sql)
+    data = [dict(zip(cols, r)) for r in rows]
+
+    # Calcular porcentajes Pareto
+    total_min = sum(float(r.get("Duracion_Min") or 0) for r in data)
+    cumsum = 0.0
+    for r in data:
+        dur = float(r.get("Duracion_Min") or 0)
+        cumsum += dur
+        r["Pct_Del_Total"]  = round(dur    / total_min * 100, 1) if total_min > 0 else 0
+        r["Pct_Acumulado"]  = round(cumsum  / total_min * 100, 1) if total_min > 0 else 0
+
+    return {"data": data, "total_min": round(total_min, 1)}
 
 
 @app.post("/api/cv/day/")
@@ -2171,6 +2751,69 @@ async def chat_bafar(request: Request):
 # =========================================================
 # Reportes descargables (PDF / Word)
 # =========================================================
+
+def _build_docx_bytes(title: str, subtitle: str, sections: List[dict], table_title: str, table_rows: List[dict], logo_path: str|None = None) -> bytes:
+    """Genera reporte ejecutivo en formato Word (.docx)."""
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    import io
+
+    doc = Document()
+    
+    # Estilo base
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(11)
+
+    # Header
+    if logo_path and os.path.exists(logo_path):
+        doc.add_picture(logo_path, width=Inches(1.5))
+    
+    h = doc.add_heading(title, 0)
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    sub = doc.add_paragraph(subtitle)
+    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph("_" * 50).alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Secciones
+    for sec in sections:
+        doc.add_heading(sec.get("title", "Sección"), level=1)
+        txt = sec.get("text", "")
+        # Limpieza básica de markdown
+        txt = txt.replace("### ", "").replace("## ", "").replace("**", "")
+        doc.add_paragraph(txt)
+        
+        for img_path in sec.get("images", []):
+            if os.path.exists(img_path):
+                doc.add_picture(img_path, width=Inches(5))
+
+    # Tabla
+    if table_rows:
+        doc.add_page_break()
+        doc.add_heading(table_title, level=1)
+        cols = list(table_rows[0].keys())
+        table = doc.add_table(rows=1, cols=len(cols))
+        table.style = 'Table Grid'
+        
+        # Header
+        hdr_cells = table.rows[0].cells
+        for i, c in enumerate(cols):
+            p = hdr_cells[i].paragraphs[0]
+            p.add_run(str(c)).bold = True
+        
+        # Data
+        for row_dict in table_rows:
+            row_cells = table.add_row().cells
+            for i, c in enumerate(cols):
+                row_cells[i].text = str(row_dict.get(c, ""))
+
+    target = io.BytesIO()
+    doc.save(target)
+    return target.getvalue()
+
 
 def _report_filename(prefix: str, ext: str) -> str:
     safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", prefix).strip("_")
@@ -2802,23 +3445,23 @@ import re
 
 @app.post("/api/report/oee/day/")
 async def report_oee_day(payload: dict):
-    """Descarga el análisis (PDF/Word) para OEE por día/turno."""
-    day = normalize_day_str(payload.get("day") or "")
+    """Descarga el análisis (PDF/Word) para OEE por día/rango/turno."""
+    from_day = normalize_day_str(payload.get("from_day") or payload.get("day") or "")
+    to_day = normalize_day_str(payload.get("to_day") or from_day)
     shift_name = payload.get("shift_name")
     fmt = (payload.get("format") or "pdf").lower()
     provided_rows = payload.get("rows")
     provided_cols = payload.get("columns")
     provided_ai = payload.get("ai_analysis")
 
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
-        raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", from_day):
+        raise HTTPException(status_code=400, detail=f"Formato de 'from_day' inválido ({from_day}). Usa YYYY-MM-DD.")
 
     if provided_rows and provided_cols:
         rows = provided_rows
         cols = provided_cols
     else:
-        # El front usa shift_name (ver index.html), así que mantenemos ese nombre.
-        api_payload = {"day": day}
+        api_payload = {"from_day": from_day, "to_day": to_day}
         if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "(todos)", "todos", "(all)", "(All)"):
             api_payload["shift_name"] = shift_name
 
@@ -2835,7 +3478,7 @@ async def report_oee_day(payload: dict):
             raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
     if not cols or not rows:
-        raise HTTPException(status_code=404, detail="No hay datos para esa fecha/turno.")
+        raise HTTPException(status_code=404, detail="No hay datos para esa fecha/rango.")
 
     # rows viene como lista de listas => lo convertimos a lista de dicts
     table_rows = []
@@ -2845,50 +3488,49 @@ async def report_oee_day(payload: dict):
         row_dict = {c: (r_list[i] if i < len(r_list) else "") for i, c in enumerate(cols)}
         table_rows.append(row_dict)
 
-    title = "Reporte — OEE por día/turno"
-    subtitle = f"Fecha: {day}" + (f" — Turno: {shift_name}" if shift_name else "")
+    period_label = from_day if from_day == to_day else f"{from_day} a {to_day}"
+    title = "Reporte Ejecutivo de Inteligencia Operacional — Duma"
+    subtitle = f"Periodo: {period_label}" + (f" — Turno: {shift_name}" if shift_name else "")
 
     # El análisis ya viene en data["ai_analysis"] (markdown) desde /api/oee/day-turn
     ai_text = provided_ai or ""
 
     # SECCIÓN: Gráficas de Desempeño
-    # Obtenemos las imágenes (PNG) regenerándolas si es necesario
-    # Para asegurar que tenemos las rutas de los PNG locales, llamamos a api_oee_day_turn si no tenemos los plots
     plots_meta = []
     try:
-        # Llamamos de nuevo pero sin esperar que el front nos dé los plots
-        # (Así nos aseguramos de que los PNG existen en disco en este momento)
-        oee_data = await api_oee_day_turn({"day": day, "shift_name": shift_name})
+        # Volvemos a generar para asegurar PNGs frescos
+        oee_data = await api_oee_day_turn({"from_day": from_day, "to_day": to_day, "shift_name": shift_name})
         plots_meta = oee_data.get("plots") or []
     except Exception: pass
 
     sections = [
-        {"title": "Resumen", "text": "Indicadores calculados por turno para la fecha seleccionada."}
+        {"title": "Resumen Operacional", "text": "Indicadores consolidados por turno para el periodo analizado."}
     ]
     
     if plots_meta:
         sections.append({
-            "title": "Gráficas de Desempeño",
-            "text": "Comparativa visual de eficiencia, producción, velocidad y paros.",
-            "images": [p["path"] for p in plots_meta if p.get("path")]
+            "title": "Análisis Visual de Operaciones",
+            "text": "Evolución de KPIs y análisis de causa raíz (RCA).",
+            "images": [p["path"] for p in plots_meta if p.get("path") and os.path.exists(p["path"])]
         })
 
     if ai_text.strip():
-        sections.append({"title": "Análisis y recomendaciones (IA)", "text": ai_text})
+        sections.append({"title": "Diagnóstico y Recomendaciones (Duma AI)", "text": ai_text})
 
     fmt = (fmt or "pdf").lower()
+    rep_slug = f"oee_{from_day}" if from_day == to_day else f"oee_{from_day}_to_{to_day}"
     if fmt in ("docx", "word"):
         content = _build_docx_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH)
         return _as_file_response(
             content,
-            _report_filename(f"oee_day_{day}" + (f"_{shift_name}" if shift_name else ""), "docx"),
+            _report_filename(rep_slug + (f"_{shift_name}" if shift_name else ""), "docx"),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
 
     content = _build_pdf_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH)
     return _as_file_response(
         content,
-        _report_filename(f"oee_day_{day}" + (f"_{shift_name}" if shift_name else ""), "pdf"),
+        _report_filename(rep_slug + (f"_{shift_name}" if shift_name else ""), "pdf"),
         "application/pdf",
     )
 

@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Duma - Dashboard Analítico</title>
 
-  <!-- Google Fonts -->
+  <!-- Chart.js para Pareto -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
@@ -1231,21 +1232,28 @@
       font-size: 16px;
     }
 
-    .chat-close-btn {
-      background: rgba(255, 255, 255, 0.2);
+    .chat-close-btn, .chat-clear-btn {
+      background: none;
       border: none;
-      color: white;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
+      color: rgba(255,255,255,0.7);
+      font-size: 18px;
       cursor: pointer;
-      display: grid;
-      place-items: center;
-      transition: background 0.2s;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    .chat-close-btn:hover {
-      background: rgba(255, 255, 255, 0.4);
+    .chat-close-btn:hover, .chat-clear-btn:hover {
+      color: white;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .chat-clear-btn {
+      font-size: 14px;
+      gap: 4px;
     }
 
     .chat-messages {
@@ -1644,12 +1652,15 @@
           <!-- Tab Content: Historic -->
           <div id="tabContentOeeHist" style="display:none">
             <div class="card">
-              <h2>OEE por Día/Turno</h2>
-              <p class="sub">Selecciona día y opcionalmente un turno específico</p>
+              <h2>OEE Global / Turno</h2>
+              <p class="sub">Análisis de periodo. Selecciona un rango de fechas para ver el desempeño consolidado.</p>
 
               <div class="form-row">
-                <label class="small muted" for="oeeDay">Fecha:</label>
-                <input id="oeeDay" type="date" />
+                <label class="small muted" for="oeeFrom">Desde:</label>
+                <input id="oeeFrom" type="date" />
+
+                <label class="small muted" for="oeeTo">Hasta:</label>
+                <input id="oeeTo" type="date" />
 
                 <label class="small muted" for="oeeShift">Turno:</label>
                 <select id="oeeShift">
@@ -1659,12 +1670,33 @@
                   <option value="Tercer Turno">Tercer Turno</option>
                 </select>
 
-                <button class="btn primary" id="btnFetchOeeDay">Consultar</button>
+                <button class="btn primary" id="btnFetchOeeDay">Consultar Rango</button>
                 <span class="small muted" id="oeeDayInfo"></span>
               </div>
 
+              <!-- KPI Cards para el Rango (Consolidado) -->
+              <div class="kpi-grid" id="oeeDayKpis" style="display:none; margin-top:20px; grid-template-columns: repeat(4, 1fr) !important; width: 100%;">
+                <div class="kpi">
+                  <div class="kpi-label">OEE Global</div>
+                  <div class="kpi-value" id="kpiRangeOee"></div>
+                  <div class="kpi-hint">Consolidado del rango</div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Disponibilidad</div>
+                  <div class="kpi-value" id="kpiRangeAvail"></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Desempeño</div>
+                  <div class="kpi-value" id="kpiRangePerf"></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-label">Calidad</div>
+                  <div class="kpi-value" id="kpiRangeQual"></div>
+                </div>
+              </div>
+
               <div class="card" id="oeeDayTableCard" style="margin-top:20px; display:none">
-                <h2>Resultado</h2>
+                <h2>Detalle por Turno</h2>
                 <div class="table-wrap">
                   <table id="oeeDayTable">
                     <thead>
@@ -1677,6 +1709,18 @@
 
               <!-- Contenedor para gráficas OEE Histórico -->
               <div class="grid" id="oeeDayGrid" style="margin-top:20px"></div>
+
+              <!-- NUEVO: Pareto de Motivos de Paro -->
+              <div class="card" id="oeeStopReasonsCard" style="display:none; margin-top:20px">
+                <div class="card-head">
+                  <h2 style="margin:0">Analisis de Pareto: Motivos de Paro</h2>
+                  <div class="pill busy" id="paretoPill" style="display:none">Calculando...</div>
+                </div>
+                <p class="sub">Top motivos que impactan la disponibilidad (Regla 80/20)</p>
+                <div style="height: 400px; position: relative;">
+                  <canvas id="stopReasonsChart"></canvas>
+                </div>
+              </div>
 
               <div class="card" id="oeeDayAICard" style="display:none; margin-top:20px">
                 <div class="card-head">
@@ -1721,7 +1765,12 @@
             <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-header-img">
             <div class="chat-header-title">Duma Assistant</div>
           </div>
-          <button class="chat-close-btn" id="chatCloseBtn">✕</button>
+          <div class="chat-header-actions">
+            <button class="chat-clear-btn" id="chatClearBtn" title="Limpiar conversación">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+            </button>
+            <button class="chat-close-btn" id="chatCloseBtn">✕</button>
+          </div>
         </div>
         <div class="chat-messages" id="chatMsgs">
           <div class="msg bot">
@@ -1730,10 +1779,10 @@
         </div>
         <div class="chat-suggestions" id="chatSuggestions">
           <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cuál es el OEE actual?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cómo vamos respecto al plan de producción de hoy?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cuáles fueron las 3 principales causas de paro ayer?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Qué turno ha tenido el desempeño más bajo esta semana?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Resumen de desviaciones críticas en variables hoy</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cuáles fueron los principales motivos de paro esta semana?</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Hay correlación entre los sensores y el bajo OEE de hoy?</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Haz un diagnóstico completo del turno actual</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Qué turno ha tenido más paros no programados esta semana?</div>
         </div>
         <div class="chat-input-area">
           <input type="text" class="chat-input" id="chatInput" placeholder="Pregúntame algo..." autocomplete="off">
@@ -1838,7 +1887,8 @@
 
       // State for downloads
       let lastCvDay = null;
-      let lastOeeDay = null;
+      let lastOeeFrom = null;
+      let lastOeeTo = null;
       let lastOeeShift = null;
 
       let lastCvData = null;    // Para guardar la respuesta de /api/control-variables/day/
@@ -2142,6 +2192,8 @@
         el("oeeDayTableCard").style.display = "none";
         el("oeeDayAICard").style.display = "none";
         el("oeeDayAI").innerHTML = "";
+        el("oeeStopReasonsCard").style.display = "none";
+        if (stopReasonsChart) { stopReasonsChart.destroy(); stopReasonsChart = null; }
 
         setStatus("ok", "Listo");
       });
@@ -2428,24 +2480,146 @@
       // ===========================
       // OEE DAY/TURN
       // ===========================
+      let stopReasonsChart = null;
+
+      async function fetchStopReasonsPareto(from_day, to_day, shift_name) {
+        el("oeeStopReasonsCard").style.display = "";
+        el("paretoPill").style.display = "";
+        
+        try {
+          const res = await fetch("api/oee/stop-reasons/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ from_day, to_day, shift_name })
+          });
+          const result = await res.json();
+          if (!res.ok) return;
+
+          renderStopReasonsChart(result.data || []);
+        } catch (e) {
+          console.error("Error Pareto:", e);
+        } finally {
+          el("paretoPill").style.display = "none";
+        }
+      }
+
+      function renderStopReasonsChart(data) {
+        const ctx = document.getElementById('stopReasonsChart').getContext('2d');
+        
+        // Destruir anterior si existe
+        if (stopReasonsChart) stopReasonsChart.destroy();
+
+        if (!data || data.length === 0) {
+           el("oeeStopReasonsCard").style.display = "none";
+           return;
+        }
+
+        // Filtrar solo NO PROGRAMADOS (NP) para el Pareto principal de impacto
+        const filtered = data.filter(d => d.Clasificacion === 'NP').slice(0, 10);
+        if (filtered.length === 0) {
+            filtered.push(...data.filter(d => d.Clasificacion === 'P').slice(0, 10));
+        }
+        if (filtered.length === 0) {
+            filtered.push(...data.slice(0, 10));
+        }
+
+        const labels = filtered.map(d => d.Motivo_Particular);
+        const durations = filtered.map(d => parseFloat(d.Duracion_Min));
+        
+        // Calcular acumulado
+        const total = durations.reduce((a, b) => a + b, 0);
+        let currentSum = 0;
+        const cumulative = durations.map(d => {
+          currentSum += d;
+          return (currentSum / total * 100).toFixed(1);
+        });
+
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDark ? '#f0fdfa' : '#0f172a';
+
+        stopReasonsChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Duración (min)',
+                data: durations,
+                backgroundColor: '#1abc9c',
+                borderRadius: 6,
+                yAxisID: 'y'
+              },
+              {
+                label: '% Acumulado',
+                data: cumulative,
+                type: 'line',
+                borderColor: '#ef4444',
+                borderWidth: 3,
+                pointBackgroundColor: '#ef4444',
+                fill: false,
+                yAxisID: 'y1'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y', // Barras horizontales para mejor lectura
+            scales: {
+              y: {
+                beginAtZero: true,
+                grid: { display: false },
+                ticks: { color: textColor, font: { size: 11 } }
+              },
+              y1: {
+                beginAtZero: true,
+                max: 100,
+                position: 'right',
+                grid: { drawOnChartArea: false },
+                ticks: { color: '#ef4444', callback: v => v + '%' }
+              },
+              x: {
+                grid: { color: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' },
+                ticks: { color: textColor }
+              }
+            },
+            plugins: {
+              legend: {
+                labels: { color: textColor }
+              },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    if (ctx.datasetIndex === 0) return ` ${ctx.raw.toFixed(1)} min`;
+                    return ` ${ctx.raw}% acumulado`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
       async function fetchOeeDay() {
-        const day = (el("oeeDay").value || "").trim();
+        const from = (el("oeeFrom").value || "").trim();
+        const to = (el("oeeTo").value || "").trim();
         const shift = (el("oeeShift").value || "").trim();
 
-        if (!day) {
-          el("oeeDayInfo").textContent = "Selecciona una fecha.";
+        if (!from || !to) {
+          el("oeeDayInfo").textContent = "Selecciona ambas fechas.";
           return;
         }
 
         el("oeeDayInfo").textContent = "";
+        el("oeeDayKpis").style.display = "none";
         el("oeeDayTableCard").style.display = "none";
         el("oeeDayAICard").style.display = "none";
         el("oeeDayAI").innerHTML = "";
 
-        setStatus("busy", "Consultando...");
+        setStatus("busy", "Analizando periodo...");
         setBtnBusy("btnFetchOeeDay", true, "Consultando...");
         try {
-          const body = { day: day };
+          const body = { from_day: from, to_day: to };
           if (shift) body.shift_name = shift;
 
           const res = await fetch("api/oee/day-turn/", {
@@ -2458,14 +2632,25 @@
             throw new Error(data.detail || data.error || "Error en /api/oee/day-turn");
           }
 
-          lastOeeDay = day;
+          lastOeeFrom = from;
+          lastOeeTo = to;
           lastOeeShift = shift ? shift : null;
           lastOeeDayData = data;
 
           const rows = data.rows || [];
           const cols = data.columns || [];
+          const summary = data.summary;
+
+          if (summary) {
+            el("kpiRangeOee").textContent = toPct(summary.OEE);
+            el("kpiRangeAvail").textContent = toPct(summary.Availability);
+            el("kpiRangePerf").textContent = toPct(summary.Performance);
+            el("kpiRangeQual").textContent = toPct(summary.Quality);
+            el("oeeDayKpis").style.display = "";
+          }
+
           if (rows.length === 0) {
-            el("oeeDayInfo").textContent = "No hay datos para esa fecha/turno.";
+            el("oeeDayInfo").textContent = "No hay datos para ese periodo/turno.";
             setStatus("ok", "Listo");
             return;
           }
@@ -2484,6 +2669,13 @@
             el("oeeDayGrid").innerHTML = "";
           }
 
+          // Renderizar Pareto Chart.js con stop_reasons del mismo response
+          if (Array.isArray(data.stop_reasons) && data.stop_reasons.length > 0) {
+            renderStopReasonsChart(data.stop_reasons);
+          } else {
+            el("oeeStopReasonsCard").style.display = "none";
+          }
+
           setStatus("ok", "Listo");
         } catch (err) {
           el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
@@ -2495,9 +2687,6 @@
 
       el("btnFetchOeeDay").addEventListener("click", fetchOeeDay);
 
-      // ===========================
-      // Download Handlers
-      // ===========================
       // ===========================
       // Download Handlers
       // ===========================
@@ -2516,8 +2705,6 @@
         }
       });
 
-
-
       el("btnDlOeeRtPdf")?.addEventListener("click", async () => {
         if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
         setBtnBusy("btnDlOeeRtPdf", true, "Descargando...");
@@ -2533,16 +2720,16 @@
         }
       });
 
-
-
       el("btnDlOeeDayPdf")?.addEventListener("click", async () => {
-        if (!lastOeeDay || !lastOeeDayData) return alert("Consulta primero un día/turno.");
+        if (!lastOeeFrom || !lastOeeDayData) return alert("Consulta primero un periodo.");
         setBtnBusy("btnDlOeeDayPdf", true, "Descargando...");
         try {
-          await downloadFrom(`api/report/oee/day/`, `oee_day_${lastOeeDay}.pdf`, {
-            day: lastOeeDay,
+          await downloadFrom(`api/report/oee/day/`, `oee_range_${lastOeeFrom}_to_${lastOeeTo}.pdf`, {
+            from_day: lastOeeFrom,
+            to_day: lastOeeTo,
             shift_name: lastOeeShift,
             format: "pdf",
+            summary: lastOeeDayData.summary,
             rows: lastOeeDayData.rows,
             columns: lastOeeDayData.columns,
             ai_analysis: lastOeeDayData.ai_analysis
@@ -2552,14 +2739,14 @@
         }
       });
 
-
-
       // Set today's date as default and max
       const today = todayISO();
       el("cvDay").value = today;
       el("cvDay").max = today;
-      el("oeeDay").value = today;
-      el("oeeDay").max = today;
+      el("oeeFrom").value = today;
+      el("oeeFrom").max = today;
+      el("oeeTo").value = today;
+      el("oeeTo").max = today;
 
       // Inicializar vista
       showView("CV");
@@ -2568,17 +2755,33 @@
       // DUMA CHAT LOGIC
       // ===========================
       const chatWidget = {
-        threadId: localStorage.getItem("duma_thread_id"),
+        threadId: null,
         isOpen: false,
         isTyping: false,
 
         init() {
           el("chatBubbleBtn").addEventListener("click", () => this.toggle());
-          el("chatCloseBtn").addEventListener("click", () => this.close());
+          el("chatCloseBtn").addEventListener("click", () => this.toggle());
+          el("chatClearBtn").addEventListener("click", () => this.clearChat());
           el("chatSendBtn").addEventListener("click", () => this.handleSend());
           el("chatInput").addEventListener("keypress", (e) => {
             if (e.key === "Enter") this.handleSend();
           });
+
+          this.threadId = localStorage.getItem("duma_thread_id") || null;
+        },
+
+        clearChat() {
+          if (!confirm("¿Deseas limpiar la conversación actual?")) return;
+          this.threadId = null;
+          localStorage.removeItem("duma_thread_id");
+          const container = el("chatMsgs");
+          container.innerHTML = `
+            <div class="msg bot">
+              ¡Hola! Soy <strong>Duma</strong>, tu analista de piso. He reiniciado mi memoria. ¿En qué puedo ayudarte hoy?
+            </div>
+          `;
+          if (el("chatSuggestions")) el("chatSuggestions").style.display = "flex";
         },
 
         toggle() {
