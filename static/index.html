@@ -1763,7 +1763,7 @@
         <div class="chat-header">
           <div class="chat-header-info">
             <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-header-img">
-            <div class="chat-header-title">Duma Assistant</div>
+            <div class="chat-header-title">Duma AI Agent</div>
           </div>
           <div class="chat-header-actions">
             <button class="chat-clear-btn" id="chatClearBtn" title="Limpiar conversación">
@@ -1778,11 +1778,11 @@
           </div>
         </div>
         <div class="chat-suggestions" id="chatSuggestions">
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cuál es el OEE actual?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Cuáles fueron los principales motivos de paro esta semana?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Hay correlación entre los sensores y el bajo OEE de hoy?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Haz un diagnóstico completo del turno actual</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Qué turno ha tenido más paros no programados esta semana?</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Duma, dame un informe ejecutivo del problema más crítico ahora</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Dónde estamos perdiendo más producción hoy y por qué?</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Analiza las anomalías actuales en sensores y posibles riesgos</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Con el ritmo actual, ¿qué tan lejos estamos de la meta diaria?</div>
+          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Genera un diagnóstico Pareto (80/20) de las de fallas de ayer</div>
         </div>
         <div class="chat-input-area">
           <input type="text" class="chat-input" id="chatInput" placeholder="Pregúntame algo..." autocomplete="off">
@@ -1907,8 +1907,8 @@
         StatusTimeMin: "Tiempo en estatus (min)",
         NaturalTimeMin: "Tiempo natural (min)",
         ProductiveTimeMin: "Tiempo productivo (min)",
-        ScheduledStopageMin: "Paro programado (min)",
-        UnscheduledStopageMin: "Paro no programado (min)",
+        ScheduledStopageMin: "Paros programados (Duración)",
+        UnscheduledStopageMin: "Paros no programados (Duración)",
         ParosNoProgramadosCont: "Paros no programados (Eventos)",
         ParosProgramadosCont: "Paros programados (Eventos)",
         CurrentRate: "Velocidad real (kg/h)",
@@ -2046,6 +2046,13 @@
           let line = rawLine.trim();
           if (!line) {
             closeLists();
+            continue;
+          }
+
+          if (line.startsWith("#### ")) {
+            closeLists();
+            let raw = line.substring(5).trim();
+            html += `<h4>${applyInline(raw)}</h4>`;
             continue;
           }
 
@@ -2713,6 +2720,7 @@
             format: "pdf",
             rows: lastOeeRtData.rows,
             columns: lastOeeRtData.columns,
+            stop_reasons: lastOeeRtData.stop_reasons,
             ai_analysis: lastOeeRtData.ai_analysis
           });
         } finally {

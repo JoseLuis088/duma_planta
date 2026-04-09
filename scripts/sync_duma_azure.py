@@ -17,7 +17,7 @@ BASE = Path(__file__).parent.parent
 print("=== Duma Azure Sync ===")
 
 # 1. Actualizar instrucciones
-instructions = (BASE / "System prompt.txt").read_text(encoding="utf-8")
+instructions = (BASE / "DUMA_EXECUTIVE_PROMPT.txt").read_text(encoding="utf-8")
 updated = client.beta.assistants.update(ASSISTANT_ID, instructions=instructions)
 print(f"[1] Instrucciones actualizadas -> {updated.name} ({ASSISTANT_ID})")
 

@@ -6,9 +6,11 @@ import time
 import base64
 import re
 from typing import List, Optional
+import datetime as dt
 from datetime import datetime, date, timedelta
 
-
+import asyncio
+import concurrent.futures
 import pyodbc
 import pandas as pd
 import matplotlib
@@ -21,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from openai import AzureOpenAI
+from openai import AzureOpenAI, AsyncAzureOpenAI
 
 # Reportes (PDF/Word)
 from reportlab.lib.pagesizes import letter
@@ -62,8 +64,14 @@ CONN_STR = (
 _LOGO_PATH = os.path.join("static", "images", "LOGO DUMA.png")
 
 
-# ---------- Cliente Azure ----------
+# ---------- Clientes Azure ----------
 client = AzureOpenAI(
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_key=AZURE_OPENAI_API_KEY,
+    api_version=AZURE_OPENAI_API_VERSION,
+)
+
+async_client = AsyncAzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     api_key=AZURE_OPENAI_API_KEY,
     api_version=AZURE_OPENAI_API_VERSION,
@@ -77,11 +85,10 @@ AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "").strip()
 
 def aoai_text(system_prompt: str, user_prompt: str, temperature: float = 0.2, max_tokens: int = 900) -> str:
     """
-    Llama a Azure OpenAI (Chat Completions) y regresa texto.
-    Requiere AZURE_OPENAI_DEPLOYMENT definido en .env
+    Llama a Azure OpenAI (Chat Completions) de forma síncrona y regresa texto.
     """
     if not AZURE_OPENAI_DEPLOYMENT:
-        return "⚠️ Falta AZURE_OPENAI_DEPLOYMENT en el .env (nombre del deployment del modelo)."
+        return "⚠️ Falta AZURE_OPENAI_DEPLOYMENT en el .env."
 
     try:
         resp = client.chat.completions.create(
@@ -95,7 +102,28 @@ def aoai_text(system_prompt: str, user_prompt: str, temperature: float = 0.2, ma
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception as e:
-        return f"⚠️ Error llamando a Azure OpenAI: {e}"
+        return f"⚠️ Error llamando a Azure OpenAI (Sync): {e}"
+
+async def aoai_text_async(system_prompt: str, user_prompt: str, temperature: float = 0.2, max_tokens: int = 900) -> str:
+    """
+    Llama a Azure OpenAI (Chat Completions) de forma asíncrona y regresa texto.
+    """
+    if not AZURE_OPENAI_DEPLOYMENT:
+        return "⚠️ Falta AZURE_OPENAI_DEPLOYMENT en el .env."
+
+    try:
+        resp = await async_client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        return f"⚠️ Error llamando a Azure OpenAI (Async): {e}"
     
 
 CONTROL_VARS_AI_SYSTEM = """\
@@ -201,7 +229,7 @@ Eres **Duma**, el Agente de Inteligencia Operacional de nivel ejecutivo (Directo
 (Analiza los **Motivos de Paro (Pareto)** proporcionados. Identifica el 20% de las causas que generan el 80% del tiempo perdido. Sé específico con los nombres de los fallos técnicos.)
 
 ### 📉 Hipótesis de Correlación (Sensores/Control)
-(Relaciona los paros técnicos con posibles desviaciones en variables de control como Temperatura IQF, Chiller, Mezclador, etc. Sugiere investigar con 'get_control_variables_correlation' si detectas patrones de inestabilidad.)
+(Relaciona los paros técnicos con posibles desviaciones en variables de control como Temperatura IQF, Chiller, Mezclador, etc. Busca patrones de inestabilidad que coincidan con los periodos de baja disponibilidad.)
 
 ### ✅ Plan de Acción Ejecutivo
 - **Prioridad Crítica**: Acción inmediata para mitigar el problema recurrente más grave.
@@ -218,18 +246,21 @@ Eres **Duma**, el Agente de Inteligencia Operacional de nivel ejecutivo (Directo
 """.strip()
 
 
-def ai_oee_realtime(snapshot: dict) -> str:
-    """Genera análisis ejecutivo para OEE en tiempo real (un snapshot)."""
+async def ai_oee_realtime(snapshot: dict, stop_reasons: List[dict] = None) -> str:
+    """Genera análisis ejecutivo para OEE en tiempo real con diagnóstico de paros."""
     user_prompt = (
-        "Analiza el siguiente SNAPSHOT de OEE en tiempo real y escribe el análisis con la estructura indicada.\n\n"
-        "SNAPSHOT (JSON):\n"
+        "Analiza el siguiente SNAPSHOT de OEE en tiempo real y los MOTIVOS DE PARO acumulados hoy.\n\n"
+        "SNAPSHOT ACTUAL:\n"
         f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}\n\n"
-        "Reglas adicionales:\n"
-        "- Identifica el KPI limitante (Availability/Performance/Quality el más bajo).\n"
-        "- Si StatusCode indica paro, sugiere acciones acordes (mantenimiento, operación, planeación).\n"
-        "- No inventes valores que no estén en el JSON."
+        "MOTIVOS DE PARO ACUMULADOS (Turno Actual):\n"
+        f"{json.dumps(stop_reasons or [], ensure_ascii=False, indent=2)}\n\n"
+        "Instrucciones:\n"
+        "- Diagnostica el OEE actual y relaciónalo con los paros acumulados hoy.\n"
+        "- Identifica el 'KPI Limitante' de este momento.\n"
+        "- Si hay paros importantes en el Pareto, úsalos para explicar la baja disponibilidad actual.\n"
+        "- Sigue la ESTRUCTURA OBLIGATORIA (Resumen, Diagnóstico, RCA, Plan de Acción)."
     )
-    return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.2, max_tokens=700)
+    return await aoai_text_async(OEE_AI_SYSTEM, user_prompt, temperature=0.15, max_tokens=1000)
 
 
 def ai_oee_range_analysis(range_data: dict) -> str:
@@ -1969,7 +2000,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     ])
     fig_stops.update_layout(
         title="Distribución de Paros (Minutos) - Snapshot", 
-        template="plotly_dark", barmode='stack',
+        template="plotly_dark", barmode='group',
         margin=dict(l=40, r=40, t=60, b=40)
     )
     stops_fname = f"oee_rt_stops_{ts}.html"
@@ -1985,7 +2016,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     ])
     fig_freq.update_layout(
         title="Frecuencia de Paros (Eventos) - Snapshot", 
-        template="plotly_dark", barmode='stack',
+        template="plotly_dark", barmode='group',
         margin=dict(l=40, r=40, t=60, b=40)
     )
 
@@ -1998,9 +2029,38 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
 @app.get("/api/oee/realtime/")
 async def api_oee_realtime():
     """OEE en tiempo real (último snapshot)."""
-    rows, cols = run_sql(_sql_oee_realtime())
+    # 1. Ejecución secuencial de SQL (rápido, evita deadlocks)
+    sql_recent = _sql_oee_realtime()
+    rows, cols = run_sql(sql_recent)
+    
     if not rows:
         return {"rows": [], "columns": cols, "snapshot": None, "ai_analysis": "", "plots": []}
+
+    from_day = dt.datetime.now().strftime("%Y-%m-%d")
+    pareto_sql = f"""
+DECLARE @today DATE = CONVERT(date, '{from_day}');
+SELECT TOP 10
+    mt.Name          AS Tipo_General,
+    m.Name           AS Motivo_Particular,
+    m.StoppageType   AS Clasificacion,
+    SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
+    COUNT(*)                                              AS Eventos,
+    AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
+FROM dbo.Stopages s
+JOIN dbo.Motives m            ON s.MotiveId           = m.MotiveId
+JOIN dbo.MotivesType mt       ON m.MotiveTypeId        = mt.MotiveTypeId
+JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
+JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE s.Active = 1
+  AND wse.DayOff = 0
+  AND (CASE WHEN wst.EndTime < wst.StartTime
+            THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date)
+       END) = @today
+GROUP BY mt.Name, m.Name, m.StoppageType
+ORDER BY Duracion_Min DESC;
+"""
+    rows_p, cols_p = run_sql(pareto_sql)
 
     # Registro original para las gráficas (antes de formatear tiempos)
     raw_snap = dict(zip(cols, rows[0]))
@@ -2020,16 +2080,73 @@ async def api_oee_realtime():
                 r_dict[col] = format_duration_es(r_dict[col])
         rows_formatted.append([r_dict.get(c) for c in cols])
 
+    # Motivos de paro
+    stop_reasons = [dict(zip(cols_p, r)) for r in rows_p]
+
+    # --- Sincronización de Totales (Snapshot vs Pareto) ---
+    total_np_cnt = sum(int(s.get("Eventos", 0)) for s in stop_reasons if s.get("Clasificacion") == "NP")
+    total_np_min = sum(float(s.get("Duracion_Min", 0)) for s in stop_reasons if s.get("Clasificacion") == "NP")
+    total_p_cnt  = sum(int(s.get("Eventos", 0)) for s in stop_reasons if s.get("Clasificacion") == "P")
+    total_p_min  = sum(float(s.get("Duracion_Min", 0)) for s in stop_reasons if s.get("Clasificacion") == "P")
+
     # Snapshot = primer registro formateado para la IA y los KPIs
     snap_formatted = dict(zip(cols, rows_formatted[0]))
+    
+    # Inyectar totales sincronizados en snap_formatted para KPIs e IA
+    snap_formatted["ParosNoProgramadosCont"] = total_np_cnt
+    snap_formatted["UnscheduledStopageMin"] = format_duration_es(total_np_min)
+    snap_formatted["ParosProgramadosCont"] = total_p_cnt
+    snap_formatted["ScheduledStopageMin"] = format_duration_es(total_p_min)
 
-    # Gráficas
-    plots = plot_oee_realtime_snapshot(raw_snap)
+    # Actualizar también la fila en la tabla para coherencia visual absoluta
+    idx_un_cnt = cols.index("ParosNoProgramadosCont") if "ParosNoProgramadosCont" in cols else -1
+    idx_un_min = cols.index("UnscheduledStopageMin") if "UnscheduledStopageMin" in cols else -1
+    idx_sc_cnt = cols.index("ParosProgramadosCont") if "ParosProgramadosCont" in cols else -1
+    idx_sc_min = cols.index("ScheduledStopageMin") if "ScheduledStopageMin" in cols else -1
 
-    # IA (si está configurada)
-    ai = ai_oee_realtime(snap_formatted)
+    if idx_un_cnt >= 0: rows_formatted[0][idx_un_cnt] = total_np_cnt
+    if idx_un_min >= 0: rows_formatted[0][idx_un_min] = format_duration_es(total_np_min)
+    if idx_sc_cnt >= 0: rows_formatted[0][idx_sc_cnt] = total_p_cnt
+    if idx_sc_min >= 0: rows_formatted[0][idx_sc_min] = format_duration_es(total_p_min)
 
-    return {"rows": rows_formatted, "columns": cols, "snapshot": snap_formatted, "ai_analysis": ai, "plots": plots}
+    # Inyectar también en raw_snap para que las gráficas de barras usen el acumulado real
+    raw_snap["ParosNoProgramadosCont"] = total_np_cnt
+    raw_snap["UnscheduledStopageMin"] = total_np_min
+    raw_snap["ParosProgramadosCont"] = total_p_cnt
+    raw_snap["ScheduledStopageMin"] = total_p_min
+
+    # 3. Ejecución Paralela: Gráficas e IA
+    tasks = [
+        asyncio.to_thread(plot_oee_realtime_snapshot, raw_snap)
+    ]
+    
+    if stop_reasons:
+        tasks.append(asyncio.to_thread(plot_pareto_stop_reasons, stop_reasons, f"Hoy ({from_day})"))
+    
+    tasks.append(ai_oee_realtime(snap_formatted, stop_reasons))
+
+    # Ejecutamos todo concurrentemente
+    results = await asyncio.gather(*tasks)
+
+    # El primer resultado siempre es de plot_oee_realtime_snapshot
+    plots = results[0]
+    
+    if stop_reasons:
+        # El segundo es plot_pareto_stop_reasons y el tercero es la IA
+        plots.extend(results[1])
+        ai_res = results[2]
+    else:
+        # El segundo es la IA
+        ai_res = results[1]
+
+    return {
+        "rows": rows_formatted, 
+        "columns": cols, 
+        "snapshot": snap_formatted, 
+        "stop_reasons": stop_reasons,
+        "ai_analysis": ai_res, 
+        "plots": plots
+    }
 
 def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> List[dict]:
     """Genera gráficas de serie de tiempo por día: OEE, Producción y Paros."""
@@ -2225,7 +2342,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> Lis
 
 
 
-def plot_pareto_stop_reasons(stop_reasons: list, period_label: str) -> List[dict]:
+def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: bool = False) -> List[dict]:
     """Genera gráficas Plotly: Pareto 80/20 horizontal + Treemap jerárquico de motivos de paro."""
     try:
         from plotly.subplots import make_subplots
@@ -2334,25 +2451,27 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str) -> List[dict
         plots.append({"title": "🗺️ Mapa de Categorías de Paro", "url": f"static/plots/{fname2}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
-    try:
-        fnames_p = []
-        figs_p = []
-        if 'fname' in locals() and 'fig' in locals():
-            fnames_p.append(fname); figs_p.append(fig)
-        if 'fname2' in locals() and 'fig2' in locals():
-            fnames_p.append(fname2); figs_p.append(fig2)
-            
-        for fn, fg in zip(fnames_p, figs_p):
-            png_name = fn.replace(".html", ".png")
-            png_path = os.path.join(out_dir, png_name)
-            fg.write_image(png_path, engine="kaleido")
-            for p in plots:
-                if p["url"].endswith(fn):
-                    p["path"] = png_path
-    except Exception as ex:
-        print(f"Error exportando Pareto PNG: {ex}")
+    if export_png:
+        try:
+            fnames_p = []
+            figs_p = []
+            if 'fname' in locals() and 'fig' in locals():
+                fnames_p.append(fname); figs_p.append(fig)
+            if 'fname2' in locals() and 'fig2' in locals():
+                fnames_p.append(fname2); figs_p.append(fig2)
+                
+            for fn, fg in zip(fnames_p, figs_p):
+                png_name = fn.replace(".html", ".png")
+                png_path = os.path.join(out_dir, png_name)
+                fg.write_image(png_path, engine="kaleido")
+                for p in plots:
+                    if p["url"].endswith(fn):
+                        p["path"] = png_path
+        except Exception as ex:
+            print(f"Error exportando Pareto PNG: {ex}")
 
     return plots
+
 
 
 @app.post("/api/oee/day-turn/")
@@ -2541,17 +2660,17 @@ ORDER BY Fecha DESC, Turno;
                 "Producto conforme (%)": f"{avg_q:.1f}%",
                 "Producción Real (Kg)": f"{v['real']:,.0f}",
                 "Producción Esperada (Kg)": f"{v['exp']:,.0f}",
-                "Paros No Prog (Min)": format_duration_es(v["np_min"]),
+                "Paros no programados (Duración)": format_duration_es(v["np_min"]),
                 "Paros No Prog (Eventos)": f"{int(v['np_cnt'])} ev.",
-                "Paros Prog (Min)": format_duration_es(v["p_min"]),
+                "Paros programados (Duración)": format_duration_es(v["p_min"]),
                 "Paros Prog (Eventos)": f"{int(v['p_cnt'])} ev."
             })
     
     turn_cols = [
         "Fecha", "Turno", "OEE (%)", "Disponibilidad (%)", "Producto conforme (%)", 
         "Producción Real (Kg)", "Producción Esperada (Kg)", 
-        "Paros No Prog (Min)", "Paros No Prog (Eventos)", 
-        "Paros Prog (Min)", "Paros Prog (Eventos)"
+        "Paros no programados (Duración)", "Paros No Prog (Eventos)", 
+        "Paros programados (Duración)", "Paros Prog (Eventos)"
     ]
     turn_rows = [[r.get(c) for c in turn_cols] for r in table_by_turn]
 
@@ -3358,6 +3477,7 @@ async def report_oee_realtime(payload: dict):
     provided_rows = payload.get("rows")
     provided_cols = payload.get("columns")
     provided_ai = payload.get("ai_analysis")
+    provided_stops = payload.get("stop_reasons")
 
     if provided_rows and provided_cols:
         rows = provided_rows
@@ -3367,6 +3487,8 @@ async def report_oee_realtime(payload: dict):
         data = await api_oee_realtime()
         rows = data.get("rows") or []
         cols = data.get("columns") or []
+        provided_ai = data.get("ai_analysis")
+        provided_stops = data.get("stop_reasons")
 
     if not rows or not cols:
         raise HTTPException(status_code=404, detail="No hay datos de OEE en tiempo real.")
@@ -3403,19 +3525,33 @@ async def report_oee_realtime(payload: dict):
     # Gráficas PNG (Backend)
     image_paths = []
     try:
-        from main import _sql_oee_realtime, run_sql
+        from main import _sql_oee_realtime, run_sql, plot_oee_realtime_snapshot, plot_pareto_stop_reasons
         rows_raw, cols_raw = run_sql(_sql_oee_realtime())
         if rows_raw:
             raw_snap = dict(zip(cols_raw, rows_raw[0]))
-            image_paths = _generate_oee_rt_pngs(raw_snap)
+            
+            # 1. Gráficas base de tiempo real
+            rt_plots = plot_oee_realtime_snapshot(raw_snap)
+            for p in rt_plots:
+                fname = p["url"].split("/")[-1]
+                png_path = os.path.join("static", "plots", fname.replace(".html", ".png"))
+                image_paths.append(png_path)
+            
+            # 2. Agregar Pareto y Treemap si hay paros
+            if provided_stops:
+                diag_plots = plot_pareto_stop_reasons(provided_stops, "Turno Actual")
+                for p in diag_plots:
+                    fname = p["url"].split("/")[-1]
+                    png_path = os.path.join("static", "plots", fname.replace(".html", ".png"))
+                    image_paths.append(png_path)
     except Exception as e:
         print(f"Error generando PNGs para tiempo real: {e}")
 
     # IA (Texto)
     ai_text = provided_ai if provided_ai is not None else ""
-    if provided_ai is None:
+    if not ai_text:
         try:
-            ai_text = ai_oee_realtime(row)
+            ai_text = ai_oee_realtime(row, provided_stops)
         except Exception:
             ai_text = ""
 
