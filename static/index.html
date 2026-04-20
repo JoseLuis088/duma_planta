@@ -8,6 +8,9 @@
 
   <!-- Chart.js para Pareto -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Flatpickr para rangos de fecha -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
@@ -1037,7 +1040,7 @@
       width: 95%;
       height: 90%;
       max-width: 1600px;
-      background: white;
+      background: #121212;
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
@@ -1244,6 +1247,41 @@
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+
+    .chat-export-btn {
+      background: white;
+      color: #1e293b;
+      border: 1px solid rgba(0, 150, 136, 0.2);
+      border-radius: 100px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    .chat-export-btn i {
+      color: #9333ea; /* Color purpura como en imagen */
+      font-size: 15px;
+    }
+
+    .chat-export-btn:hover {
+      background: #f8fafc;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+    }
+
+    .chat-export-btn.busy {
+      background: #f59e0b !important;
+      color: white !important;
+      border-color: transparent !important;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3) !important;
+      cursor: wait;
     }
 
     .chat-close-btn:hover, .chat-clear-btn:hover {
@@ -1482,6 +1520,67 @@
     .chat-plot-btn i {
       font-size: 16px;
     }
+
+    /* ==================== DATE PICKERS (FLATPICKR) ==================== */
+    #oeeRange, #cvDay {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      cursor: pointer;
+      width: 250px !important;
+      text-align: center;
+      margin-left: 8px;
+    }
+    
+    #oeeRange:hover, #cvDay:hover {
+      border-color: var(--brand);
+      box-shadow: 0 4px 12px var(--brand-glow);
+    }
+
+    #oeeRange:focus, #cvDay:focus {
+      outline: none;
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-glow);
+    }
+    
+    /* Flatpickr Premium Theme Overrides */
+    .flatpickr-calendar {
+      font-family: 'Inter', sans-serif !important;
+      background: var(--panel-solid) !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 10px 30px var(--shadow-lg) !important;
+      border-radius: 12px !important;
+    }
+    .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange {
+      background: var(--brand) !important;
+      border-color: var(--brand) !important;
+      color: white !important;
+    }
+    .flatpickr-day.inRange {
+      background: var(--brand-glow) !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+    [data-theme="dark"] .flatpickr-calendar {
+      color: #fff !important;
+    }
+    [data-theme="dark"] .flatpickr-day {
+      color: #e2e8f0;
+    }
+    [data-theme="dark"] .flatpickr-month {
+      color: #fff !important;
+      fill: #fff !important;
+    }
+    [data-theme="dark"] .flatpickr-weekday {
+      color: #94a3b8 !important;
+    }
   </style>
 </head>
 
@@ -1543,8 +1642,8 @@
             <p class="sub">Selecciona una fecha para generar gráficas de variables críticas con análisis de IA</p>
 
             <div class="form-row">
-              <label class="small muted" for="cvDay">Fecha:</label>
-              <input id="cvDay" type="date" />
+              <label class="small muted" for="cvDay">Rango de Días:</label>
+              <input id="cvDay" type="text" placeholder="Seleccione Rango de Fechas" />
               <button class="btn primary" id="btnGenCV">Generar Análisis</button>
               <span class="small muted" id="cvInfo"></span>
             </div>
@@ -1656,11 +1755,8 @@
               <p class="sub">Análisis de periodo. Selecciona un rango de fechas para ver el desempeño consolidado.</p>
 
               <div class="form-row">
-                <label class="small muted" for="oeeFrom">Desde:</label>
-                <input id="oeeFrom" type="date" />
-
-                <label class="small muted" for="oeeTo">Hasta:</label>
-                <input id="oeeTo" type="date" />
+                <label class="small muted" for="oeeRange">Fechas:</label>
+                <input id="oeeRange" type="text" placeholder="Seleccione el Rango de Días" style="width: 200px" />
 
                 <label class="small muted" for="oeeShift">Turno:</label>
                 <select id="oeeShift">
@@ -1766,6 +1862,10 @@
             <div class="chat-header-title">Duma AI Agent</div>
           </div>
           <div class="chat-header-actions">
+            <button class="chat-export-btn" id="chatExportPdfBtn" title="Exportar a PDF Operativo">
+              <i class="fa fa-file-text-o"></i>
+              <span>Descargar PDF</span>
+            </button>
             <button class="chat-clear-btn" id="chatClearBtn" title="Limpiar conversación">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
             </button>
@@ -1939,7 +2039,76 @@
         ParosProgramadosCont: "Paros programados (Eventos)"
       };
 
-      async function downloadFrom(url, filename, body = null) {
+      /**
+     * Recolecta capturas PNG Base64 de todos los iframes (Plotly) y canvases (Chart.js)
+     * dentro de un contenedor (ej. toda la pestaña de OEE).
+     */
+    async function collectDashboardSnapshots(containerId) {
+      const container = el(containerId);
+      if (!container) return [];
+      
+      const frames = Array.from(container.querySelectorAll("iframe"));
+      const canvases = Array.from(container.querySelectorAll("canvas"));
+      const b64Map = {};
+      
+      const framePromises = frames.map(f => new Promise((resolve) => {
+        const handler = (e) => {
+          if (e.data && e.data.action === "PNG_RESULT") {
+            const chartUrl = f.getAttribute("data-chart-url") || f.src;
+            // Comparación robusta: Verificamos si una URL contiene a la otra (ignorando dominio/protocolo si es necesario)
+            // Normalización extrema de URLs para matching (ignorando dominio, protocolo y query params)
+            const cleanUrl = (u) => {
+              if (!u) return "";
+              try {
+                const path = u.split('?')[0].split('#')[0];
+                const parts = path.split('/');
+                return parts[parts.length - 1]; // Nos quedamos solo con el nombre del archivo (ej: pareto_np_123.html)
+              } catch(e) { return u; }
+            };
+
+            const fName = cleanUrl(chartUrl);
+            const eName = cleanUrl(e.data.src);
+            
+            console.log(`🔍 Intentando emparejar: "${fName}" vs "${eName}"`);
+            
+            if (fName === eName || fName.includes(eName) || eName.includes(fName) || (fName && eName && (fName.endsWith(eName) || eName.endsWith(fName)))) {
+               console.log("✅ Emparejamiento exitoso para:", fName);
+               b64Map[chartUrl] = e.data.dataUrl;
+               window.removeEventListener("message", handler);
+               resolve();
+            }
+          }
+        };
+        window.addEventListener("message", handler);
+        // Timeout extendido a 12s para gráficas pesadas (Treemaps)
+        setTimeout(() => { 
+          if (!b64Map[f.getAttribute("data-chart-url") || f.src]) {
+            console.warn("⏳ Timeout alcanzado para iframe:", f.src);
+          }
+          window.removeEventListener("message", handler); 
+          resolve(); 
+        }, 12000);
+        f.contentWindow.postMessage({action: "GET_PNG"}, "*");
+      }));
+
+      // Captura inmediata de Canvases (Chart.js Pareto)
+      canvases.forEach((c, idx) => {
+        try {
+          if (c.width > 0 && c.height > 0) {
+            console.log("🎨 Capturando Canvas:", c.id || `index_${idx}`);
+            b64Map["canvas_" + (c.id || idx)] = c.toDataURL("image/png");
+          }
+        } catch (e) {
+          console.warn("❌ Error capturando canvas:", e);
+        }
+      });
+
+      await Promise.all(framePromises);
+      console.log(`📊 Total de capturas recolectadas: ${Object.keys(b64Map).length}`);
+      return Object.values(b64Map);
+    }
+
+    async function downloadFrom(url, filename, body = null) {
         try {
           const options = {
             method: body ? "POST" : "GET",
@@ -2289,9 +2458,17 @@
       });
 
       async function generateControlVars() {
-        const day = (el("cvDay").value || "").trim();
-        if (!day) {
-          el("cvInfo").textContent = "Selecciona una fecha.";
+        const rangeVal = (el("cvDay").value || "").trim();
+        let start_day = "", end_day = "";
+        if (rangeVal.includes(" to ")) {
+          const parts = rangeVal.split(" to ");
+          start_day = parts[0]; end_day = parts[1];
+        } else {
+          start_day = rangeVal; end_day = rangeVal;
+        }
+
+        if (!start_day || !end_day) {
+          el("cvInfo").textContent = "Ingresa un rango de fecha.";
           return;
         }
 
@@ -2308,7 +2485,7 @@
           const res = await fetch("api/cv/day/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ day })
+            body: JSON.stringify({ start_day, end_day })
           });
           const data = await res.json();
 
@@ -2316,7 +2493,7 @@
             throw new Error(data.detail || data.error || "Error en /api/control-variables/day");
           }
 
-          lastCvDay = day;
+          lastCvDay = start_day;
           lastCvData = data;
 
           if (data.ai_analysis) {
@@ -2608,8 +2785,15 @@
       }
 
       async function fetchOeeDay() {
-        const from = (el("oeeFrom").value || "").trim();
-        const to = (el("oeeTo").value || "").trim();
+        const rangeVal = (el("oeeRange").value || "").trim();
+        let from = "", to = "";
+        if (rangeVal.includes(" to ")) {
+          const parts = rangeVal.split(" to ");
+          from = parts[0]; to = parts[1];
+        } else {
+          from = rangeVal; to = rangeVal;
+        }
+        
         const shift = (el("oeeShift").value || "").trim();
 
         if (!from || !to) {
@@ -2714,14 +2898,18 @@
 
       el("btnDlOeeRtPdf")?.addEventListener("click", async () => {
         if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
-        setBtnBusy("btnDlOeeRtPdf", true, "Descargando...");
+        setBtnBusy("btnDlOeeRtPdf", true, "Capturando...");
         try {
+          // Captura nativa de los iframes y canvases en toda la pestaña de Tiempo Real
+          const images = await collectDashboardSnapshots("tabContentOeeRT");
+          
           await downloadFrom(`api/report/oee/realtime/`, `oee_realtime.pdf`, {
             format: "pdf",
             rows: lastOeeRtData.rows,
             columns: lastOeeRtData.columns,
             stop_reasons: lastOeeRtData.stop_reasons,
-            ai_analysis: lastOeeRtData.ai_analysis
+            ai_analysis: lastOeeRtData.ai_analysis,
+            images: images // Pasamos las capturas reales
           });
         } finally {
           setBtnBusy("btnDlOeeRtPdf", false);
@@ -2730,8 +2918,11 @@
 
       el("btnDlOeeDayPdf")?.addEventListener("click", async () => {
         if (!lastOeeFrom || !lastOeeDayData) return alert("Consulta primero un periodo.");
-        setBtnBusy("btnDlOeeDayPdf", true, "Descargando...");
+        setBtnBusy("btnDlOeeDayPdf", true, "Capturando...");
         try {
+          // Captura nativa de los iframes y canvases en toda la pestaña Histórico
+          const images = await collectDashboardSnapshots("tabContentOeeHist");
+
           await downloadFrom(`api/report/oee/day/`, `oee_range_${lastOeeFrom}_to_${lastOeeTo}.pdf`, {
             from_day: lastOeeFrom,
             to_day: lastOeeTo,
@@ -2740,7 +2931,9 @@
             summary: lastOeeDayData.summary,
             rows: lastOeeDayData.rows,
             columns: lastOeeDayData.columns,
-            ai_analysis: lastOeeDayData.ai_analysis
+            ai_analysis: lastOeeDayData.ai_analysis,
+            provided_stops: lastOeeDayData.stop_reasons,
+            images: images // Pasamos las capturas reales
           });
         } finally {
           setBtnBusy("btnDlOeeDayPdf", false);
@@ -2749,12 +2942,20 @@
 
       // Set today's date as default and max
       const today = todayISO();
-      el("cvDay").value = today;
-      el("cvDay").max = today;
-      el("oeeFrom").value = today;
-      el("oeeFrom").max = today;
-      el("oeeTo").value = today;
-      el("oeeTo").max = today;
+      
+      flatpickr("#cvDay", {
+        mode: "range",
+        dateFormat: "Y-m-d",
+        defaultDate: [today, today],
+        maxDate: today
+      });
+
+      flatpickr("#oeeRange", {
+        mode: "range",
+        dateFormat: "Y-m-d",
+        defaultDate: [today, today],
+        maxDate: today
+      });
 
       // Inicializar vista
       showView("CV");
@@ -2771,17 +2972,20 @@
           el("chatBubbleBtn").addEventListener("click", () => this.toggle());
           el("chatCloseBtn").addEventListener("click", () => this.toggle());
           el("chatClearBtn").addEventListener("click", () => this.clearChat());
+          el("chatExportPdfBtn").addEventListener("click", () => this.exportPdf());
           el("chatSendBtn").addEventListener("click", () => this.handleSend());
           el("chatInput").addEventListener("keypress", (e) => {
             if (e.key === "Enter") this.handleSend();
           });
 
           this.threadId = localStorage.getItem("duma_thread_id") || null;
+          this.messages = [];
         },
 
         clearChat() {
           if (!confirm("¿Deseas limpiar la conversación actual?")) return;
           this.threadId = null;
+          this.messages = [];
           localStorage.removeItem("duma_thread_id");
           const container = el("chatMsgs");
           container.innerHTML = `
@@ -2794,6 +2998,66 @@
 
         toggle() {
           this.isOpen ? this.close() : this.open();
+        },
+
+        async exportPdf() {
+          if (!this.messages || this.messages.length === 0) return;
+          setBtnBusy("chatExportPdfBtn", true, "Capturando...");
+          const btn = el("chatExportPdfBtn");
+          try {
+            // Recolectar capturas Base64 de Plotly nativo en cliente
+            const container = el("chatMsgs");
+            const frames = Array.from(container.querySelectorAll("iframe"));
+            const b64Map = {};
+            
+            if (frames.length > 0) {
+               const promises = frames.map(f => new Promise((resolve) => {
+                  const handler = (e) => {
+                     // Check exactly our payload
+                     if (e.data && e.data.action === "PNG_RESULT") {
+                         // El iframe tiene src de backend (sandbox: o relativa)
+                         if (f.src.includes(e.data.src) || e.data.src.includes(f.src)) {
+                             b64Map[e.data.src] = e.data.dataUrl;
+                             window.removeEventListener("message", handler);
+                             resolve();
+                         }
+                     }
+                  };
+                  window.addEventListener("message", handler);
+                  // Timeout fallback si la grafica no cargo o no responde
+                  setTimeout(() => { window.removeEventListener("message", handler); resolve(); }, 4000);
+                  f.contentWindow.postMessage({action: "GET_PNG"}, "*");
+               }));
+               await Promise.all(promises);
+            }
+            
+            // Map the b64 urls
+            const exportLog = this.messages.map(m => {
+                const newImgs = (m.images || []).map(imgPath => {
+                    const cleanPath = imgPath.replace("sandbox:", "");
+                    const matchSrc = Object.keys(b64Map).find(k => k.includes(cleanPath) || cleanPath.includes(k));
+                    if (matchSrc) return b64Map[matchSrc];
+                    return imgPath;
+                });
+                return { role: m.role, text: m.text, images: newImgs };
+            });
+
+            const res = await fetch("api/agent/report/pdf/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_log: exportLog })
+            });
+            if (!res.ok) throw new Error("Error exportando PDF");
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "Reporte_Duma_AI.pdf";
+            a.click();
+            window.URL.revokeObjectURL(url);
+          } finally {
+            setBtnBusy("chatExportPdfBtn", false);
+          }
         },
 
         open() {
@@ -2849,6 +3113,9 @@
         },
 
         addMessage(role, text, images = []) {
+          if (!this.messages) this.messages = [];
+          this.messages.push({ role, text, images });
+          
           const container = el("chatMsgs");
           const msg = document.createElement("div");
           msg.className = "msg " + role;
@@ -2860,12 +3127,46 @@
             if (images && images.length > 0) {
               images.forEach(imgUrl => {
                 const safeUrl = imgUrl.replace('sandbox:', '');
-
-                const btn = document.createElement("div");
-                btn.className = "chat-plot-btn";
-                btn.innerHTML = `<span>📊 Ver gráfica</span>`;
-                btn.onclick = () => openFullScreen(safeUrl, "Gráfica de Duma");
-                msg.appendChild(btn);
+                
+                const wrap = document.createElement("div");
+                wrap.style.marginTop = "10px";
+                wrap.style.borderRadius = "8px";
+                wrap.style.overflow = "hidden";
+                wrap.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+                wrap.style.background = "#1e1e1e";
+                
+                if (safeUrl.toLowerCase().endsWith(".png")) {
+                  const img = document.createElement("img");
+                  img.src = safeUrl;
+                  img.style.width = "100%";
+                  img.style.height = "auto";
+                  img.style.display = "block";
+                  wrap.appendChild(img);
+                } else {
+                  const frame = document.createElement("iframe");
+                  frame.src = safeUrl;
+                  frame.style.width = "100%";
+                  frame.style.height = "350px";
+                  frame.style.border = "none";
+                  frame.style.display = "block";
+                  frame.style.overflow = "hidden";
+                  wrap.appendChild(frame);
+                }
+                
+                const fsBtn = document.createElement("div");
+                fsBtn.className = "chat-plot-btn";
+                fsBtn.innerHTML = `<span style="font-weight:bold; font-size:13px;"><i class="fa fa-expand" style="margin-right:5px;"></i> Pantalla Completa</span>`;
+                fsBtn.style.marginTop = "0px";
+                fsBtn.style.borderRadius = "0 0 8px 8px";
+                if (safeUrl.toLowerCase().endsWith(".png")) {
+                   fsBtn.onclick = () => openFullScreen(safeUrl, "Gráfica Inteligente Duma");
+                } else {
+                   fsBtn.onclick = () => openFullScreen(safeUrl, "Dashboard Operacional Duma");
+                }
+                
+                wrap.appendChild(fsBtn);
+                
+                msg.appendChild(wrap);
               });
             }
           } else {

@@ -17,6 +17,15 @@ import matplotlib
 matplotlib.use("Agg")  # backend sin pantalla
 import matplotlib.pyplot as plt
 
+# ---------- Control de Concurrencia de Gráficas ----------
+import threading
+import plotly.io as pio
+
+# Evitar colapsos catastróficos apagando el preprocesador matemático lento
+pio.kaleido.scope.mathjax = None
+# Semáforo de Hilo para asegurar que el engine de Kaleido Chromium no reciba deadlocks
+kaleido_lock = threading.Lock()
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -320,33 +329,37 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 def run_sql(select_sql: str):
     """
     Ejecuta un SELECT y regresa (rows, columns).
-    rows es lista de listas JSON-serializable (convierte tipos a str).
+    Garantiza el retorno de ([], []) incluso en caso de error tras reintentos.
     """
     print("\n====== EJECUTANDO EN SQL SERVER ======")
     print(select_sql)
     print("======================================")
 
     rows_raw = None
-    cols = None
+    cols = []
     MAX_RETRIES = 3
+    
     for attempt in range(MAX_RETRIES):
         try:
             with pyodbc.connect(CONN_STR) as conn:
                 cur = conn.cursor()
                 cur.execute(select_sql)
-                rows_raw = cur.fetchall()
-                cols = [c[0] for c in cur.description] if cur.description else []
+                # Si la consulta no devuelve resultados (ej. UPDATE/DECLARE sin SELECT final), description es None
+                if cur.description:
+                    cols = [c[0] for c in cur.description]
+                    rows_raw = cur.fetchall()
                 break # Éxito
-        except pyodbc.OperationalError as e:
+        except (pyodbc.OperationalError, pyodbc.ProgrammingError) as e:
+            print(f"⚠️ Error SQL en intento {attempt+1}/{MAX_RETRIES}: {e}")
             if attempt < MAX_RETRIES - 1:
-                print(f"⚠️ Error SQL ({e}), reintentando {attempt+1}/{MAX_RETRIES}...")
                 time.sleep(1)
                 continue
-            raise e
+            # Si fallan todos los intentos, devolvemos vacío para no tirar el server
+            return [], []
 
     # Convertir tipos a algo serializable
     rows = []
-    if rows_raw is not None:
+    if rows_raw:
         for r in rows_raw:
             out_row = []
             for v in r:
@@ -360,172 +373,174 @@ def run_sql(select_sql: str):
                         out_row.append(str(v))
             rows.append(out_row)
 
-    # 🔍 DEBUG: ver cuántas filas regresó y un ejemplo
     print(f"--> Filas devueltas: {len(rows)}")
-    if rows:
-        print(f"--> Primera fila: {rows[0]}")
-    else:
-        print("--> SIN filas (resultado vacío)")
-
-    return rows, cols or []
+    return rows, cols
 
 
 # ---------- Helpers gráficos ----------
 PLOTS_DIR = os.path.join("static", "plots")
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
+
+
+
+
+
 def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
-    """
-    Genera un gráfico (line, bar, heatmap, corr) desde un DataFrame
-    y retorna la ruta pública bajo /static/plots/...
-    """
     import numpy as np
-    from matplotlib.ticker import PercentFormatter
+    import plotly.express as px
+    import plotly.graph_objects as go
+    import os, uuid
 
     spec = (spec or {})
     chart = spec.get("chart", "line")
     title = spec.get("title") or ""
     x = spec.get("x")
     ys = spec.get("ys") or []
-    style = spec.get("style") or {}
-    width = style.get("width", 900)
-    height = style.get("height", 500)
+    
+    y_format = spec.get("y_format")       
+    y_min = spec.get("y_min")             
+    y_max = spec.get("y_max")             
+    sort_x = spec.get("sort_x", True)     
 
-    # Nuevas opciones (opcionales) para controlar el eje Y y el orden del X
-    y_format = spec.get("y_format")       # "percent" | None
-    y_min = spec.get("y_min")             # num | None
-    y_max = spec.get("y_max")             # num | None
-    sort_x = spec.get("sort_x", True)     # por defecto ordena el eje X
-
-    # Coerción a numérico para todas las series Y
     for y in ys:
         if y in df.columns:
             df[y] = pd.to_numeric(df[y], errors="coerce")
 
-    # Si el X es fecha/tiempo o string de fecha, intenta parsear y ordenar
     if x:
         if np.issubdtype(df[x].dtype, np.number) is False:
-            # intenta parsear fechas sin romper si falla
-            try:
-                df[x] = pd.to_datetime(df[x], errors="ignore")
-            except Exception:
-                pass
+            try: df[x] = pd.to_datetime(df[x], errors="ignore")
+            except: pass
         if sort_x:
             df = df.sort_values(by=x)
 
-    fig, ax = plt.subplots(figsize=(width/100.0, height/100.0))
-
     hue = spec.get("hue")
-    
-    # Limpieza de columnas (quitar espacios en blanco que pyodbc a veces deja)
     df.columns = [c.strip() for c in df.columns]
 
-    # --- VERBOSE DEBUG ---
-    print(f"\n[DEBUG CHART] Generating {chart} chart: '{title}'")
-    print(f"[DEBUG CHART] spec: {json.dumps(spec)}")
-    print(f"[DEBUG CHART] columns: {df.columns.tolist()}")
-
-    # --- AGGRESSIVE SMART HUE DETECTION ---
     if not hue and x in df.columns:
-        # Si hay duplicados en X, o si es OEE y tenemos columna de Turno, forzamos grouping
         has_duplicates = df[x].duplicated().any()
         is_oee = any("OEE" in str(y).upper() for y in ys)
-        
         if has_duplicates or is_oee:
             for potential in ["Turno", "WorkShiftName", "WorkShift", "Shift", "Linea"]:
                 if potential in df.columns and potential != x:
                     hue = potential
-                    print(f"[DEBUG CHART] Auto-detected hue: '{hue}' (duplicates={has_duplicates}, oee={is_oee})")
                     break
 
+    fig = None
     if chart in ("line", "bar"):
-        if not (x and ys):
-            raise ValueError("Para line/bar especifica 'x' y 'ys'")
+        if not (x and ys): raise ValueError("Para line/bar especifica 'x' y 'ys'")
 
-        if hue and hue in df.columns:
-            print(f"[DEBUG CHART] Using Hue grouping by: '{hue}'")
-            # Una serie por cada valor único del hue, ordenados si son turnos
-            unique_hues = df[hue].dropna().unique()
-            
-            # Ordenar los turnos lógicamente si es posible
-            if all(str(t) in ["Primer Turno", "Segundo Turno", "Tercer Turno"] for t in unique_hues):
-                order = {"Primer Turno": 1, "Segundo Turno": 2, "Tercer Turno": 3}
-                unique_hues = sorted(unique_hues, key=lambda tx: order.get(str(tx), 9))
+        if chart == "line":
+            if hue and hue in df.columns:
+                fig = px.line(df, x=x, y=ys[0] if len(ys)==1 else ys, color=hue, markers=True, title=title)
             else:
-                unique_hues = sorted(unique_hues)
+                fig = px.line(df, x=x, y=ys, markers=True, title=title)
+        elif chart == "bar":
+            if hue and hue in df.columns:
+                fig = px.bar(df, x=x, y=ys[0] if len(ys)==1 else ys, color=hue, barmode="group", title=title)
+            else:
+                fig = px.bar(df, x=x, y=ys, barmode="group", title=title)
 
-            # Build complete X axis for proper gap handling
-            all_x = sorted(df[x].dropna().unique())
-
-            for category in unique_hues:
-                df_cat = df[df[hue] == category].sort_values(by=x)
-                if df_cat.empty:
-                    continue
-                for y in ys:
-                    label = f"{category}" if len(ys) == 1 else f"{category} - {y}"
-                    if chart == "line":
-                        ax.plot(df_cat[x], df_cat[y], label=label, marker="o")
-                    else:
-                        ax.bar(df_cat[x], df_cat[y], label=label, alpha=0.7)
-        else:
-            print(f"[DEBUG CHART] No hue grouping applied (Single series). Hue: {hue}, Columns: {df.columns.tolist()}")
-            for y in ys:
-                if chart == "line":
-                    ax.plot(df[x], df[y], label=y, marker="o")
-                else:
-                    ax.bar(df[x], df[y], label=y, alpha=0.8)
-
-        ax.set_xlabel(x or "")
-        ax.set_ylabel(", ".join(ys))
-        ax.legend(loc="best", fontsize="small")
     elif chart == "heatmap":
         data = df.select_dtypes(include="number")
-        im = ax.imshow(data.values, aspect="auto")
-        plt.colorbar(im, ax=ax)
-        ax.set_xticks(range(len(data.columns)))
-        ax.set_xticklabels(data.columns, rotation=45, ha="right")
-        ax.set_yticks(range(len(data.index)))
-        ax.set_yticklabels(data.index)
+        fig = px.imshow(data, title=title, aspect="auto")
     elif chart == "corr":
         data = df.select_dtypes(include="number")
         corr = data.corr(numeric_only=True)
-        im = ax.imshow(corr.values, vmin=-1, vmax=1, cmap="coolwarm")
-        plt.colorbar(im, ax=ax)
-        ax.set_xticks(range(len(corr.columns)))
-        ax.set_xticklabels(corr.columns, rotation=45, ha="right")
-        ax.set_yticks(range(len(corr.index)))
-        ax.set_yticklabels(corr.index)
+        fig = px.imshow(corr, title=title, zmin=-1, zmax=1, color_continuous_scale="RdBu_r")
     else:
         raise ValueError(f"Tipo de gráfico no soportado: {chart}")
 
-    # —— Formateo del eje Y como porcentaje con límites dinámicos ——
+    # Base Layout & Transparency (Interactive iframe design)
+    fig.update_layout(
+        template="plotly_dark",
+        margin=dict(l=20, r=20, t=50, b=20),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        title=dict(font=dict(size=14, color="#e2e8f0"))
+    )
+    
     if y_format == "percent":
-        # Si tus KPIs vienen 0–1, conviértelos a 0–100 automáticamente
         if ys and df[ys].max(numeric_only=True).max() <= 1.0:
-            for y in ys:
-                df[y] = df[y] * 100.0
-        ax.yaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
-        # Límite inferior 0, superior dinámico según los datos (mínimo 100)
+            for y in ys: df[y] = df[y] * 100.0
+        fig.update_layout(yaxis=dict(ticksuffix="%"))
         if y_min is None and y_max is None:
             data_max = df[ys].max(numeric_only=True).max()
             upper = max(105, data_max * 1.05) if not pd.isna(data_max) else 105
-            ax.set_ylim(0, upper)
+            fig.update_layout(yaxis_range=[0, upper])
 
-    # Límites manuales si se pasaron
     if y_min is not None or y_max is not None:
-        ax.set_ylim(bottom=y_min if y_min is not None else ax.get_ylim()[0],
-                    top=y_max if y_max is not None else ax.get_ylim()[1])
+        y0 = y_min if y_min is not None else 0
+        fig.update_layout(yaxis_range=[y0, y_max])
 
-    if title:
-        ax.set_title(title)
+    fname_base = f"plot_{uuid.uuid4().hex[:8]}"
+    fname_html = f"{fname_base}.html"
+    fpath_html = os.path.join(PLOTS_DIR, fname_html)
+    
+    fpath_png = os.path.join(PLOTS_DIR, f"{fname_base}.png")
+    
+    html_content = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; font-family: sans-serif; }}
+        </style>
+    </head>
+    <body data-chart-url="{fname_html}" style="height: 100vh; margin: 0; min-height: 100vh; display: flex; flex-direction: column;">
+        {fig.to_html(include_plotlyjs="cdn", full_html=False, default_height="100vh", default_width="100%")}
+        <script>
+            window.addEventListener("message", async (e) => {{
+                if (e.data && e.data.action === "GET_PNG") {{
+                    const gd = document.querySelector('.plotly-graph-div');
+                    if (gd) {{
+                        try {{
+                            // Preparamos para lienzo blanco de PDF: Poner textos en negro
+                            const update = {{
+                                'font.color': '#0f172a',
+                                'title.font.color': '#0f172a',
+                                'xaxis.color': '#0f172a',
+                                'yaxis.color': '#0f172a',
+                                'legend.font.color': '#0f172a'
+                            }};
+                            await Plotly.relayout(gd, update);
+                            
+                            const dataUrl = await Plotly.toImage(gd, {{format: 'png', width: 900, height: 450}});
+                            
+                            // Revertir tema oscuro para el chat
+                            const revert = {{
+                                'font.color': '#e2e8f0',
+                                'title.font.color': '#e2e8f0',
+                                'xaxis.color': '#e2e8f0',
+                                'yaxis.color': '#e2e8f0',
+                                'legend.font.color': '#e2e8f0'
+                            }};
+                            await Plotly.relayout(gd, revert);
 
-    fname = f"{uuid.uuid4().hex}.png"
-    fpath = os.path.join(PLOTS_DIR, fname)
-    plt.tight_layout()
-    plt.savefig(fpath, dpi=120)
-    plt.close(fig)
+                            window.parent.postMessage({{ action: "PNG_RESULT", src: document.body.getAttribute('data-chart-url'), dataUrl: dataUrl }}, "*");
+                        }} catch (err) {{
+                            console.error("Error toImage:", err);
+                        }}
+                    }}
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    
+    with open(fpath_html, "w", encoding="utf-8") as f:
+        f.write(html_content)
 
-    return f"static/plots/{fname}"
+    return f"static/plots/{fname_html}"
+
+
+
+
+
+
+
+
 
 
 # ---------- Core assistant step ----------
@@ -1126,7 +1141,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
         system_prompt_content = ""
         try:
             # ✅ Redirigido al nuevo prompt ejecutivo para evitar bloqueos
-            with open("DUMA_EXECUTIVE_PROMPT.txt", "r", encoding="utf-8") as f:
+            with open("DUMA_EXECUTIVE_PROMPT.txt", "r") as f:
                 system_prompt_content = f.read()
         except Exception as e:
             logging.error(f"No se pudo leer DUMA_EXECUTIVE_PROMPT.txt: {e}")
@@ -1516,6 +1531,25 @@ def load_critical_reads_for_day(day: str) -> pd.DataFrame:
     df["LocalTime"] = pd.to_datetime(df["LocalTime"], errors="coerce")
     return df
 
+def load_critical_reads_for_range(start_day: str, end_day: str) -> pd.DataFrame:
+    drange = pd.date_range(start_day, end_day)
+    frames = []
+    missing_days = []
+    for dt in drange:
+        day_str = dt.strftime("%Y-%m-%d")
+        try:
+            frames.append(load_critical_reads_for_day(day_str))
+        except FileNotFoundError:
+            missing_days.append(day_str)
+    
+    if not frames:
+        raise FileNotFoundError(f"No hubo datos para el rango {start_day} a {end_day}. Faltantes: {', '.join(missing_days)}")
+    
+    df = pd.concat(frames, ignore_index=True)
+    df["LocalTime"] = pd.to_datetime(df["LocalTime"], errors="coerce")
+    return df
+
+
 
 def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_path: str) -> str:
     """Grafica una variable con los 3 turnos en un solo gráfico y guarda HTML."""
@@ -1588,7 +1622,7 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
-    fig.write_html(out_html_path, include_plotlyjs="cdn")
+    with open(out_html_path, "w", encoding="utf-8") as _f: _f.write(fig.to_html(include_plotlyjs="cdn"))
     return out_html_path
 
 def plot_critical_timeseries_day_png(
@@ -1915,7 +1949,7 @@ ORDER BY
 """
 
 
-def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
+def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> List[dict]:
     """Genera gráficas Plotly para el snapshot de tiempo real (Turno Actual)."""
     import plotly.graph_objects as go
     
@@ -1956,7 +1990,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
         yaxis=dict(range=[0, max(110, oee_val + 10)], ticksuffix="%")
     )
     oee_fname = f"oee_rt_kpi_{ts}.html"
-    fig_oee.write_html(os.path.join(out_dir, oee_fname))
+    with open(os.path.join(out_dir, oee_fname), "w", encoding="utf-8") as _f: _f.write(fig_oee.to_html())
     plots.append({"title": "OEE (%)", "url": f"static/plots/{oee_fname}"})
 
     # --- 2. Producción (Kg) ---
@@ -1972,7 +2006,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
         margin=dict(l=40, r=40, t=60, b=40)
     )
     prod_fname = f"oee_rt_prod_{ts}.html"
-    fig_prod.write_html(os.path.join(out_dir, prod_fname))
+    with open(os.path.join(out_dir, prod_fname), "w", encoding="utf-8") as _f: _f.write(fig_prod.to_html())
     plots.append({"title": "Producción (Kg)", "url": f"static/plots/{prod_fname}"})
 
     # --- 3. Velocidad (Kg/h) ---
@@ -1988,8 +2022,22 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
         margin=dict(l=40, r=40, t=60, b=40)
     )
     vel_fname = f"oee_rt_vel_{ts}.html"
-    fig_vel.write_html(os.path.join(out_dir, vel_fname))
+    with open(os.path.join(out_dir, vel_fname), "w", encoding="utf-8") as _f: _f.write(fig_vel.to_html())
     plots.append({"title": "Velocidad (Kg/h)", "url": f"static/plots/{vel_fname}"})
+
+    # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido)
+    if export_png:
+        try:
+            for fn, fg in [(oee_fname, fig_oee), (prod_fname, fig_prod), (vel_fname, fig_vel)]:
+                png_name = fn.replace(".html", ".png")
+                png_path = os.path.join(out_dir, png_name)
+                with kaleido_lock:
+                    fg.write_image(png_path, engine="kaleido")
+                for p in plots:
+                    if p["url"].endswith(fn):
+                        p["path"] = png_path
+        except Exception as ex:
+            print(f"Error exportando PNG rt: {ex}")
 
     # --- 4. Paros (Duración min) ---
     dur_unsched = to_f(snap_dict.get("UnscheduledStopageMin"))
@@ -2004,7 +2052,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
         margin=dict(l=40, r=40, t=60, b=40)
     )
     stops_fname = f"oee_rt_stops_{ts}.html"
-    fig_stops.write_html(os.path.join(out_dir, stops_fname))
+    with open(os.path.join(out_dir, stops_fname), "w", encoding="utf-8") as _f: _f.write(fig_stops.to_html())
     plots.append({"title": "Tiempos de Paro (Min)", "url": f"static/plots/{stops_fname}"})
 
     # --- 5. Frecuencia de Paros (Eventos) ---
@@ -2021,13 +2069,13 @@ def plot_oee_realtime_snapshot(snap_dict: dict) -> List[dict]:
     )
 
     freq_fname = f"oee_rt_freq_{ts}.html"
-    fig_freq.write_html(os.path.join(out_dir, freq_fname))
+    with open(os.path.join(out_dir, freq_fname), "w", encoding="utf-8") as _f: _f.write(fig_freq.to_html())
     plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{freq_fname}"})
     
     return plots
 
 @app.get("/api/oee/realtime/")
-async def api_oee_realtime():
+async def api_oee_realtime(export_png: bool = False):
     """OEE en tiempo real (último snapshot)."""
     # 1. Ejecución secuencial de SQL (rápido, evita deadlocks)
     sql_recent = _sql_oee_realtime()
@@ -2117,11 +2165,11 @@ ORDER BY Duracion_Min DESC;
 
     # 3. Ejecución Paralela: Gráficas e IA
     tasks = [
-        asyncio.to_thread(plot_oee_realtime_snapshot, raw_snap)
+        asyncio.to_thread(plot_oee_realtime_snapshot, raw_snap, export_png)
     ]
     
     if stop_reasons:
-        tasks.append(asyncio.to_thread(plot_pareto_stop_reasons, stop_reasons, f"Hoy ({from_day})"))
+        tasks.append(asyncio.to_thread(plot_pareto_stop_reasons, stop_reasons, f"Hoy ({from_day})", export_png))
     
     tasks.append(ai_oee_realtime(snap_formatted, stop_reasons))
 
@@ -2148,7 +2196,7 @@ ORDER BY Duracion_Min DESC;
         "plots": plots
     }
 
-def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> List[dict]:
+def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export_png: bool = False) -> List[dict]:
     """Genera gráficas de serie de tiempo por día: OEE, Producción y Paros."""
     import plotly.graph_objects as go
     from collections import defaultdict
@@ -2229,7 +2277,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> Lis
         hovermode="x unified",
     )
     fname1 = f"oee_ts_kpi_{ts}.html"
-    fig1.write_html(os.path.join(out_dir, fname1), include_plotlyjs="cdn")
+    with open(os.path.join(out_dir, fname1), "w", encoding="utf-8") as _f: _f.write(fig1.to_html(include_plotlyjs="cdn"))
     plots.append({"title": "📈 Histórico OEE por Día", "url": f"static/plots/{fname1}"})
 
     # ── GRÁFICA 2: Producción Real vs Esperada por día ───────────────
@@ -2253,7 +2301,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> Lis
         yaxis=dict(title="Kg"),
     )
     fname2 = f"oee_ts_prod_{ts}.html"
-    fig2.write_html(os.path.join(out_dir, fname2), include_plotlyjs="cdn")
+    with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(fig2.to_html(include_plotlyjs="cdn"))
     plots.append({"title": "📦 Producción Real vs Esperada", "url": f"static/plots/{fname2}"})
 
     # ── GRÁFICA 3: Paros No Prog + Prog por día (barras agrupadas min) ─
@@ -2285,7 +2333,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> Lis
         bargroupgap=0.05
     )
     fname3 = f"oee_ts_stops_{ts}.html"
-    fig3.write_html(os.path.join(out_dir, fname3), include_plotlyjs="cdn")
+    with open(os.path.join(out_dir, fname3), "w", encoding="utf-8") as _f: _f.write(fig3.to_html(include_plotlyjs="cdn"))
     plots.append({"title": "⏱️ Tiempos de Paro por Día", "url": f"static/plots/{fname3}"})
 
     # ── GRÁFICA 4: Eventos de Paro por Día (conteos) ──────────────────
@@ -2320,23 +2368,25 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict]) -> Lis
         bargroupgap=0.05
     )
     fname4 = f"oee_ts_events_{ts}.html"
-    fig4.write_html(os.path.join(out_dir, fname4), include_plotlyjs="cdn")
+    with open(os.path.join(out_dir, fname4), "w", encoding="utf-8") as _f: _f.write(fig4.to_html(include_plotlyjs="cdn"))
     plots.append({"title": "🚨 Frecuencia de Paros (Eventos)", "url": f"static/plots/{fname4}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
-    try:
-        fnames = [fname1, fname2, fname3, fname4]
-        figs = [fig1, fig2, fig3, fig4]
-        for fn, fg in zip(fnames, figs):
-            png_name = fn.replace(".html", ".png")
-            png_path = os.path.join(out_dir, png_name)
-            fg.write_image(png_path, engine="kaleido")
-            # Encontrar el dict correspondiente en plots y añadir el path
-            for p in plots:
-                if p["url"].endswith(fn):
-                    p["path"] = png_path
-    except Exception as ex:
-        print(f"Error exportando PNG para PDF: {ex}")
+    if export_png:
+        try:
+            fnames = [fname1, fname2, fname3, fname4]
+            figs = [fig1, fig2, fig3, fig4]
+            for fn, fg in zip(fnames, figs):
+                png_name = fn.replace(".html", ".png")
+                png_path = os.path.join(out_dir, png_name)
+                with kaleido_lock:
+                    fg.write_image(png_path, engine="kaleido")
+                # Encontrar el dict correspondiente en plots y añadir el path
+                for p in plots:
+                    if p["url"].endswith(fn):
+                        p["path"] = png_path
+        except Exception as ex:
+            print(f"Error exportando PNG para PDF: {ex}")
 
     return plots
 
@@ -2408,7 +2458,7 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
         fig.update_yaxes(title_text="% Acumulado", secondary_y=True, range=[0, 108], ticksuffix="%")
 
         fname = f"pareto_np_{ts}.html"
-        fig.write_html(os.path.join(out_dir, fname), include_plotlyjs="cdn")
+        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as _f: _f.write(fig.to_html(include_plotlyjs="cdn"))
         plots.append({"title": "🚨 Pareto 80/20 — Paros No Programados", "url": f"static/plots/{fname}"})
 
     # --- 2. TREEMAP: Jerarquía MotivesType → Motivo ---
@@ -2447,7 +2497,7 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
             template="plotly_dark", height=460, margin=dict(l=20, r=20, t=60, b=20),
         )
         fname2 = f"pareto_treemap_{ts}.html"
-        fig2.write_html(os.path.join(out_dir, fname2), include_plotlyjs="cdn")
+        with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(fig2.to_html(include_plotlyjs="cdn"))
         plots.append({"title": "🗺️ Mapa de Categorías de Paro", "url": f"static/plots/{fname2}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
@@ -2463,7 +2513,8 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
             for fn, fg in zip(fnames_p, figs_p):
                 png_name = fn.replace(".html", ".png")
                 png_path = os.path.join(out_dir, png_name)
-                fg.write_image(png_path, engine="kaleido")
+                with kaleido_lock:
+                    fg.write_image(png_path, engine="kaleido")
                 for p in plots:
                     if p["url"].endswith(fn):
                         p["path"] = png_path
@@ -2483,6 +2534,8 @@ async def api_oee_day_turn(payload: dict):
     from_day = (payload.get("from_day") or payload.get("day") or "").strip()
     to_day = (payload.get("to_day") or from_day).strip()
     shift_name = payload.get("shift_name")
+    export_png = payload.get("export_png", False)
+    skip_ai = payload.get("skip_ai", False)
 
     if not from_day:
          raise HTTPException(status_code=400, detail="Falta 'from_day' (YYYY-MM-DD).")
@@ -2557,29 +2610,15 @@ SELECT
     CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date)) ELSE CAST(wse.StartDate AS date) END AS Fecha,
     wst.Name AS Turno,
     wses.Oee AS OEE,
-    wses.AvailableTimeMin, 
+    wses.AvailableTimeMin,
     wses.ProductiveTimeMin,
-    wses.UnscheduledStopageMin AS TiempoNoProdNoProgramadoMin, 
-    wses.ScheduledStopageMin AS TiempoNoProdProgramadoMin,
+    ISNULL(wses.UnscheduledStopageMin, 0) AS TiempoNoProdNoProgramadoMin,
+    ISNULL(wses.ScheduledStopageMin, 0) AS TiempoNoProdProgramadoMin,
     wses.CurrentProductionSummary AS CurrentProduction,
     wses.ExpectedProductionSummary AS ExpectedProduction,
     wses.Quality AS Quality,
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = wses.ProductionLineId
-              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE RTRIM(LTRIM(IntervalProductionLineStatus)) = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
-    ) AS ParosNoProgramadosCont,
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = wses.ProductionLineId
-              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE RTRIM(LTRIM(IntervalProductionLineStatus)) = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
-    ) AS ParosProgramadosCont
+    0 AS ParosNoProgramadosCont,
+    0 AS ParosProgramadosCont
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
 INNER JOIN dbo.WorkShiftTemplates AS wst ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
@@ -2593,23 +2632,26 @@ ORDER BY Fecha DESC, Turno;
     rows_dicts_raw = [dict(zip(cols_d, r)) for r in rows_d]
 
     # Gráficas históricas (OEE, Producción, Velocidad, Paros)
-    plots = plot_oee_historical_comparison(from_day, rows_dicts_raw)
+    plots = plot_oee_historical_comparison(from_day, rows_dicts_raw, export_png)
     # Gráficas de Pareto 80/20 + Treemap de motivos de paro
     if stop_reasons:
         period_label = from_day if from_day == to_day else f"{from_day} \u2013 {to_day}"
-        plots.extend(plot_pareto_stop_reasons(stop_reasons, period_label))
+        plots.extend(plot_pareto_stop_reasons(stop_reasons, period_label, export_png))
 
     # IA (Duma AI Range Analysis)
-    try:
-        full_data = {
-            "summary": summary_range,
-            "worst_days": sorted(rows_dicts_raw, key=lambda x: float(x.get("OEE") or 0))[:5],
-            "details": rows_dicts_raw,
-            "stop_reasons": stop_reasons
-        }
-        ai = ai_oee_range_analysis(full_data)
-    except Exception as ex:
-        ai = f"⚠️ Error en diagnóstico de IA: {ex}"
+    if not skip_ai:
+        try:
+            full_data = {
+                "summary": summary_range,
+                "worst_days": sorted(rows_dicts_raw, key=lambda x: float(x.get("OEE") or 0))[:5],
+                "details": rows_dicts_raw,
+                "stop_reasons": stop_reasons
+            }
+            ai = ai_oee_range_analysis(full_data)
+        except Exception as ex:
+            ai = f"⚠️ Error en diagnóstico de IA: {ex}"
+    else:
+        ai = ""
 
     # Formatear para tabla UI (OEE Histórico - Agrupado por Turno para el rango)
     agg = {}
@@ -2682,7 +2724,8 @@ ORDER BY Fecha DESC, Turno;
         "rows": turn_rows,
         "columns": turn_cols,
         "ai_analysis": ai,
-        "plots": plots
+        "plots": plots,
+        "raw_daily": rows_dicts_raw
     }
 
 
@@ -2751,18 +2794,22 @@ ORDER BY Duracion_Min DESC;
 
 @app.post("/api/cv/day/")
 async def api_control_variables_day(payload: dict):
-    """Devuelve plots + resumen para TODO el día (3 turnos) de variables críticas."""
-    day = normalize_day_str(payload.get("day") or "")
-    if not day:
-        raise HTTPException(status_code=400, detail="Falta 'day' (YYYY-MM-DD o DD/MM/YYYY).")
+    """Devuelve plots + resumen para rango de días de variables críticas."""
+    start_day = normalize_day_str(payload.get("start_day") or payload.get("day") or "")
+    end_day   = normalize_day_str(payload.get("end_day") or start_day)
+    
+    if not start_day:
+        raise HTTPException(status_code=400, detail="Falta 'start_day' o 'day'.")
 
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
-        raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD o DD/MM/YYYY.")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", start_day) or not re.match(r"^\d{4}-\d{2}-\d{2}$", end_day):
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usa YYYY-MM-DD.")
 
     try:
-        df_day = load_critical_reads_for_day(day)
+        df_day = load_critical_reads_for_range(start_day, end_day)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    range_label = f"{start_day}_to_{end_day}" if start_day != end_day else start_day
 
     out_dir = os.path.join("static", "plots")
     os.makedirs(out_dir, exist_ok=True)
@@ -2783,7 +2830,7 @@ async def api_control_variables_day(payload: dict):
             safe_name = (meta.get("device", "var") + "_" + meta.get("name", "var")) if meta else vid
             safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", safe_name.strip().lower()).strip("_")
 
-            filename = f"{day}_dia_{safe_name}.html"
+            filename = f"{range_label}_{safe_name}.html"
             out_path = os.path.join(out_dir, filename)
 
             plot_critical_timeseries_day(df_day, vid, out_path)
@@ -2800,7 +2847,7 @@ async def api_control_variables_day(payload: dict):
     exec_lines = []
     if summary:
         worst = summary[0]
-        exec_lines.append(f"Resumen ejecutivo ({day}):")
+        exec_lines.append(f"Resumen ejecutivo ({start_day} a {end_day}):")
         exec_lines.append(f"- Variables críticas analizadas: {len(summary)}")
         exec_lines.append(
             f"- Mayor % fuera de crítico: {worst.get('name','')} — {worst.get('device','')} ({worst.get('out_pct',0)}%)"
@@ -2813,10 +2860,10 @@ async def api_control_variables_day(payload: dict):
 
     executive_summary = "\n".join(exec_lines)
 
-    ai_analysis = ai_control_variables_day(day=day, summary=summary, executive_summary=executive_summary)
+    ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary)
 
     return {
-        "day": day,
+        "day": f"{start_day} a {end_day}",
         "plots": plots,
         "summary": summary,
         "executive_summary": executive_summary,
@@ -3406,69 +3453,199 @@ async def report_control_variables_day(payload: dict):
     )
 
 
-def _generate_oee_rt_pngs(snap_dict: dict) -> List[str]:
-    """Genera versiones estáticas (PNG) de las gráficas de tiempo real para el PDF."""
-    import plotly.graph_objects as go
+
+# ---------------------------------------------------------
+# RENDERIZADORES NATIVOS PARA PDF (Velocidad Extrema, 0 Bloqueos)
+# ---------------------------------------------------------
+def _generate_oee_rt_pdf_plt(snap_dict: dict) -> list[str]:
     import os, uuid
-    
-    if not snap_dict: return []
-    
+    import matplotlib.pyplot as plt
     out_dir = os.path.join("static", "plots")
     os.makedirs(out_dir, exist_ok=True)
-    
-    def to_f(v):
+    images = []
+    uid = uuid.uuid4().hex[:8]
+    def to_f(v): 
         try: return float(v) if v is not None else 0.0
         except: return 0.0
 
-    image_paths = []
+    fig, axs = plt.subplots(2, 2, figsize=(10, 7), dpi=150)
+    fig.patch.set_facecolor('#ffffff')
+    
+    # 1: OEE
+    oee = to_f(snap_dict.get("OEE"))
+    axs[0,0].bar(["OEE"], [oee], color="#1abc9c", width=0.4)
+    axs[0,0].set_title("Eficiencia Global (OEE %)", fontweight='bold')
+    axs[0,0].set_ylim(0, max(100, oee + 10))
+    axs[0,0].text(0, oee+2, f"{oee:.1f}%", ha='center', fontweight='bold')
+
+    # 2: Produccion
+    pr = to_f(snap_dict.get("CurrentShiftProduction"))
+    pe = to_f(snap_dict.get("ExpectedShiftProduction"))
+    axs[0,1].bar(["Real", "Esperada"], [pr, pe], color=["#1abc9c", "#6366f1"])
+    axs[0,1].set_title("Producción del Turno (Kg)", fontweight='bold')
+    axs[0,1].text(0, pr+1, f"{pr:,.0f}", ha='center')
+    axs[0,1].text(1, pe+1, f"{pe:,.0f}", ha='center')
+
+    # 3: Paros (Mins)
+    du = to_f(snap_dict.get("UnscheduledStopageMin"))
+    ds = to_f(snap_dict.get("ScheduledStopageMin"))
+    axs[1,0].bar(["No Prog", "Prog"], [du, ds], color=["#ef4444", "#f59e0b"])
+    axs[1,0].set_title("Tiempos de Paro (Min)", fontweight='bold')
+
+    # 4: Velocidad
+    vr = to_f(snap_dict.get("CurrentRate"))
+    ve = to_f(snap_dict.get("ExpectedRate"))
+    axs[1,1].bar(["Real", "Esperada"], [vr, ve], color=["#1abc9c", "#6366f1"])
+    axs[1,1].set_title("Velocidad (Kg/h)", fontweight='bold')
+
+    # Estilos
+    for ax in axs.flat:
+        ax.set_facecolor('#f8f9fa')
+        ax.grid(axis='y', linestyle='--', alpha=0.6)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+    p = os.path.join(out_dir, f"rt_dashboard_pdf_{uid}.png")
+    fig.savefig(p, bbox_inches='tight')
+    plt.close(fig)
+    images.append(p)
+    return images
+
+def _generate_pareto_pdf_plt(stop_reasons: list, period_label: str) -> list[str]:
+    import os, uuid
+    import matplotlib.pyplot as plt
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    images = []
     uid = uuid.uuid4().hex[:8]
 
-    # 1. OEE %
-    oee_val = to_f(snap_dict.get("OEE"))
-    fig = go.Figure(go.Bar(x=["Turno Actual"], y=[oee_val], marker_color='#1abc9c', text=[f"{oee_val:.1f}%"], textposition='outside'))
-    fig.update_layout(template="plotly_dark", title="Eficiencia OEE (%)", margin=dict(l=20, r=20, t=40, b=20), height=300)
-    p1 = os.path.join(out_dir, f"oee_rt_kpi_{uid}.png")
-    fig.write_image(p1, engine="kaleido")
-    image_paths.append(p1)
+    np_reasons = [r for r in stop_reasons if str(r.get("Clasificacion", "")).upper() == "NP"]
+    if not np_reasons: np_reasons = stop_reasons
 
-    # 2. Producción
-    prod_real = to_f(snap_dict.get("CurrentShiftProduction"))
-    prod_exp = to_f(snap_dict.get("ExpectedShiftProduction"))
-    fig = go.Figure([go.Bar(name='Real', x=["Prod"], y=[prod_real], marker_color='#1abc9c'), go.Bar(name='Esperado', x=["Prod"], y=[prod_exp], marker_color='#34495e')])
-    fig.update_layout(template="plotly_dark", barmode='group', title="Producción Turno (Kg)", margin=dict(l=20, r=20, t=40, b=20), height=300)
-    p2 = os.path.join(out_dir, f"oee_rt_prod_{uid}.png")
-    fig.write_image(p2, engine="kaleido")
-    image_paths.append(p2)
+    np_sorted = sorted(np_reasons, key=lambda x: float(x.get("Duracion_Min") or 0), reverse=True)[:10]
+    if not np_sorted: return []
 
-    # 3. Velocidad
-    vel_real = to_f(snap_dict.get("CurrentRate"))
-    vel_exp = to_f(snap_dict.get("ExpectedRate"))
-    fig = go.Figure([go.Bar(name='Real', x=["Velocidad"], y=[vel_real], marker_color='#1abc9c'), go.Bar(name='Esperado', x=["Velocidad"], y=[vel_exp], marker_color='#34495e')])
-    fig.update_layout(template="plotly_dark", barmode='group', title="Velocidad (Kg/h)", margin=dict(l=20, r=20, t=40, b=20), height=300)
-    p3 = os.path.join(out_dir, f"oee_rt_vel_{uid}.png")
-    fig.write_image(p3, engine="kaleido")
-    image_paths.append(p3)
+    labels = [str(r.get("Motivo_Particular", "?"))[:30] for r in np_sorted]
+    durations = [round(float(r.get("Duracion_Min") or 0), 1) for r in np_sorted]
 
-    # 4. Paros
-    dur_us = to_f(snap_dict.get("UnscheduledStopageMin"))
-    dur_ss = to_f(snap_dict.get("ScheduledStopageMin"))
-    fig = go.Figure([go.Bar(name='No Prog', x=["Mins"], y=[dur_us], marker_color='#e74c3c'), go.Bar(name='Prog', x=["Mins"], y=[dur_ss], marker_color='#f1c40f')])
-    fig.update_layout(template="plotly_dark", barmode='group', title="Tiempos Paros (Min)", margin=dict(l=20, r=20, t=40, b=20), height=300)
-    p4 = os.path.join(out_dir, f"oee_rt_stops_{uid}.png")
-    fig.write_image(p4, engine="kaleido")
-    image_paths.append(p4)
+    total = sum(durations)
+    if total == 0: return []
+    
+    cum_pct, cumsum = [], 0.0
+    for d in durations:
+        cumsum += d
+        cum_pct.append(cumsum / total * 100)
 
-    # 5. Frecuencia
-    cnt_us = to_f(snap_dict.get("ParosNoProgramadosCont"))
-    cnt_ss = to_f(snap_dict.get("ParosProgramadosCont"))
-    fig = go.Figure([go.Bar(name='No Prog', x=["Eventos"], y=[cnt_us], marker_color='#e74c3c'), go.Bar(name='Prog', x=["Eventos"], y=[cnt_ss], marker_color='#f1c40f')])
-    fig.update_layout(template="plotly_dark", barmode='group', title="Frecuencia Paros", margin=dict(l=20, r=20, t=40, b=20), height=300)
-    p5 = os.path.join(out_dir, f"oee_rt_freq_{uid}.png")
-    fig.write_image(p5, engine="kaleido")
-    image_paths.append(p5)
+    fig, ax1 = plt.subplots(figsize=(10, 4.5), dpi=150)
+    fig.patch.set_facecolor('#ffffff')
+    ax1.set_facecolor('#f8f9fa')
+    
+    colors = ["#ef4444" if c <= 80 else "#f59e0b" for c in cum_pct]
+    bars = ax1.bar(labels, durations, color=colors)
+    ax1.set_ylabel('Duración (min)', fontweight='bold')
+    ax1.tick_params(axis='x', rotation=30)
+    
+    # 80/20 Line
+    ax2 = ax1.twinx()
+    ax2.plot(labels, cum_pct, color='#a78bfa', marker='o', linewidth=2, markersize=6)
+    ax2.axhline(80, color='#fbbf24', linestyle='dashed', alpha=0.8)
+    ax2.set_ylabel('% Acumulado', fontweight='bold')
+    ax2.set_ylim(0, 110)
 
-    return image_paths
+    plt.title(f"Pareto 80/20 — Paros No Programados | {period_label}", fontweight='bold')
+    plt.tight_layout()
+    p = os.path.join(out_dir, f"pareto_pdf_{uid}.png")
+    fig.savefig(p, bbox_inches='tight')
+    plt.close(fig)
+    images.append(p)
+    return images
 
+def _generate_hist_pdf_plt(rows_dicts: list) -> list[str]:
+    import os, uuid
+    import matplotlib.pyplot as plt
+    from collections import defaultdict
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    images = []
+    uid = uuid.uuid4().hex[:8]
+
+    daily = defaultdict(lambda: {"prod":0.0,"avail":0.0,"real":0.0,"exp":0.0,"np_min":0.0,"p_min":0.0,"np_cnt":0.0,"p_cnt":0.0})
+    for r in rows_dicts:
+        f = str(r.get("Fecha", ""))[:10]
+        try:
+            daily[f]["prod"]  += float(r.get("ProductiveTimeMin") or 0)
+            daily[f]["avail"] += float(r.get("AvailableTimeMin") or 0)
+            daily[f]["real"]  += float(r.get("CurrentProduction") or 0)
+            daily[f]["exp"]   += float(r.get("ExpectedProduction") or 0)
+            daily[f]["np_min"]+= float(r.get("TiempoNoProdNoProgramadoMin") or 0)
+            daily[f]["p_min"] += float(r.get("TiempoNoProdProgramadoMin") or 0)
+            daily[f]["np_cnt"]+= float(r.get("ParosNoProgramadosCont") or 0)
+            daily[f]["p_cnt"] += float(r.get("ParosProgramadosCont") or 0)
+        except: pass
+
+    dates = sorted(daily.keys())
+    if not dates: return []
+
+    oee_v, real_v, exp_v, np_min_v, p_min_v, np_cnt_v, p_cnt_v = [], [], [], [], [], [], []
+    for d in dates:
+        dv = daily[d]
+        avail, prod, real, exp = dv["avail"], dv["prod"], dv["real"], dv["exp"]
+        oee = (prod/avail)*(real/exp)*100 if avail>0 and exp>0 else 0
+        oee_v.append(oee); real_v.append(real); exp_v.append(exp)
+        np_min_v.append(dv["np_min"]); p_min_v.append(dv["p_min"])
+        np_cnt_v.append(dv["np_cnt"]); p_cnt_v.append(dv["p_cnt"])
+
+    fig, axs = plt.subplots(2, 2, figsize=(11, 7.5), dpi=150)
+    fig.patch.set_facecolor('#ffffff')
+    
+    # 1: OEE Evolucion
+    axs[0,0].plot(dates, oee_v, color="#ef4444", marker="o", linewidth=2.5)
+    axs[0,0].set_title("Evolución OEE Global (%)", fontweight='bold')
+    axs[0,0].set_ylim(0, max(100, max(oee_v)+10) if oee_v else 100)
+    axs[0,0].tick_params(axis='x', rotation=30)
+    axs[0,0].grid(axis='y', linestyle='--', alpha=0.6)
+
+    # 2: Produccion
+    x = range(len(dates))
+    width = 0.35
+    axs[0,1].bar([i - width/2 for i in x], real_v, width, label='Real', color="#1abc9c")
+    axs[0,1].bar([i + width/2 for i in x], exp_v, width, label='Esperada', color="#6366f1")
+    axs[0,1].set_title("Producción Real vs Esperada (Kg)", fontweight='bold')
+    axs[0,1].set_xticks(x)
+    axs[0,1].set_xticklabels(dates, rotation=30)
+    axs[0,1].legend()
+    axs[0,1].grid(axis='y', linestyle='--', alpha=0.6)
+
+    # 3: Tiempos de Paro
+    axs[1,0].bar([i - width/2 for i in x], np_min_v, width, label='No Programado', color="#ef4444")
+    axs[1,0].bar([i + width/2 for i in x], p_min_v, width, label='Programado', color="#f59e0b")
+    axs[1,0].set_title("Tiempos de Paro (Min)", fontweight='bold')
+    axs[1,0].set_xticks(x)
+    axs[1,0].set_xticklabels(dates, rotation=30)
+    axs[1,0].legend()
+    axs[1,0].grid(axis='y', linestyle='--', alpha=0.6)
+
+    # 4: Eventos de Paro
+    axs[1,1].bar([i - width/2 for i in x], np_cnt_v, width, label='No Programado', color="#ef4444")
+    axs[1,1].bar([i + width/2 for i in x], p_cnt_v, width, label='Programado', color="#f59e0b")
+    axs[1,1].set_title("Frecuencia de Paros (Eventos)", fontweight='bold')
+    axs[1,1].set_xticks(x)
+    axs[1,1].set_xticklabels(dates, rotation=30)
+    axs[1,1].legend()
+    axs[1,1].grid(axis='y', linestyle='--', alpha=0.6)
+
+    for ax in axs.flat:
+        ax.set_facecolor('#f8f9fa')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+    p = os.path.join(out_dir, f"hist_dashboard_pdf_{uid}.png")
+    fig.savefig(p, bbox_inches='tight')
+    plt.close(fig)
+    images.append(p)
+    return images
 
 @app.post("/api/report/oee/realtime/")
 async def report_oee_realtime(payload: dict):
@@ -3522,30 +3699,34 @@ async def report_oee_realtime(payload: dict):
         {"Métrica": "Duración Paros Prog.", "Valor": row.get("ScheduledStopageMin") or "0 minutos"},
     ]
 
-    # Gráficas PNG (Backend)
+    # Gráficas PNG (Priorizar capturas del Frontend, si no, usar Backend)
     image_paths = []
-    try:
-        from main import _sql_oee_realtime, run_sql, plot_oee_realtime_snapshot, plot_pareto_stop_reasons
-        rows_raw, cols_raw = run_sql(_sql_oee_realtime())
-        if rows_raw:
-            raw_snap = dict(zip(cols_raw, rows_raw[0]))
-            
-            # 1. Gráficas base de tiempo real
-            rt_plots = plot_oee_realtime_snapshot(raw_snap)
-            for p in rt_plots:
-                fname = p["url"].split("/")[-1]
-                png_path = os.path.join("static", "plots", fname.replace(".html", ".png"))
-                image_paths.append(png_path)
-            
-            # 2. Agregar Pareto y Treemap si hay paros
-            if provided_stops:
-                diag_plots = plot_pareto_stop_reasons(provided_stops, "Turno Actual")
-                for p in diag_plots:
-                    fname = p["url"].split("/")[-1]
-                    png_path = os.path.join("static", "plots", fname.replace(".html", ".png"))
-                    image_paths.append(png_path)
-    except Exception as e:
-        print(f"Error generando PNGs para tiempo real: {e}")
+    provided_images = payload.get("images") or []
+    
+    if provided_images:
+        import base64, uuid, os
+        for b64 in provided_images:
+            if b64.startswith("data:image/png;base64,"):
+                try:
+                    img_data = base64.b64decode(b64.split(",")[1])
+                    tmp_path = os.path.join(PLOTS_DIR, f"tmp_oee_rt_{uuid.uuid4().hex[:8]}.png")
+                    with open(tmp_path, "wb") as bf:
+                        bf.write(img_data)
+                    image_paths.append(tmp_path)
+                except Exception as e:
+                    print(f"Error decodificando imagen dashboard RT: {e}")
+    
+    if not image_paths:
+        try:
+            from main import _sql_oee_realtime, run_sql
+            rows_raw, cols_raw = run_sql(_sql_oee_realtime())
+            if rows_raw:
+                raw_snap = dict(zip(cols_raw, rows_raw[0]))
+                image_paths.extend(_generate_oee_rt_pdf_plt(raw_snap))
+                if provided_stops:
+                    image_paths.extend(_generate_pareto_pdf_plt(provided_stops, "Turno Actual"))
+        except Exception as e:
+            print(f"Error generando PNGs para tiempo real: {e}")
 
     # IA (Texto)
     ai_text = provided_ai if provided_ai is not None else ""
@@ -3558,14 +3739,12 @@ async def report_oee_realtime(payload: dict):
     title = "Reporte Ejecutivo — OEE Tiempo Real"
     subtitle = f"Snapshot extraído a las {row.get('SnapshotAtLocal') or 'N/A'}"
 
-    sections = [
-        {"title": "Resumen Operativo", "text": "Estado actual de la línea de producción basado en el último snapshot de telemetría."}
-    ]
+    sections = []
     
     if image_paths:
         sections.append({
-            "title": "Análisis Visual de Desempeño",
-            "text": "Comparativa de eficiencia, producción y velocidad del turno actual:",
+            "title": "Análisis Visual en Tiempo Real",
+            "text": "Desempeño actual de la línea y causas de paros.",
             "images": image_paths
         })
 
@@ -3602,9 +3781,12 @@ async def report_oee_day(payload: dict):
             api_payload["shift_name"] = shift_name
 
         try:
+            # Bypass de IA para consultar tabla rapida
+            api_payload["skip_ai"] = True
             data = await api_oee_day_turn(api_payload)
             cols = data.get("columns") or []
             rows = data.get("rows") or []
+            raw_daily = data.get("raw_daily") or []
             if not provided_ai:
                 provided_ai = data.get("ai_analysis")
         except HTTPException as he:
@@ -3632,22 +3814,47 @@ async def report_oee_day(payload: dict):
     ai_text = provided_ai or ""
 
     # SECCIÓN: Gráficas de Desempeño
-    plots_meta = []
-    try:
-        # Volvemos a generar para asegurar PNGs frescos
-        oee_data = await api_oee_day_turn({"from_day": from_day, "to_day": to_day, "shift_name": shift_name})
-        plots_meta = oee_data.get("plots") or []
-    except Exception: pass
+    image_paths = []
+    provided_images = payload.get("images") or []
+
+    if provided_images:
+        import base64, uuid, os
+        for b64 in provided_images:
+            if b64.startswith("data:image/png;base64,"):
+                try:
+                    img_data = base64.b64decode(b64.split(",")[1])
+                    tmp_path = os.path.join(PLOTS_DIR, f"tmp_oee_hist_{uuid.uuid4().hex[:8]}.png")
+                    with open(tmp_path, "wb") as bf:
+                        bf.write(img_data)
+                    image_paths.append(tmp_path)
+                except Exception as e:
+                    print(f"Error decodificando imagen dashboard HIST: {e}")
+
+    if not image_paths:
+        try:
+            api_payload = {"from_day": from_day, "to_day": to_day, "skip_ai": True}
+            if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "(todos)", "todos", "(all)", "(All)"):
+                api_payload["shift_name"] = shift_name
+            
+            hist_data = await api_oee_day_turn(api_payload)
+            rd = hist_data.get("raw_daily") or []
+            if rd:
+                image_paths.extend(_generate_hist_pdf_plt(rd))
+            
+            if provided_stops:
+                image_paths.extend(_generate_pareto_pdf_plt(provided_stops, period_label))
+        except Exception as e:
+            print(f"Error Graficando Histórico Nativo: {e}")
 
     sections = [
         {"title": "Resumen Operacional", "text": "Indicadores consolidados por turno para el periodo analizado."}
     ]
     
-    if plots_meta:
+    if image_paths:
         sections.append({
             "title": "Análisis Visual de Operaciones",
-            "text": "Evolución de KPIs y análisis de causa raíz (RCA).",
-            "images": [p["path"] for p in plots_meta if p.get("path") and os.path.exists(p["path"])]
+            "text": "Evolución de KPIs y diagrama de Pareto de diagnóstico raíz.",
+            "images": image_paths
         })
 
     if ai_text.strip():
@@ -3672,6 +3879,74 @@ async def report_oee_day(payload: dict):
 
 
 
+
+
+
+@app.post("/api/agent/report/pdf/")
+async def chat_report_pdf(payload: dict):
+    chat_log = payload.get("chat_log", [])
+    if not chat_log:
+        raise HTTPException(status_code=400, detail="El log del chat está vacío.")
+
+    title = "Reporte Operativo - Duma AI"
+    subtitle = ""
+
+    sections = []
+    
+    for c in chat_log:
+        if c.get("role") == "user": 
+            sections.append({
+                "title": "Pregunta del usuario:",
+                "text": f"*{c.get('text', '')}*"
+            })
+            continue
+        
+        txt = c.get("text") or ""
+        imgs = c.get("images") or []
+        
+        pngs = []
+        for i in imgs:
+            if i.startswith("data:image/png;base64,"):
+                import base64
+                import uuid
+                import os
+                b64_data = i.split(",")[1]
+                img_data = base64.b64decode(b64_data)
+                tmp_path = os.path.join(PLOTS_DIR, f"tmp_b64_{uuid.uuid4().hex[:8]}.png")
+                with open(tmp_path, "wb") as bf:
+                    bf.write(img_data)
+                pngs.append(tmp_path)
+            else:
+                clean_path = i.replace("sandbox:", "")
+                png_path = clean_path.replace(".html", ".png")
+                import os
+                if os.path.exists(png_path):
+                    pngs.append(png_path)
+                elif clean_path.endswith(".png"):
+                    pngs.append(clean_path)
+        
+        if "¡Hola! Soy Duma" in txt and len(chat_log) > 1:
+            continue
+
+        sections.append({
+            "title": "Respuesta Operativa:",
+            "text": txt,
+            "images": pngs
+        })
+
+    from datetime import date
+    try:
+        content = _build_pdf_bytes(title, subtitle, sections, "Resumen Ejecutivo del Equipo", [], logo_path=_LOGO_PATH)
+        return _as_file_response(
+            content,
+            f"Reporte_Chat_Duma_{date.today().isoformat()}.pdf",
+            "application/pdf",
+        )
+    except Exception as e:
+        print(f"Error PDF chhat: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Para correr local:
