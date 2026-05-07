@@ -2617,8 +2617,8 @@ SELECT
     wses.CurrentProductionSummary AS CurrentProduction,
     wses.ExpectedProductionSummary AS ExpectedProduction,
     wses.Quality AS Quality,
-    0 AS ParosNoProgramadosCont,
-    0 AS ParosProgramadosCont
+    ISNULL(wses.UnscheduledStopagesCount, 0) AS ParosNoProgramadosCont,
+    ISNULL(wses.ScheduledStopagesCount, 0) AS ParosProgramadosCont
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
 INNER JOIN dbo.WorkShiftTemplates AS wst ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
@@ -2992,335 +2992,265 @@ def _build_pdf_bytes(
     sections: List[dict],
     table_title: str,
     table_rows: List[dict],
-    logo_path: str | None = None
+    logo_path: str | None = None,
+    kpi_cards: list | None = None,
 ) -> bytes:
-    """Genera PDF (bytes) con estilo moderno "Duma Teal":
-    - Título + subtítulo + logo
-    - Secciones con texto tipo markdown simple (##/###, viñetas, párrafos)
-    - Tabla con encabezado estileada
-    - (Opcional) imágenes por sección (paths a PNG/JPG)
-    """
+    """PDF premium estilo Dashboard Duma."""
     import io
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                    Table, TableStyle, Image, PageBreak)
     from reportlab.lib.units import inch
     from reportlab.lib.utils import ImageReader
-    from reportlab.pdfgen import canvas
     from datetime import datetime
 
-    # --- PALETA DE COLORES (Matches Frontend) ---
-    COLOR_BRAND = colors.HexColor("#1abc9c")       # Teal brillante
-    COLOR_BRAND_DARK = colors.HexColor("#16a085")  # Teal oscuro
-    COLOR_TEXT = colors.HexColor("#0f172a")        # Navy dark (texto principal)
-    COLOR_TEXT_MUTED = colors.HexColor("#64748b")  # Gray blue (texto secundario)
-    COLOR_BG_LIGHT = colors.HexColor("#f0fdfa")    # Light Teal BG (para filas tabla)
-    COLOR_ACCENT = colors.HexColor("#0f172a")      # Headings
-    
-    def _safe(s: str) -> str:
-        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    C_HDR   = colors.HexColor("#0d7a63")
+    C_BRAND = colors.HexColor("#1abc9c")
+    C_DARK  = colors.HexColor("#0e9e82")
+    C_TEXT  = colors.HexColor("#0f172a")
+    C_MUTED = colors.HexColor("#64748b")
+    C_LIGHT = colors.HexColor("#f0fdfa")
+    C_WHITE = colors.white
+    C_DIV   = colors.HexColor("#e2e8f0")
+    HDR_H   = 1.3 * inch
 
-    def _strip_md(s: str) -> str:
+    def _safe(s):
+        return (s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+
+    def _strip_md(s):
         s = re.sub(r"\*\*(.+?)\*\*", r"\1", s or "")
         s = re.sub(r"`([^`]+)`", r"\1", s)
         s = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", s)
         return s
 
-    def _md_to_flowables(md: str, styles) -> List:
+    def on_page(c, doc):
+        c.saveState()
+        pw, ph = doc.pagesize
+        c.setFillColor(C_HDR)
+        c.rect(0, ph - HDR_H, pw, HDR_H, fill=1, stroke=0)
+        c.setFillColor(C_BRAND)
+        c.rect(0, ph - HDR_H, pw, 3, fill=1, stroke=0)
+        LX, LY = 0.32*inch, ph - HDR_H + 0.18*inch
+        LW, LH = 1.1*inch, 0.9*inch
+        if logo_path and os.path.exists(logo_path):
+            try:
+                ir = ImageReader(logo_path)
+                iw, ih = ir.getSize()
+                sc = min(LW/iw, LH/ih)
+                c.drawImage(logo_path, LX, LY, width=iw*sc, height=ih*sc, mask="auto")
+            except Exception:
+                pass
+        TX = LX + LW + 0.15*inch
+        c.setStrokeColor(colors.HexColor("#2dd4bf"))
+        c.setLineWidth(0.8)
+        c.line(TX - 0.08*inch, ph - HDR_H + 0.12*inch, TX - 0.08*inch, ph - 0.14*inch)
+        c.setFillColor(C_WHITE)
+        c.setFont("Helvetica-Bold", 15)
+        c.drawString(TX, ph - 0.52*inch, _strip_md(title or "")[:80])
+        c.setFillColor(colors.HexColor("#a7f3d0"))
+        c.setFont("Helvetica", 8.5)
+        c.drawString(TX, ph - 0.74*inch, _strip_md(subtitle or "")[:100])
+        BX = pw - 1.15*inch
+        BY = ph - 0.72*inch
+        c.setFillColor(colors.HexColor("#0f766e"))
+        c.roundRect(BX - 0.05*inch, BY - 0.14*inch, 1.0*inch, 0.28*inch, 3, fill=1, stroke=0)
+        c.setFillColor(colors.HexColor("#6ee7b7"))
+        c.setFont("Helvetica-Bold", 7.5)
+        c.drawString(BX + 0.04*inch, BY - 0.06*inch, "DUMA  AI")
+        FY = 0.38*inch
+        c.setStrokeColor(C_BRAND)
+        c.setLineWidth(0.7)
+        c.line(0.45*inch, FY + 0.2*inch, pw - 0.45*inch, FY + 0.2*inch)
+        try:
+            ds = datetime.now().strftime("%#d de %B de %Y")
+        except Exception:
+            ds = datetime.now().strftime("%d de %B de %Y")
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(C_MUTED)
+        c.drawString(0.45*inch, FY, "Duma AI  |  Reporte Confidencial  |  " + ds)
+        c.drawRightString(pw - 0.45*inch, FY, "Pagina " + str(doc.page))
+        c.restoreState()
+
+    ss = getSampleStyleSheet()
+    def sty(name, parent="Normal", **kw):
+        return ParagraphStyle(name, parent=ss[parent], **kw)
+
+    ST = {
+        "H1":   sty("DH1","Heading1",  fontName="Helvetica-Bold", fontSize=14, leading=17,
+                    textColor=C_HDR,   spaceAfter=6, spaceBefore=4),
+        "H2":   sty("DH2","Heading2",  fontName="Helvetica-Bold", fontSize=11.5, leading=14,
+                    textColor=C_DARK,  spaceAfter=5, spaceBefore=5),
+        "H3":   sty("DH3","Heading3",  fontName="Helvetica-Bold", fontSize=10, leading=13,
+                    textColor=C_BRAND, spaceAfter=4),
+        "Body": sty("DB","BodyText",   fontName="Helvetica", fontSize=9.5, leading=13,
+                    textColor=C_TEXT),
+        "Blt":  sty("DBlt","BodyText", fontName="Helvetica", fontSize=9.5, leading=13,
+                    textColor=C_TEXT,  leftIndent=14, spaceAfter=3),
+    }
+
+    def md2fl(md):
         out = []
         if not md: return out
-
-        # Normalizar saltos de línea
-        md = md.replace("\r\n", "\n").replace("\r", "\n")
-
-        # SEPARACIÓN INTELIGENTE (Lista solo si viene después de puntuación)
-        md = re.sub(r'([^\n])\s*###', r'\1\n\n###', md) # Header pegado
-        md = re.sub(r'([.?!:])\s*(\d+[\.\)]\s+)', r'\1\n\2', md) # Número tras punto
-        md = re.sub(r'([.?!:])\s*([-*]\s+)', r'\1\n\2', md) # Bullet tras punto
-
-        # Split headers conocidos que traen contenido en la misma línea
-        COMMON_HEADERS = [
-            "Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", 
-            "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"
-        ]
-        for h in COMMON_HEADERS:
-            md = re.sub(rf'(###\s+{re.escape(h)})\.?(\s+[^ \n])', r'\1\n\n\2', md, flags=re.IGNORECASE)
-
-        lines = [ln.rstrip() for ln in md.split("\n")]
+        md = md.replace("\r\n","\n").replace("\r","\n")
+        md = re.sub(r'([^\n])\s*###', r'\1\n\n###', md)
+        md = re.sub(r'([.?!:])\s*(\d+[\.\)]\s+)', r'\1\n\2', md)
+        md = re.sub(r'([.?!:])\s*([-*]\s+)', r'\1\n\2', md)
+        lines = [l.rstrip() for l in md.split("\n")]
         buf = []
-
-        def flush_paragraph():
-            nonlocal buf
+        def flush():
             if buf:
-                txtp = " ".join([b.strip() for b in buf]).strip()
-                txtp = _safe(_strip_md(txtp))
-                if txtp and txtp != ".":
-                    out.append(Paragraph(txtp, styles["Body"]))
-                    out.append(Spacer(1, 8))
-                buf = []
-
+                t = " ".join(b.strip() for b in buf).strip()
+                t = _safe(_strip_md(t))
+                if t and t != ".":
+                    out.append(Paragraph(t, ST["Body"]))
+                    out.append(Spacer(1, 6))
+                buf.clear()
         for ln in lines:
             l = ln.strip()
-            if not l:
-                flush_paragraph()
-                continue
-            
-            # Headers
-            if l.startswith("### "):
-                flush_paragraph()
-                raw = l[4:].strip()
-                
-                # Intentar detectar si el header tiene contenido pegado
-                found_h = next((h for h in COMMON_HEADERS if raw.lower().startswith(h.lower())), None)
-                if found_h and len(raw) > len(found_h) + 10:
-                    title_text = raw[:len(found_h)].strip()
-                    body_text = raw[len(found_h):].strip()
-                    out.append(Paragraph(_safe(_strip_md(title_text)), styles["H3"]))
-                    out.append(Spacer(1, 4))
-                    if body_text:
-                        out.append(Paragraph(_safe(_strip_md(body_text)), styles["Body"]))
-                        out.append(Spacer(1, 8))
-                else:
-                    out.append(Paragraph(_safe(_strip_md(raw)), styles["H3"]))
-                    out.append(Spacer(1, 4))
-                continue
-
-            if l.startswith("## "):
-                flush_paragraph()
-                out.append(Paragraph(_safe(_strip_md(l[3:])), styles["H2"]))
-                out.append(Spacer(1, 8))
-                continue
-            if l.startswith("# "):
-                flush_paragraph()
-                out.append(Paragraph(_safe(_strip_md(l[2:])), styles["H1"]))
-                out.append(Spacer(1, 10))
-                continue
-            
-            # Bullets
+            if not l:               flush(); continue
+            if l.startswith("### "): flush(); out.append(Paragraph(_safe(_strip_md(l[4:])), ST["H3"])); out.append(Spacer(1,3)); continue
+            if l.startswith("## "):  flush(); out.append(Paragraph(_safe(_strip_md(l[3:])), ST["H2"])); out.append(Spacer(1,5)); continue
+            if l.startswith("# "):   flush(); out.append(Paragraph(_safe(_strip_md(l[2:])), ST["H1"])); out.append(Spacer(1,7)); continue
             if l.startswith("- ") or l.startswith("* "):
-                flush_paragraph()
-                content = l[2:].strip()
-                out.append(Paragraph("• " + _safe(_strip_md(content)), styles["Bullet"]))
-                continue
-
-            # Numeradas
-            match_num = re.match(r"^(\d+[\.\)])\s+(.*)", l)
-            if match_num:
-                flush_paragraph()
-                out.append(Paragraph(f"{match_num.group(1)} { _safe(_strip_md(match_num.group(2)))}", styles["Bullet"]))
-                continue
-
-            # Ignorar puntos solos que a veces mete la IA
+                flush()
+                out.append(Paragraph("* " + _safe(_strip_md(l[2:])), ST["Blt"])); continue
+            m = re.match(r"^(\d+[\.\)])\s+(.*)", l)
+            if m:
+                flush()
+                out.append(Paragraph(m.group(1) + " " + _safe(_strip_md(m.group(2))), ST["Blt"])); continue
             if l == ".": continue
-
             buf.append(l)
-
-        flush_paragraph()
+        flush()
         return out
 
-    # -------- Page Template (Header/Footer) --------
-    def on_page(canvas, doc):
-        canvas.saveState()
-        w, h = doc.pagesize
-        
-        # Header Bar (Teal gradient simulation)
-        canvas.setFillColor(COLOR_BG_LIGHT)
-        canvas.rect(0, h - 0.5*inch, w, 0.5*inch, fill=1, stroke=0)
-        
-        # Footer Line
-        canvas.setStrokeColor(COLOR_BRAND)
-        canvas.setLineWidth(1)
-        canvas.line(0.7*inch, 0.75*inch, w - 0.7*inch, 0.75*inch)
-        
-        # Footer Text
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(COLOR_TEXT_MUTED)
-        page_num = f"Página {doc.page}"
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        canvas.drawString(0.7*inch, 0.5*inch, f"Duma Analytics — {date_str}")
-        canvas.drawRightString(w - 0.7*inch, 0.5*inch, page_num)
-        
-        canvas.restoreState()
+    use_ls = bool(table_rows and len(table_rows[0].keys()) > 5)
+    psize  = landscape(letter) if use_ls else letter
+    PW     = psize[0]
 
-    # -------- Styles --------
-    ss = getSampleStyleSheet()
-    styles = {}
-    styles["Title"] = ParagraphStyle("DumaTitle", parent=ss["Title"], fontName="Helvetica-Bold", fontSize=24, leading=28, textColor=COLOR_BRAND, spaceAfter=8)
-    styles["Sub"] = ParagraphStyle("DumaSub", parent=ss["Normal"], fontName="Helvetica", fontSize=12, leading=14, textColor=COLOR_TEXT_MUTED, spaceAfter=24)
-    styles["H1"] = ParagraphStyle("DumaH1", parent=ss["Heading1"], fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=COLOR_ACCENT, spaceAfter=10, spaceBefore=4)
-    styles["H2"] = ParagraphStyle("DumaH2", parent=ss["Heading2"], fontName="Helvetica-Bold", fontSize=13, leading=16, textColor=COLOR_BRAND_DARK, spaceAfter=8, spaceBefore=4)
-    styles["H3"] = ParagraphStyle("DumaH3", parent=ss["Heading3"], fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=COLOR_BRAND, spaceAfter=6)
-    styles["Body"] = ParagraphStyle("DumaBody", parent=ss["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=COLOR_TEXT)
-    styles["Bullet"] = ParagraphStyle("DumaBullet", parent=ss["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=COLOR_TEXT, leftIndent=14, bulletIndent=6, spaceAfter=4)
-
-    buffer = io.BytesIO()
-    
-    # Decide orientation: Landscape if table has > 5 columns
-    use_landscape = False
-    if table_rows and len(table_rows[0].keys()) > 5:
-        use_landscape = True
-        
-    page_size = landscape(letter) if use_landscape else letter
-    
+    buf_io = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer,
-        pagesize=page_size,
-        leftMargin=0.7*inch, rightMargin=0.7*inch,
-        topMargin=0.8*inch, bottomMargin=1*inch
+        buf_io, pagesize=psize,
+        leftMargin=0.5*inch, rightMargin=0.5*inch,
+        topMargin=HDR_H + 0.25*inch, bottomMargin=0.82*inch,
     )
-
     story = []
 
-    # --- Cover Section ---
-    if logo_path and os.path.exists(logo_path):
-        try:
-            ir = ImageReader(logo_path)
-            w, h = ir.getSize()
-            max_w = 2.0*inch  # Bigger logo
-            max_h = 1.0*inch
-            scale = min(max_w / float(w), max_h / float(h))
-            img = Image(logo_path, width=w*scale, height=h*scale)
-            img.hAlign = "LEFT"
-            story.append(img)
-            story.append(Spacer(1, 12))
-        except Exception:
-            pass
-
-    story.append(Paragraph(_safe(title), styles["Title"]))
-    if subtitle:
-        story.append(Paragraph(_safe(subtitle), styles["Sub"]))
-        
-    story.append(Spacer(1, 12))
-
-    # --- Normalize Sections ---
-    norm_sections = []
-    for sec in (sections or []):
-        if isinstance(sec, dict):
-            norm_sections.append(sec)
-        elif isinstance(sec, (list, tuple)) and len(sec) >= 2:
-            norm_sections.append({"title": str(sec[0] or ""), "text": str(sec[1] or "")})
-        elif isinstance(sec, str):
-            norm_sections.append({"title": "", "text": sec})
-        else:
-            norm_sections.append({"title": "", "text": str(sec)})
-
-    # --- Content ---
-    for sec in norm_sections:
-        sec_title = (sec.get("title") or "").strip()
-        sec_text = (sec.get("text") or sec.get("content") or "").strip()
-        sec_images = sec.get("images") or []
-
-        if sec_title:
-            story.append(Paragraph(_safe(_strip_md(sec_title)), styles["H2"]))
-            
-        story.extend(_md_to_flowables(sec_text, styles))
-
-        for img_path in sec_images:
-            if not img_path or not os.path.exists(img_path): continue
-            try:
-                ir = ImageReader(img_path)
-                w, h = ir.getSize()
-                # Adjust max width based on orientation
-                avail_w_inch = 9.0 if use_landscape else 7.0
-                available_w = avail_w_inch*inch
-                available_h = 5.0*inch
-                scale = min(available_w/float(w), available_h/float(h))
-                story.append(Image(img_path, width=w*scale, height=h*scale))
-                story.append(Spacer(1, 12))
-            except Exception:
-                continue
-        
+    # KPI Cards
+    if kpi_cards:
+        story.append(Spacer(1, 8))
+        NCOLS = min(len(kpi_cards), 3)
+        avail = PW - 1.0*inch
+        cw    = avail / NCOLS
+        lbl_st = sty("KL","Normal", fontName="Helvetica",     fontSize=7,   textColor=C_MUTED, alignment=1)
+        val_st = sty("KV","Normal", fontName="Helvetica-Bold",fontSize=20,  textColor=C_HDR,   alignment=1, leading=24)
+        sts_st = sty("KS","Normal", fontName="Helvetica",     fontSize=7.5, textColor=C_MUTED, alignment=1)
+        groups, row_ = [], []
+        for i, k in enumerate(kpi_cards):
+            cell = [
+                Paragraph(_safe((k.get("label") or "").upper()), lbl_st),
+                Paragraph(_safe(k.get("value") or ""), val_st),
+                Paragraph(_safe(k.get("status") or ""), sts_st),
+            ]
+            row_.append(cell)
+            if len(row_) == NCOLS or i == len(kpi_cards)-1:
+                while len(row_) < NCOLS:
+                    row_.append([Paragraph("", ST["Body"])])
+                groups.append(row_); row_ = []
+        for grp in groups:
+            t = Table([grp], colWidths=[cw]*NCOLS)
+            t.setStyle(TableStyle([
+                ("BACKGROUND",   (0,0),(-1,-1), colors.HexColor("#f8fffe")),
+                ("BOX",          (0,0),(-1,-1), 0.6, C_BRAND),
+                ("INNERGRID",    (0,0),(-1,-1), 0.4, C_DIV),
+                ("TOPPADDING",   (0,0),(-1,-1), 10),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 10),
+                ("LEFTPADDING",  (0,0),(-1,-1), 6),
+                ("RIGHTPADDING", (0,0),(-1,-1), 6),
+                ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 5))
         story.append(Spacer(1, 12))
 
-    # --- Table ---
+    # Secciones
+    hdr_st = sty("SH","Normal", fontName="Helvetica-Bold", fontSize=10.5,
+                 textColor=C_WHITE, leading=14)
+    for sec in (sections or []):
+        if isinstance(sec, str):   sec = {"title":"", "text": sec}
+        elif isinstance(sec,(list,tuple)) and len(sec)>=2:
+            sec = {"title": str(sec[0] or ""), "text": str(sec[1] or "")}
+        ttl  = (sec.get("title") or "").strip()
+        body = (sec.get("text")  or sec.get("content") or "").strip()
+        imgs =  sec.get("images") or []
+        if ttl:
+            ht = Table([[Paragraph(_safe(_strip_md(ttl)), hdr_st)]],
+                       colWidths=[PW - 1.0*inch])
+            ht.setStyle(TableStyle([
+                ("BACKGROUND",   (0,0),(-1,-1), C_HDR),
+                ("TOPPADDING",   (0,0),(-1,-1), 6),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+                ("LEFTPADDING",  (0,0),(-1,-1), 10),
+                ("RIGHTPADDING", (0,0),(-1,-1), 10),
+            ]))
+            story.append(ht)
+            story.append(Spacer(1, 6))
+        if body:
+            story.extend(md2fl(body))
+        for ip in imgs:
+            if not ip or not os.path.exists(ip): continue
+            try:
+                ir = ImageReader(ip)
+                iw, ih = ir.getSize()
+                mxw = (9.0 if use_ls else 7.2)*inch
+                mxh = 4.5*inch
+                sc  = min(mxw/iw, mxh/ih)
+                story.append(Image(ip, width=iw*sc, height=ih*sc))
+                story.append(Spacer(1, 8))
+            except Exception:
+                continue
+        story.append(Spacer(1, 12))
+
+    # Tabla de datos
     if table_rows:
-        story.append(PageBreak()) # Start table on new page if complex? Optional.
-        story.append(Paragraph(_safe(table_title or "Detalle de Datos"), styles["H2"]))
+        story.append(PageBreak())
+        th = Table([[Paragraph(_safe(table_title or "Detalle de Datos"), hdr_st)]],
+                   colWidths=[PW - 1.0*inch])
+        th.setStyle(TableStyle([
+            ("BACKGROUND",   (0,0),(-1,-1), C_HDR),
+            ("TOPPADDING",   (0,0),(-1,-1), 6),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+            ("LEFTPADDING",  (0,0),(-1,-1), 10),
+        ]))
+        story.append(th)
         story.append(Spacer(1, 8))
-
-        cols = list(table_rows[0].keys())
-        raw_data = [cols] + [[r.get(c, "") for c in cols] for r in table_rows]
-
-        # --- Dynamic Fit Logic ---
-        # 1. Calculate available width
-        page_w, page_h = page_size
-        # margins defined in SimpleDocTemplate: left=0.7*inch, right=0.7*inch
-        avail_width = page_w - (1.4 * inch)
-        
-        num_cols = len(cols)
-        if num_cols > 0:
-            col_width = avail_width / num_cols
-            col_widths = [col_width] * num_cols
-        else:
-            col_widths = None
-
-        # 2. Define ParagraphStyles for table content (Header vs Body) to allow wrapping
-        tbl_header_style = ParagraphStyle(
-            "TblHead", 
-            parent=styles["Body"], 
-            fontName="Helvetica-Bold", 
-            fontSize=7, 
-            leading=8, 
-            alignment=1, # Center
-            textColor=colors.white
-        )
-        tbl_body_style = ParagraphStyle(
-            "TblBody", 
-            parent=styles["Body"], 
-            fontName="Helvetica", 
-            fontSize=7, 
-            leading=8, 
-            alignment=1, # Center
-            textColor=colors.black
-        )
-
-        # 3. Wrap content in Paragraphs
-        final_data = []
-        
-        # Header row
-        header_row = []
-        for c in cols:
-            header_row.append(Paragraph(_safe(str(c)), tbl_header_style))
-        final_data.append(header_row)
-        
-        # Body rows
-        for row in raw_data[1:]:
-            processed_row = []
-            for cell in row:
-                # Convert None or non-string to string
-                txt = str(cell) if cell is not None else ""
-                processed_row.append(Paragraph(_safe(txt), tbl_body_style))
-            final_data.append(processed_row)
-
-        # 4. Create Table with explicit widths
-        tbl = Table(final_data, colWidths=col_widths, repeatRows=1)
-        
-        # Zebra striping styling
-        tbl_style = [
-            ("BACKGROUND", (0,0), (-1,0), COLOR_BRAND),         # Header BG Teal
-            # Text color is handled by Paragraph style, but we keep this for safety
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("TOPPADDING", (0,0), (-1,-1), 4),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-            ("LEFTPADDING", (0,0), (-1,-1), 2),
-            ("RIGHTPADDING", (0,0), (-1,-1), 2),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.lightgrey),
+        cols_ = list(table_rows[0].keys())
+        cw_   = (PW - 1.0*inch) / len(cols_) if cols_ else (PW - 1.0*inch)
+        th_st = sty("TH","Normal", fontName="Helvetica-Bold", fontSize=7,
+                    leading=8, alignment=1, textColor=C_WHITE)
+        tb_st = sty("TB","Normal", fontName="Helvetica",      fontSize=7,
+                    leading=8, alignment=1, textColor=C_TEXT)
+        hrow  = [Paragraph(_safe(str(c)), th_st) for c in cols_]
+        drows = [[Paragraph(_safe(str(r.get(c,""))), tb_st) for c in cols_]
+                 for r in table_rows]
+        dtbl  = Table([hrow]+drows, colWidths=[cw_]*len(cols_), repeatRows=1)
+        ts    = [
+            ("BACKGROUND",   (0,0),(-1,0),  C_BRAND),
+            ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+            ("TOPPADDING",   (0,0),(-1,-1), 4),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 4),
+            ("LEFTPADDING",  (0,0),(-1,-1), 2),
+            ("RIGHTPADDING", (0,0),(-1,-1), 2),
+            ("GRID",         (0,0),(-1,-1), 0.4, C_DIV),
         ]
-        
-        # Add Zebrastripes
-        for i in range(1, len(final_data)):
-            if i % 2 == 0:
-                bg = COLOR_BG_LIGHT # Light Teal for even rows
-            else:
-                bg = colors.white
-            tbl_style.append(("BACKGROUND", (0, i), (-1, i), bg))
+        for i in range(1, len(drows)+1):
+            ts.append(("BACKGROUND",(0,i),(-1,i), C_LIGHT if i%2==0 else C_WHITE))
+        dtbl.setStyle(TableStyle(ts))
+        story.append(dtbl)
 
-        tbl.setStyle(TableStyle(tbl_style))
-        story.append(tbl)
-    
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
-    return buffer.getvalue()
+    return buf_io.getvalue()
 
 
 def _as_file_response(content: bytes, filename: str, media_type: str):
@@ -3444,7 +3374,17 @@ async def report_control_variables_day(payload: dict):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
-    content = _build_pdf_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH)
+    _kpis = []
+    try:
+        if summary_rows:
+            _w = summary_rows[0]; _b = summary_rows[-1]
+            _kpis = [
+                {"label": "Variables Analizadas", "value": str(len(summary_rows)), "status": "Total del dia"},
+                {"label": "Mayor % Fuera",        "value": f"{_w.get('out_pct',0)}%", "status": f"{_w.get('name','')} — {_w.get('device','')}"},
+                {"label": "Mejor Variable",       "value": f"{_b.get('out_pct',0)}%", "status": f"{_b.get('name','')} — {_b.get('device','')}"},
+            ]
+    except Exception: _kpis = []
+    content = _build_pdf_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH, kpi_cards=_kpis)
     filename = f"variables_control_{day}.pdf"
     return Response(
         content=content,
@@ -3751,7 +3691,15 @@ async def report_oee_realtime(payload: dict):
     if ai_text:
         sections.append({"title": "Análisis y Recomendaciones (IA)", "text": ai_text})
 
-    content = _build_pdf_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH)
+    _kpis = []
+    try:
+        _kpis = [
+            {"label": "OEE Actual",     "value": fmt_num(row.get("OEE"), "%"),         "status": "Eficiencia operacional"},
+            {"label": "Disponibilidad", "value": fmt_num(row.get("Availability"), "%"), "status": row.get("StatusCode") or ""},
+            {"label": "Desempeno",      "value": fmt_num(row.get("Performance"), "%"),  "status": "Ritmo de produccion"},
+        ]
+    except Exception: _kpis = []
+    content = _build_pdf_bytes(title, subtitle, sections, "Indicadores", table, logo_path=_LOGO_PATH, kpi_cards=_kpis)
     filename = "reporte_oee_realtime.pdf"
     return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -3768,6 +3716,7 @@ async def report_oee_day(payload: dict):
     provided_rows = payload.get("rows")
     provided_cols = payload.get("columns")
     provided_ai = payload.get("ai_analysis")
+    provided_stops = payload.get("stop_reasons")
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", from_day):
         raise HTTPException(status_code=400, detail=f"Formato de 'from_day' inválido ({from_day}). Usa YYYY-MM-DD.")
@@ -3787,6 +3736,7 @@ async def report_oee_day(payload: dict):
             cols = data.get("columns") or []
             rows = data.get("rows") or []
             raw_daily = data.get("raw_daily") or []
+            summary_obj = data.get("summary") or {}
             if not provided_ai:
                 provided_ai = data.get("ai_analysis")
         except HTTPException as he:
@@ -3838,6 +3788,7 @@ async def report_oee_day(payload: dict):
             
             hist_data = await api_oee_day_turn(api_payload)
             rd = hist_data.get("raw_daily") or []
+            summary_obj = hist_data.get("summary") or {}
             if rd:
                 image_paths.extend(_generate_hist_pdf_plt(rd))
             
@@ -3846,16 +3797,40 @@ async def report_oee_day(payload: dict):
         except Exception as e:
             print(f"Error Graficando Histórico Nativo: {e}")
 
-    sections = [
-        {"title": "Resumen Operacional", "text": "Indicadores consolidados por turno para el periodo analizado."}
-    ]
+    sections = []
+    sections.append({"title": "Resumen Operacional", "text": "Indicadores consolidados para el periodo analizado."})
     
     if image_paths:
-        sections.append({
-            "title": "Análisis Visual de Operaciones",
-            "text": "Evolución de KPIs y diagrama de Pareto de diagnóstico raíz.",
-            "images": image_paths
-        })
+        # Gráficas de Evolución
+        evol_imgs = [img for img in image_paths if "hist_oee" in img or "hist_prod" in img or "hist_np" in img or "hist_cnt" in img]
+        pareto_imgs = [img for img in image_paths if "pareto" in img or "treemap" in img]
+        other_imgs = [img for img in image_paths if img not in evol_imgs and img not in pareto_imgs]
+
+        if evol_imgs:
+            sections.append({
+                "title": "Evolución de Desempeño y Producción",
+                "text": "Seguimiento diario de OEE y cumplimiento de producción.",
+                "images": evol_imgs[:2]
+            })
+            sections.append({
+                "title": "Análisis de Disponibilidad y Paros",
+                "text": "Duración y frecuencia de eventos de paro (P/NP).",
+                "images": evol_imgs[2:]
+            })
+        
+        if pareto_imgs:
+            sections.append({
+                "title": "Diagnóstico Raíz (Pareto 80/20)",
+                "text": "Principales causas de pérdida de disponibilidad.",
+                "images": pareto_imgs
+            })
+        
+        if other_imgs:
+            sections.append({
+                "title": "Análisis Visual Adicional",
+                "text": "Otras métricas operativas detectadas.",
+                "images": other_imgs
+            })
 
     if ai_text.strip():
         sections.append({"title": "Diagnóstico y Recomendaciones (Duma AI)", "text": ai_text})
@@ -3870,7 +3845,30 @@ async def report_oee_day(payload: dict):
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
 
-    content = _build_pdf_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH)
+    _kpis = []
+    try:
+        # Intentar sacar de summary_obj (calculado por el backend)
+        if 'summary_obj' in locals() and summary_obj:
+            def _f(v): return float(v) if v is not None else 0.0
+            _kpis = [
+                {"label": "OEE Consolidado",   "value": f"{_f(summary_obj.get('OEE')):.1f}%",           "status": "Eficiencia del rango"},
+                {"label": "Disponibilidad",     "value": f"{_f(summary_obj.get('Availability')):.1f}%",  "status": "Uso del tiempo"},
+                {"label": "Desempeño",          "value": f"{_f(summary_obj.get('Performance')):.1f}%",   "status": "Ritmo de producción"},
+                {"label": "Calidad",            "value": f"{_f(summary_obj.get('Quality')):.1f}%",       "status": "Producto conforme"},
+            ]
+        else:
+            # Fallback a calculo manual si no hay summary_obj
+            _ov = [float(r.get("OEE") or 0) for r in table_rows if r.get("OEE") is not None]
+            _pv = [float(r.get("CurrentProduction") or r.get("CurrentShiftProduction") or 0) for r in table_rows]
+            _np = [float(r.get("TiempoNoProdNoProgramadoMin") or 0) for r in table_rows]
+            if _ov:  _kpis.append({"label": "OEE Promedio",     "value": f"{sum(_ov)/len(_ov):.1f}%",  "status": "Eficiencia del periodo"})
+            if _pv:  _kpis.append({"label": "Produccion Total", "value": f"{sum(_pv):,.0f} Kg",       "status": f"Turnos: {len(table_rows)}"})
+            if _np:  _kpis.append({"label": "Paros No Prog.",   "value": f"{sum(_np):,.0f} min",      "status": "Tiempo total perdido"})
+    except Exception as e: 
+        print(f"Error extrae KPIs HIST: {e}")
+        _kpis = []
+    
+    content = _build_pdf_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH, kpi_cards=_kpis)
     return _as_file_response(
         content,
         _report_filename(rep_slug + (f"_{shift_name}" if shift_name else ""), "pdf"),
