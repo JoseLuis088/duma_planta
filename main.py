@@ -1179,6 +1179,20 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
         # 1) Thread
         if thread_id and str(thread_id).startswith("thread_"):
             t_id = thread_id
+            # Cancelar cualquier run activo previo en este thread para evitar bloqueos
+            try:
+                runs = client.beta.threads.runs.list(thread_id=t_id)
+                for run in runs.data:
+                    if run.status in ("queued", "in_progress", "requires_action", "cancelling"):
+                        logging.info(f"Cancelando run previo activo {run.id} en thread {t_id}")
+                        try:
+                            client.beta.threads.runs.cancel(thread_id=t_id, run_id=run.id)
+                            # Pequeña espera para permitir la cancelación en OpenAI
+                            time.sleep(0.8)
+                        except Exception as ce:
+                            logging.warning(f"Error cancelando run {run.id}: {ce}")
+            except Exception as re:
+                logging.warning(f"Error listando runs en thread {t_id}: {re}")
         else:
             t = client.beta.threads.create()
             t_id = t.id
@@ -1208,7 +1222,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
         system_prompt_content = ""
         try:
             # ✅ Redirigido al nuevo prompt ejecutivo para evitar bloqueos
-            with open("DUMA_EXECUTIVE_PROMPT.txt", "r") as f:
+            with open("DUMA_EXECUTIVE_PROMPT.txt", "r", encoding="utf-8") as f:
                 system_prompt_content = f.read()
         except Exception as e:
             logging.error(f"No se pudo leer DUMA_EXECUTIVE_PROMPT.txt: {e}")
