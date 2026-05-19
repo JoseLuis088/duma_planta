@@ -8,6 +8,8 @@
 
   <!-- Chart.js para Pareto -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- html2canvas -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <!-- Flatpickr para rangos de fecha -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -818,6 +820,207 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
       gap: 20px;
+    }
+
+    /* =============================================
+       CV TABLE — Premium Styles
+       ============================================= */
+    .cv-row td { transition: background 0.2s; }
+    .cv-row:hover td { background: rgba(26,188,156, 0.06) !important; }
+    .cv-varname { font-weight: 600; }
+    .cv-severity-dot { font-size: 1.05rem; margin-right: 6px; }
+    .cv-device { white-space: nowrap; }
+    .device-icon { margin-right: 5px; font-size: 1.05rem; }
+    .cv-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .cv-out { font-weight: 600; }
+    .cv-pct-cell { min-width: 130px; }
+    .cv-pct-bar-wrap {
+      width: 100%;
+      height: 6px;
+      background: rgba(0,0,0,0.1);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 3px;
+    }
+    [data-theme="dark"] .cv-pct-bar-wrap { background: rgba(255,255,255,0.1); }
+    .cv-pct-bar {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
+    }
+    .cv-pct-label { font-size: 0.82rem; letter-spacing: 0.02em; }
+    .sev-critical td:first-child { border-left: 3px solid #ef4444; }
+    .sev-high td:first-child     { border-left: 3px solid #f97316; }
+    .sev-medium td:first-child   { border-left: 3px solid #eab308; }
+    .sev-low td:first-child      { border-left: 3px solid #22c55e; }
+    .sev-ok td:first-child       { border-left: 3px solid #10b981; }
+
+    /* =============================================
+       AI ANALYSIS — Premium Styles
+       ============================================= */
+    .ai-section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 1.4rem 0 0.5rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--brand);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .ai-h3-emoji { font-size: 1.2rem; line-height: 1; flex-shrink: 0; }
+    .ai-ul {
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0 1rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .ai-ul li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 9px 14px;
+      background: rgba(26,188,156, 0.05);
+      border-radius: 8px;
+      border-left: 2px solid var(--brand);
+      line-height: 1.5;
+      font-size: 0.92rem;
+    }
+    .ai-bullet {
+      color: var(--brand);
+      font-weight: 900;
+      margin-top: 1px;
+      flex-shrink: 0;
+    }
+
+    /* =============================================
+       CV KPI CARDS — Premium
+       ============================================= */
+    .cv-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      margin-bottom: 4px;
+    }
+    @media (max-width: 1100px) { .cv-kpi-row { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 700px)  { .cv-kpi-row { grid-template-columns: repeat(2, 1fr); } }
+
+    .cv-kpi-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 24px var(--shadow);
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .cv-kpi-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(26,188,156,.04) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cv-kpi-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 40px var(--shadow-lg);
+      border-color: var(--brand);
+    }
+
+    /* Icon bubble */
+    .cv-kpi-icon-wrap {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(26,188,156,.18), rgba(26,188,156,.06));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: 1px solid rgba(26,188,156,.25);
+    }
+    .cv-kpi-icon { font-size: 1.35rem; line-height: 1; }
+
+    /* Text content */
+    .cv-kpi-body { flex: 1; }
+    .cv-kpi-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .cv-kpi-value {
+      font-size: 1.9rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      transition: color 0.3s;
+    }
+    .cv-kpi-value--sm { font-size: 1.25rem; line-height: 1.3; margin-top: 2px; }
+    .cv-kpi-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* Colored states applied to .cv-kpi-card */
+    .cv-kpi-card.state-ok    { border-color: rgba(16,185,129,.4); }
+    .cv-kpi-card.state-ok    .cv-kpi-value { color: #10b981; }
+    .cv-kpi-card.state-ok    .cv-kpi-icon-wrap { background: linear-gradient(135deg,rgba(16,185,129,.2),rgba(16,185,129,.06)); border-color: rgba(16,185,129,.3); }
+
+    .cv-kpi-card.state-warn  { border-color: rgba(234,179,8,.4); }
+    .cv-kpi-card.state-warn  .cv-kpi-value { color: #eab308; }
+    .cv-kpi-card.state-warn  .cv-kpi-icon-wrap { background: linear-gradient(135deg,rgba(234,179,8,.2),rgba(234,179,8,.06)); border-color: rgba(234,179,8,.3); }
+
+    .cv-kpi-card.state-high  { border-color: rgba(249,115,22,.4); }
+    .cv-kpi-card.state-high  .cv-kpi-value { color: #f97316; }
+    .cv-kpi-card.state-high  .cv-kpi-icon-wrap { background: linear-gradient(135deg,rgba(249,115,22,.2),rgba(249,115,22,.06)); border-color: rgba(249,115,22,.3); }
+
+    .cv-kpi-card.state-crit  { border-color: rgba(239,68,68,.4); }
+    .cv-kpi-card.state-crit  .cv-kpi-value { color: #ef4444; }
+    .cv-kpi-card.state-crit  .cv-kpi-icon-wrap { background: linear-gradient(135deg,rgba(239,68,68,.2),rgba(239,68,68,.06)); border-color: rgba(239,68,68,.3); }
+
+    /* Bottom progress bar */
+    .cv-kpi-bar-track {
+      height: 5px;
+      background: rgba(0,0,0,.08);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    [data-theme="dark"] .cv-kpi-bar-track { background: rgba(255,255,255,.08); }
+    .cv-kpi-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      width: 0%;
+      transition: width .8s cubic-bezier(.4,0,.2,1);
+    }
+
+    /* Badge pills for critical variable names */
+    .cv-kpi-badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-height: 0;
+    }
+    .cv-kpi-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: rgba(239,68,68,.15);
+      color: #ef4444;
+      border: 1px solid rgba(239,68,68,.3);
+      white-space: nowrap;
     }
 
     .plot-card {
@@ -1649,6 +1852,78 @@
             </div>
           </div>
 
+          <!-- ===== CV KPI CARDS ===== -->
+          <div class="cv-kpi-row" id="cvKpiRow" style="display:none">
+
+            <!-- 1. Salud Global -->
+            <div class="cv-kpi-card" id="cvKpiHealth">
+              <div class="cv-kpi-icon-wrap">
+                <span class="cv-kpi-icon" id="cvKpiHealthIcon">🛡️</span>
+              </div>
+              <div class="cv-kpi-body">
+                <div class="cv-kpi-label">Salud Global del Proceso</div>
+                <div class="cv-kpi-value" id="cvKpiHealthVal">—</div>
+                <div class="cv-kpi-sub" id="cvKpiHealthSub">promedio ponderado</div>
+              </div>
+              <div class="cv-kpi-bar-track">
+                <div class="cv-kpi-bar-fill" id="cvKpiHealthBar"></div>
+              </div>
+            </div>
+
+            <!-- 2. Variables Críticas -->
+            <div class="cv-kpi-card" id="cvKpiCritCard">
+              <div class="cv-kpi-icon-wrap">
+                <span class="cv-kpi-icon">🚨</span>
+              </div>
+              <div class="cv-kpi-body">
+                <div class="cv-kpi-label">Variables Críticas</div>
+                <div class="cv-kpi-value" id="cvKpiCritVal">—</div>
+                <div class="cv-kpi-sub" id="cvKpiCritSub">con ≥75% fuera de rango</div>
+              </div>
+              <div class="cv-kpi-badge-row" id="cvKpiCritBadges"></div>
+            </div>
+
+            <!-- 3. Equipo Más Problemático -->
+            <div class="cv-kpi-card" id="cvKpiWorstCard">
+              <div class="cv-kpi-icon-wrap">
+                <span class="cv-kpi-icon" id="cvKpiWorstIcon">⚙️</span>
+              </div>
+              <div class="cv-kpi-body">
+                <div class="cv-kpi-label">Equipo Más Problemático</div>
+                <div class="cv-kpi-value cv-kpi-value--sm" id="cvKpiWorstVal">—</div>
+                <div class="cv-kpi-sub" id="cvKpiWorstSub">mayor desviación promedio</div>
+              </div>
+            </div>
+
+            <!-- 4. Promedio % Fuera de Rango -->
+            <div class="cv-kpi-card" id="cvKpiAvgCard">
+              <div class="cv-kpi-icon-wrap">
+                <span class="cv-kpi-icon">📊</span>
+              </div>
+              <div class="cv-kpi-body">
+                <div class="cv-kpi-label">Promedio % Fuera de Rango</div>
+                <div class="cv-kpi-value" id="cvKpiAvgVal">—</div>
+                <div class="cv-kpi-sub" id="cvKpiAvgSub">entre todas las variables</div>
+              </div>
+              <div class="cv-kpi-bar-track">
+                <div class="cv-kpi-bar-fill" id="cvKpiAvgBar"></div>
+              </div>
+            </div>
+
+            <!-- 5. Variables en Rango -->
+            <div class="cv-kpi-card" id="cvKpiOkCard">
+              <div class="cv-kpi-icon-wrap">
+                <span class="cv-kpi-icon" id="cvKpiOkIcon">✅</span>
+              </div>
+              <div class="cv-kpi-body">
+                <div class="cv-kpi-label">Variables en Rango</div>
+                <div class="cv-kpi-value" id="cvKpiOkVal">—</div>
+                <div class="cv-kpi-sub" id="cvKpiOkSub">0% fuera de rango hoy</div>
+              </div>
+            </div>
+
+          </div>
+
           <div class="card" id="cvSummaryCard" style="display:none">
             <h2>Métricas por Variable</h2>
             <div class="table-wrap">
@@ -1770,25 +2045,69 @@
                 <span class="small muted" id="oeeDayInfo"></span>
               </div>
 
-              <!-- KPI Cards para el Rango (Consolidado) -->
-              <div class="kpi-grid" id="oeeDayKpis" style="display:none; margin-top:20px; grid-template-columns: repeat(4, 1fr) !important; width: 100%;">
-                <div class="kpi">
-                  <div class="kpi-label">OEE Global</div>
-                  <div class="kpi-value" id="kpiRangeOee"></div>
-                  <div class="kpi-hint">Consolidado del rango</div>
+              <!-- KPI Cards Premium para OEE Rango -->
+              <div class="cv-kpi-row" id="oeeDayKpis" style="display:none; margin-top:20px;">
+
+                <!-- 1. OEE Global -->
+                <div class="cv-kpi-card" id="oeeKpiOeeCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeKpiOeeIcon">🏭</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">OEE Global</div>
+                    <div class="cv-kpi-value" id="kpiRangeOee">—</div>
+                    <div class="cv-kpi-sub" id="oeeKpiOeeSub">Consolidado del rango</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeKpiOeeBar"></div>
+                  </div>
                 </div>
-                <div class="kpi">
-                  <div class="kpi-label">Disponibilidad</div>
-                  <div class="kpi-value" id="kpiRangeAvail"></div>
+
+                <!-- 2. Disponibilidad -->
+                <div class="cv-kpi-card" id="oeeKpiAvailCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeKpiAvailIcon">⏱️</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">Disponibilidad</div>
+                    <div class="cv-kpi-value" id="kpiRangeAvail">—</div>
+                    <div class="cv-kpi-sub" id="oeeKpiAvailSub">Uso del tiempo productivo</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeKpiAvailBar"></div>
+                  </div>
                 </div>
-                <div class="kpi">
-                  <div class="kpi-label">Desempeño</div>
-                  <div class="kpi-value" id="kpiRangePerf"></div>
+
+                <!-- 3. Desempeño -->
+                <div class="cv-kpi-card" id="oeeKpiPerfCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeKpiPerfIcon">⚡</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">Desempeño</div>
+                    <div class="cv-kpi-value" id="kpiRangePerf">—</div>
+                    <div class="cv-kpi-sub" id="oeeKpiPerfSub">Ritmo vs. velocidad nominal</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeKpiPerfBar"></div>
+                  </div>
                 </div>
-                <div class="kpi">
-                  <div class="kpi-label">Calidad</div>
-                  <div class="kpi-value" id="kpiRangeQual"></div>
+
+                <!-- 4. Calidad -->
+                <div class="cv-kpi-card" id="oeeKpiQualCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeKpiQualIcon">✅</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">Calidad</div>
+                    <div class="cv-kpi-value" id="kpiRangeQual">—</div>
+                    <div class="cv-kpi-sub" id="oeeKpiQualSub">Producto conforme</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeKpiQualBar"></div>
+                  </div>
                 </div>
+
               </div>
 
               <div class="card" id="oeeDayTableCard" style="margin-top:20px; display:none">
@@ -2189,6 +2508,15 @@
 
         // Split headers conocidos que traen contenido en la misma línea
         const COMMON_HEADERS = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
+        const HEADER_EMOJI = {
+          "resumen ejecutivo":          "📋",
+          "hallazgos clave":            "🔍",
+          "interpretación operacional": "⚙️",
+          "acciones recomendadas":      "✅",
+          "próximos pasos":             "🗓️",
+          "kpi limitante":              "📉",
+          "riesgo si no se actúa":      "⚠️",
+        };
         COMMON_HEADERS.forEach(h => {
           const re = new RegExp(`(###\\s+${h})\\.?(\\s+[^\\n])`, 'gi');
           processedMd = processedMd.replace(re, "$1\n\n$2");
@@ -2239,7 +2567,8 @@
               if (foundHeader) {
                 let titleText = raw.substring(0, foundHeader.length).trim();
                 let bodyText = raw.substring(foundHeader.length).trim();
-                html += `<h3>${applyInline(titleText)}</h3>`;
+                const emoji = HEADER_EMOJI[titleText.toLowerCase()] || "◆";
+                html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">${emoji}</span>${applyInline(titleText)}</h3>`;
                 if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
               } else {
                 // Si no es un header conocido, intentamos dividir por el primer punto si es largo
@@ -2247,14 +2576,15 @@
                 if (firstDot > 0 && firstDot < 40) {
                   let titleText = raw.substring(0, firstDot + 1).trim();
                   let bodyText = raw.substring(firstDot + 1).trim();
-                  html += `<h3>${applyInline(titleText)}</h3>`;
+                  html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">◆</span>${applyInline(titleText)}</h3>`;
                   if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
                 } else {
-                  html += `<h3>${applyInline(raw)}</h3>`;
+                  html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">◆</span>${applyInline(raw)}</h3>`;
                 }
               }
             } else {
-              html += `<h3>${applyInline(raw)}</h3>`;
+              const emojiPlain = HEADER_EMOJI[raw.toLowerCase()] || "◆";
+              html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">${emojiPlain}</span>${applyInline(raw)}</h3>`;
             }
             continue;
           }
@@ -2280,8 +2610,8 @@
 
           // Bullets
           if (line.startsWith("* ") || line.startsWith("- ")) {
-            if (!inUl) { closeLists(); html += "<ul>"; inUl = true; }
-            html += `<li>${applyInline(line.substring(2))}</li>`;
+            if (!inUl) { closeLists(); html += "<ul class='ai-ul'>"; inUl = true; }
+            html += `<li><span class="ai-bullet">→</span><div style="flex:1;">${applyInline(line.substring(2))}</div></li>`;
             continue;
           }
 
@@ -2355,6 +2685,7 @@
         el("cvGrid").innerHTML = "";
         el("cvAICard").style.display = "none";
         el("cvAI").innerHTML = "";
+        clearCVKpis();
 
         el("oeeRtInfo").textContent = "";
         el("oeeRtKpis").style.display = "none";
@@ -2380,19 +2711,180 @@
       function renderCVSummary(rows) {
         const tbody = el("cvTable").querySelector("tbody");
         tbody.innerHTML = "";
+
+        // Emoji + color based on severity
+        function severityBadge(pct) {
+          const p = parseFloat(pct) || 0;
+          if (p >= 75)  return { emoji: "🔴", cls: "sev-critical", label: "Crítico" };
+          if (p >= 30)  return { emoji: "🟠", cls: "sev-high",     label: "Alto" };
+          if (p >= 10)  return { emoji: "🟡", cls: "sev-medium",   label: "Medio" };
+          if (p > 0)    return { emoji: "🟢", cls: "sev-low",      label: "Bajo" };
+          return           { emoji: "✅", cls: "sev-ok",       label: "OK" };
+        }
+
+        // Device icon map
+        const deviceIcon = {
+          "chiller": "❄️", "iqf": "🧊", "molino": "⚙️",
+          "mezclador": "🔄", "volteador": "🔁",
+          "detector de metales": "🔍", "default": "📡"
+        };
+        function getDeviceIcon(device) {
+          const key = (device || "").toLowerCase();
+          return Object.keys(deviceIcon).find(k => key.includes(k))
+            ? deviceIcon[Object.keys(deviceIcon).find(k => key.includes(k))]
+            : deviceIcon["default"];
+        }
+
         for (const r of rows) {
+          const pct = parseFloat(r.out_pct) || 0;
+          const badge = severityBadge(pct);
+          const icon = getDeviceIcon(r.device || "");
+          const barW = Math.min(pct, 100).toFixed(1);
+          const barColor = pct >= 75 ? "#ef4444" : pct >= 30 ? "#f97316" : pct >= 10 ? "#eab308" : "#22c55e";
+
           const tr = document.createElement("tr");
+          tr.className = `cv-row ${badge.cls}`;
           tr.innerHTML = `
-          <td>${escapeHtml(r.name || r.var_id || "")}</td>
-          <td>${escapeHtml(r.device || "")}</td>
-          <td>${formatNum(r.points)}</td>
-          <td>${formatNum(r.out_points)}</td>
-          <td>${formatNum(r.out_pct)}%</td>
-          <td>${formatNum(r.min_value)}</td>
-          <td>${formatNum(r.max_value)}</td>
-        `;
+            <td class="cv-varname">
+              <span class="cv-severity-dot" title="${badge.label}">${badge.emoji}</span>
+              ${escapeHtml(r.name || r.var_id || "")}
+            </td>
+            <td class="cv-device">
+              <span class="device-icon">${icon}</span>
+              <strong>${escapeHtml(r.device || "")}</strong>
+            </td>
+            <td class="cv-num">${formatNum(r.points)}</td>
+            <td class="cv-num cv-out">${formatNum(r.out_points)}</td>
+            <td class="cv-pct-cell">
+              <div class="cv-pct-bar-wrap">
+                <div class="cv-pct-bar" style="width:${barW}%;background:${barColor}"></div>
+              </div>
+              <span class="cv-pct-label" style="color:${barColor};font-weight:700">${pct.toFixed(2)}%</span>
+            </td>
+            <td class="cv-num">${formatNum(r.min_value)}</td>
+            <td class="cv-num">${formatNum(r.max_value)}</td>
+          `;
           tbody.appendChild(tr);
         }
+      }
+
+      // ===========================
+      // CV KPI CARDS
+      // ===========================
+      const CV_DEVICE_ICONS = {
+        "chiller": "❄️", "iqf": "🧊", "molino": "⚙️",
+        "mezclador": "🔄", "volteador": "🔁",
+        "detector de metales": "🔍"
+      };
+      function cvDeviceIcon(device) {
+        const k = (device || "").toLowerCase();
+        const match = Object.keys(CV_DEVICE_ICONS).find(d => k.includes(d));
+        return match ? CV_DEVICE_ICONS[match] : "📡";
+      }
+
+      function kpiState(pct) {
+        if (pct >= 60) return "crit";
+        if (pct >= 30) return "high";
+        if (pct >= 10) return "warn";
+        return "ok";
+      }
+      function kpiStateHealth(health) {
+        if (health >= 80) return "ok";
+        if (health >= 60) return "warn";
+        if (health >= 40) return "high";
+        return "crit";
+      }
+      function kpiBarColor(state) {
+        return { ok:"#10b981", warn:"#eab308", high:"#f97316", crit:"#ef4444" }[state] || "#10b981";
+      }
+      function setCardState(cardEl, state) {
+        cardEl.classList.remove("state-ok","state-warn","state-high","state-crit");
+        cardEl.classList.add("state-" + state);
+      }
+      function animateBar(barEl, pct, color) {
+        barEl.style.background = color;
+        // Delay triggers CSS transition
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => { barEl.style.width = Math.min(pct, 100).toFixed(1) + "%"; });
+        });
+      }
+
+      function renderCVKpis(rows) {
+        if (!rows || rows.length === 0) return;
+        el("cvKpiRow").style.display = "";
+
+        // --- KPI 1: Salud Global (100 - avg out_pct) ---
+        const avgOut = rows.reduce((s, r) => s + (parseFloat(r.out_pct) || 0), 0) / rows.length;
+        const health = Math.max(0, 100 - avgOut);
+        const hState = kpiStateHealth(health);
+        const hEmoji = { ok:"🛡️", warn:"⚠️", high:"🔶", crit:"🚨" }[hState];
+        el("cvKpiHealthIcon").textContent = hEmoji;
+        el("cvKpiHealthVal").textContent = health.toFixed(1) + "%";
+        el("cvKpiHealthSub").textContent = health >= 80 ? "Proceso estable ✓"
+                                         : health >= 60 ? "Atención recomendada"
+                                         : health >= 40 ? "Intervención necesaria"
+                                         : "Estado crítico — actuar ya";
+        setCardState(el("cvKpiHealth"), hState);
+        animateBar(el("cvKpiHealthBar"), health, kpiBarColor(hState));
+
+        // --- KPI 2: Variables Críticas (out_pct ≥ 75%) ---
+        const critVars = rows.filter(r => (parseFloat(r.out_pct) || 0) >= 75);
+        const critCount = critVars.length;
+        const cState = critCount === 0 ? "ok" : critCount <= 1 ? "warn" : critCount <= 3 ? "high" : "crit";
+        el("cvKpiCritVal").textContent = critCount + " / " + rows.length;
+        el("cvKpiCritSub").textContent = critCount === 0 ? "Ninguna en alerta 🎉" : "con ≥75% fuera de rango";
+        setCardState(el("cvKpiCritCard"), cState);
+        const badgesEl = el("cvKpiCritBadges");
+        badgesEl.innerHTML = critVars.slice(0, 4).map(r =>
+          `<span class="cv-kpi-badge">${cvDeviceIcon(r.device)} ${r.device}</span>`
+        ).join("") + (critVars.length > 4 ? `<span class="cv-kpi-badge">+${critVars.length - 4}</span>` : "");
+
+        // --- KPI 3: Equipo Más Problemático ---
+        const byDevice = {};
+        rows.forEach(r => {
+          const d = r.device || "Desconocido";
+          if (!byDevice[d]) byDevice[d] = [];
+          byDevice[d].push(parseFloat(r.out_pct) || 0);
+        });
+        let worstDevice = "—", worstPct = 0;
+        Object.entries(byDevice).forEach(([d, vals]) => {
+          const avg = vals.reduce((a,b) => a+b, 0) / vals.length;
+          if (avg > worstPct) { worstPct = avg; worstDevice = d; }
+        });
+        const wState = kpiState(worstPct);
+        el("cvKpiWorstIcon").textContent = cvDeviceIcon(worstDevice);
+        el("cvKpiWorstVal").textContent = worstDevice;
+        el("cvKpiWorstSub").textContent = worstPct.toFixed(1) + "% desviación promedio";
+        setCardState(el("cvKpiWorstCard"), wState);
+
+        // --- KPI 4: Promedio % Fuera de Rango ---
+        const aState = kpiState(avgOut);
+        el("cvKpiAvgVal").textContent = avgOut.toFixed(2) + "%";
+        el("cvKpiAvgSub").textContent = "entre " + rows.length + " variables analizadas";
+        setCardState(el("cvKpiAvgCard"), aState);
+        animateBar(el("cvKpiAvgBar"), avgOut, kpiBarColor(aState));
+
+        // --- KPI 5: Variables en Rango ---
+        const okVars = rows.filter(r => (parseFloat(r.out_pct) || 0) === 0);
+        const okCount = okVars.length;
+        const oRatio = (okCount / rows.length) * 100;
+        const oState = oRatio === 100 ? "ok" : oRatio >= 60 ? "warn" : oRatio >= 30 ? "high" : "crit";
+        el("cvKpiOkIcon").textContent = okCount === rows.length ? "✅" : okCount > 0 ? "🟡" : "❌";
+        el("cvKpiOkVal").textContent = okCount + " / " + rows.length;
+        el("cvKpiOkSub").textContent = okCount === rows.length
+          ? "¡Todas en rango! 🎉"
+          : okCount === 0 ? "Ninguna dentro del rango"
+          : "operando dentro de límites";
+        setCardState(el("cvKpiOkCard"), oState);
+      }
+
+      function clearCVKpis() {
+        el("cvKpiRow").style.display = "none";
+        ["cvKpiHealth","cvKpiCritCard","cvKpiWorstCard","cvKpiAvgCard","cvKpiOkCard"]
+          .forEach(id => { const c = el(id); c.classList.remove("state-ok","state-warn","state-high","state-crit"); });
+        el("cvKpiHealthBar").style.width = "0%";
+        el("cvKpiAvgBar").style.width = "0%";
+        el("cvKpiCritBadges").innerHTML = "";
       }
 
       function renderCVPlots(plots) {
@@ -2477,6 +2969,7 @@
         el("cvGrid").innerHTML = "";
         el("cvAICard").style.display = "none";
         el("cvAI").innerHTML = "";
+        clearCVKpis();
 
         setStatus("busy", "Generando...");
         setBtnBusy("btnGenCV", true);
@@ -2503,6 +2996,7 @@
 
           if (Array.isArray(data.summary)) {
             renderCVSummary(data.summary);
+            renderCVKpis(data.summary);
             el("cvSummaryCard").style.display = "";
           }
 
@@ -2833,10 +3327,59 @@
           const summary = data.summary;
 
           if (summary) {
-            el("kpiRangeOee").textContent = toPct(summary.OEE);
+            // Helper para pintar una tarjeta OEE con color semáforo
+            function paintOeeKpi(cardId, iconId, barId, subId, value, thresholds, icons, subs) {
+              const pct = parseFloat(value) || 0;
+              const card = el(cardId);
+              const bar  = el(barId);
+              if (!card) return;
+              card.classList.remove("state-ok","state-warn","state-high","state-crit");
+              let state, icon, sub;
+              if (pct >= thresholds[0]) { state="state-ok";   icon=icons[0]; sub=subs[0]; }
+              else if (pct >= thresholds[1]) { state="state-warn";  icon=icons[1]; sub=subs[1]; }
+              else if (pct >= thresholds[2]) { state="state-high";  icon=icons[2]; sub=subs[2]; }
+              else                           { state="state-crit";  icon=icons[3]; sub=subs[3]; }
+              card.classList.add(state);
+              if (el(iconId)) el(iconId).textContent = icon;
+              if (el(subId))  el(subId).textContent  = sub;
+              if (bar) { bar.style.width = Math.min(pct,100)+"%" ; bar.style.background = state==="state-ok"?"#10b981":state==="state-warn"?"#eab308":state==="state-high"?"#f97316":"#ef4444"; }
+            }
+
+            const oeeVal  = parseFloat(summary.OEE)          || 0;
+            const availVal = parseFloat(summary.Availability) || 0;
+            const perfVal  = parseFloat(summary.Performance)  || 0;
+            const qualVal  = parseFloat(summary.Quality)      || 0;
+
+            el("kpiRangeOee").textContent  = toPct(summary.OEE);
             el("kpiRangeAvail").textContent = toPct(summary.Availability);
-            el("kpiRangePerf").textContent = toPct(summary.Performance);
-            el("kpiRangeQual").textContent = toPct(summary.Quality);
+            el("kpiRangePerf").textContent  = toPct(summary.Performance);
+            el("kpiRangeQual").textContent  = toPct(summary.Quality);
+
+            // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
+            paintOeeKpi("oeeKpiOeeCard","oeeKpiOeeIcon","oeeKpiOeeBar","oeeKpiOeeSub", oeeVal,
+              [65,50,35],
+              ["🏆","🏭","⚠️","🚨"],
+              ["Clase Mundial ✓","Aceptable — mejora posible","Por debajo del estándar","Crítico — intervención urgente"]
+            );
+            // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
+            paintOeeKpi("oeeKpiAvailCard","oeeKpiAvailIcon","oeeKpiAvailBar","oeeKpiAvailSub", availVal,
+              [90,75,60],
+              ["✅","⏱️","⚠️","🔴"],
+              ["Disponibilidad óptima","Pérdida leve por paros","Paros frecuentes detectados","Disponibilidad crítica"]
+            );
+            // Desempeño: ≥95 ok, ≥80 warn, ≥65 high, <65 crit
+            paintOeeKpi("oeeKpiPerfCard","oeeKpiPerfIcon","oeeKpiPerfBar","oeeKpiPerfSub", perfVal,
+              [95,80,65],
+              ["⚡","📈","⚠️","🐢"],
+              ["Ritmo nominal alcanzado","Micro-paros presentes","Velocidad reducida","Bajo rendimiento operativo"]
+            );
+            // Calidad: ≥99 ok, ≥95 warn, ≥90 high, <90 crit
+            paintOeeKpi("oeeKpiQualCard","oeeKpiQualIcon","oeeKpiQualBar","oeeKpiQualSub", qualVal,
+              [99,95,90],
+              ["✅","🎯","⚠️","❌"],
+              ["Calidad excelente","Descarte mínimo tolerable","Revisión de proceso necesaria","Alta tasa de rechazo"]
+            );
+
             el("oeeDayKpis").style.display = "";
           }
 
@@ -2846,7 +3389,56 @@
             return;
           }
 
-          buildTable(el("oeeDayHead"), el("oeeDayBody"), cols, rows, LABEL_OEE_DAY);
+          // Renderizado Premium de la tabla OEE
+          function renderOEEDayTable(cols, rows) {
+            const thead = el("oeeDayHead");
+            const tbody = el("oeeDayBody");
+            thead.innerHTML = "";
+            tbody.innerHTML = "";
+            
+            // Headers
+            cols.forEach(c => {
+              const th = document.createElement("th");
+              th.textContent = LABEL_OEE_DAY[c] || c;
+              thead.appendChild(th);
+            });
+            
+            // Rows
+            rows.forEach(r => {
+              const tr = document.createElement("tr");
+              cols.forEach((c, idx) => {
+                const td = document.createElement("td");
+                let val = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
+                
+                // Aplicar estilos premium segun la columna
+                if (c === "OEE" || c === "Disponibilidad" || c === "Desempeno" || c === "Producto Conforme") {
+                  let pct = parseFloat(val);
+                  if (!isNaN(pct)) {
+                    let color = "#10b981"; // default ok
+                    if (c === "OEE") { color = pct>=65?"#10b981":pct>=50?"#eab308":pct>=35?"#f97316":"#ef4444"; }
+                    else if (c === "Disponibilidad") { color = pct>=90?"#10b981":pct>=75?"#eab308":pct>=60?"#f97316":"#ef4444"; }
+                    else if (c === "Desempeno") { color = pct>=95?"#10b981":pct>=80?"#eab308":pct>=65?"#f97316":"#ef4444"; }
+                    else if (c === "Producto Conforme") { color = pct>=99?"#10b981":pct>=95?"#eab308":pct>=90?"#f97316":"#ef4444"; }
+                    td.innerHTML = `<span style="color: ${color}; font-weight: 800; font-size: 1.05em;">${val}</span>`;
+                  } else { td.textContent = val; }
+                } else if (c === "Turno") {
+                  let icon = "📡";
+                  if (val.includes("Primer")) icon = "☀️";
+                  else if (val.includes("Segundo")) icon = "🌇";
+                  else if (val.includes("Tercer")) icon = "🌙";
+                  td.innerHTML = `<span style="font-weight: 600;">${icon} ${val}</span>`;
+                } else if (c === "Fecha") {
+                  td.innerHTML = `<span style="color: var(--muted); font-family: monospace;">${val}</span>`;
+                } else {
+                  td.textContent = val;
+                }
+                tr.appendChild(td);
+              });
+              tbody.appendChild(tr);
+            });
+          }
+
+          renderOEEDayTable(cols, rows);
           el("oeeDayTableCard").style.display = "";
 
           if (data.ai_analysis && String(data.ai_analysis).trim()) {
@@ -2883,13 +3475,32 @@
       // ===========================
       el("btnDlCvPdf")?.addEventListener("click", async () => {
         if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
-        setBtnBusy("btnDlCvPdf", true, "Descargando...");
+        setBtnBusy("btnDlCvPdf", true, "Capturando...");
         try {
+          let kpiSnapshot = null;
+          let tableSnapshot = null;
+          try {
+            const kpiRow = el("cvKpiRow");
+            if (kpiRow) {
+              const canvas = await html2canvas(kpiRow, { scale: 2, backgroundColor: "#0e9e82" });
+              kpiSnapshot = canvas.toDataURL("image/png");
+              console.log("KPI Snapshot capturado");
+            }
+            const tbl = el("cvTable"); // Capturamos la tabla directamente
+            if (tbl) {
+              const canvas = await html2canvas(tbl, { scale: 2, backgroundColor: "#ffffff" });
+              tableSnapshot = canvas.toDataURL("image/png");
+              console.log("Table Snapshot capturado");
+            }
+          } catch(e) { console.error("Error capturando visuales:", e); }
+
           await downloadFrom(`api/report/cv/day/`, `control_vars_${lastCvDay}.pdf`, {
             day: lastCvDay,
             format: "pdf",
             summary: lastCvData.summary,
-            ai_analysis: lastCvData.ai_analysis
+            ai_analysis: lastCvData.ai_analysis,
+            kpi_snapshot: kpiSnapshot,
+            table_snapshot: tableSnapshot
           });
         } finally {
           setBtnBusy("btnDlCvPdf", false);
@@ -2920,7 +3531,30 @@
         if (!lastOeeFrom || !lastOeeDayData) return alert("Consulta primero un periodo.");
         setBtnBusy("btnDlOeeDayPdf", true, "Capturando...");
         try {
-          // Captura nativa de los iframes y canvases en toda la pestaña Histórico
+          let kpiSnapshot = null;
+          let tableSnapshot = null;
+
+          // 1. Captura de tarjetas KPI de OEE
+          const kpiGrid = el("oeeDayKpis");
+          if (kpiGrid) {
+            try {
+              const canvas = await html2canvas(kpiGrid, { scale: 2, backgroundColor: "#ffffff" });
+              kpiSnapshot = canvas.toDataURL("image/png");
+              console.log("OEE KPI Snapshot capturado");
+            } catch(e) { console.error("Error capturando KPIs OEE:", e); }
+          }
+
+          // 2. Captura de tabla de detalle por turno
+          const tblCard = el("oeeDayTableCard");
+          if (tblCard) {
+            try {
+              const canvas = await html2canvas(tblCard, { scale: 2, backgroundColor: "#ffffff" });
+              tableSnapshot = canvas.toDataURL("image/png");
+              console.log("OEE Table Snapshot capturado");
+            } catch(e) { console.error("Error capturando tabla OEE:", e); }
+          }
+
+          // 3. Captura de gráficas del contenedor principal
           const images = await collectDashboardSnapshots("tabContentOeeHist");
 
           await downloadFrom(`api/report/oee/day/`, `oee_range_${lastOeeFrom}_to_${lastOeeTo}.pdf`, {
@@ -2933,7 +3567,9 @@
             columns: lastOeeDayData.columns,
             ai_analysis: lastOeeDayData.ai_analysis,
             provided_stops: lastOeeDayData.stop_reasons,
-            images: images // Pasamos las capturas reales
+            images: images,
+            kpi_snapshot: kpiSnapshot,
+            table_snapshot: tableSnapshot
           });
         } finally {
           setBtnBusy("btnDlOeeDayPdf", false);

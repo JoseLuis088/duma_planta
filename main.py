@@ -1075,6 +1075,73 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
                                     "output": json.dumps({"error": f"Sin datos de parquet para {cv_day}: {e}"})
                                 })
 
+                        elif name == "list_control_variables":
+                            catalog = get_all_control_variables()
+                            tool_outputs.append({
+                                "tool_call_id": tool.id,
+                                "output": json.dumps({
+                                    "total": len(catalog),
+                                    "variables": [
+                                        {
+                                            "var_id":      c["var_id"],
+                                            "name":        c["name"],
+                                            "device":      c["device"],
+                                            "min":         c.get("min_val"),
+                                            "max":         c.get("max_val"),
+                                            "is_critical": bool(c.get("is_critical")),
+                                        }
+                                        for c in catalog
+                                    ]
+                                }, ensure_ascii=False, default=str)
+                            })
+
+                        elif name == "plot_variable":
+                            pv_var  = args.get("var_id") or args.get("variable_name") or ""
+                            pv_start = args.get("start_day") or args.get("day") or ""
+                            pv_end   = args.get("end_day") or pv_start
+                            if not pv_var:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({"error": "Falta el parámetro var_id o variable_name."})
+                                })
+                            elif not pv_start:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({
+                                        "error": "missing_dates",
+                                        "message": "Para generar la gráfica necesito el rango de fechas. ¿Me puedes indicar desde qué fecha hasta qué fecha quieres verla? (formato YYYY-MM-DD)"
+                                    })
+                                })
+                            else:
+                                result = plot_variable_polars(pv_var, pv_start, pv_end)
+                                if result.get("error"):
+                                    tool_outputs.append({
+                                        "tool_call_id": tool.id,
+                                        "output": json.dumps(result, ensure_ascii=False)
+                                    })
+                                else:
+                                    url = result["url"]
+                                    if url not in images_out:
+                                        images_out.append(url)
+                                        captions_out.append(result["title"])
+                                    tool_outputs.append({
+                                        "tool_call_id": tool.id,
+                                        "output": json.dumps({
+                                            "status":  "ok",
+                                            "url":     url,
+                                            "title":   result["title"],
+                                            "points":  result["points"],
+                                            "out_pct": result["out_pct"],
+                                            "range":   result["range"],
+                                            "message": (
+                                                f"Gráfica generada: {result['title']} | "
+                                                f"Período: {result['range']} | "
+                                                f"{result['points']} lecturas | "
+                                                f"{result['out_pct']}% fuera del rango operativo."
+                                            )
+                                        }, ensure_ascii=False)
+                                    })
+
                         else:
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
@@ -1110,7 +1177,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
     # ------------------------ Cuerpo principal -------------------------------
     try:
         # 1) Thread
-        if thread_id:
+        if thread_id and str(thread_id).startswith("thread_"):
             t_id = thread_id
         else:
             t = client.beta.threads.create()
@@ -1394,6 +1461,262 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
 #   - GET /Bafar   -> index
 #   - GET /Bafar/  -> index
 # ---------------------------------------------------------
+
+# =========================
+# Variable Catalog Helper (all variables, not just critical)
+# =========================
+def get_all_control_variables() -> list[dict]:
+    """Retorna el catálogo completo de ind.ProductionLineControlVariables como lista de dicts."""
+    sql = """
+    SELECT
+        UPPER(CAST(ProductionLineControlVariableId AS VARCHAR(36))) AS var_id,
+        ISNULL(Name, '')       AS name,
+        ISNULL(DeviceName, '') AS device,
+        ISNULL(Tag, '')        AS tag,
+        ISNULL(MinValue,          0) AS min_val,
+        ISNULL(MaxValue,          0) AS max_val,
+        ISNULL(CriticalMinValue,  0) AS crit_min,
+        ISNULL(CriticalMaxValue,  0) AS crit_max,
+        CAST(IsCritical AS INT)      AS is_critical,
+        CAST(Active     AS INT)      AS active
+    FROM ind.ProductionLineControlVariables
+    WHERE Active = 1
+    ORDER BY IsCritical DESC, DeviceName, Name
+    """
+    try:
+        rows, cols = run_sql(sql)
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        logging.warning(f"get_all_control_variables error: {e}")
+        return []
+
+
+# =========================
+# plot_variable_polars — Polars + Plotly for ANY variable
+# =========================
+def plot_variable_polars(
+    var_id: str,
+    start_day: str,
+    end_day: str,
+) -> dict:
+    """
+    Descarga los Parquet del rango [start_day, end_day] usando Polars (mucho más rápido que Pandas),
+    filtra la variable solicitada, genera gráfico Plotly y devuelve:
+      { "url": "static/plots/...", "title": "...", "points": N, "out_pct": X, "error": None }
+    """
+    try:
+        import polars as pl
+        from azure.storage.blob import BlobServiceClient
+        import plotly.graph_objects as go
+        from datetime import datetime, timedelta
+
+        # 1. Catálogo — buscar metadata de la variable
+        catalog = get_all_control_variables()
+        var_id_up = var_id.strip().upper()
+        meta = next((c for c in catalog if c["var_id"] == var_id_up), None)
+        if not meta:
+            # Búsqueda más flexible: separar por palabras y buscar coincidencias
+            search_words = set(re.findall(r'\w+', var_id.lower()))
+            best_match = None
+            max_score = 0
+            
+            for c in catalog:
+                cat_text = (c["name"] + " " + c["device"]).lower()
+                cat_words = set(re.findall(r'\w+', cat_text))
+                # Intersección de palabras
+                score = len(search_words.intersection(cat_words))
+                if score > max_score:
+                    max_score = score
+                    best_match = c
+            
+            if best_match and max_score >= 1: # Al menos una palabra coincide
+                meta = best_match
+                var_id_up = meta["var_id"]
+            else:
+                return {"error": f"Variable '{var_id}' no encontrada en el catálogo. Intenta usar list_control_variables primero."}
+
+        var_name   = meta["name"]
+        device     = meta["device"]
+        op_min     = float(meta.get("min_val", 0))
+        op_max     = float(meta.get("max_val", 0))
+
+        # 2. Generar lista de días en el rango
+        try:
+            d0 = datetime.strptime(start_day, "%Y-%m-%d").date()
+            d1 = datetime.strptime(end_day,   "%Y-%m-%d").date()
+        except ValueError:
+            return {"error": "Formato de fecha inválido. Usa YYYY-MM-DD."}
+
+        days = []
+        cur = d0
+        while cur <= d1:
+            days.append(cur.isoformat())
+            cur += timedelta(days=1)
+
+        if len(days) > 14:
+            return {"error": "El rango máximo es 14 días para graficar variables."}
+
+        # 3. Descargar Parquets con BlobServiceClient
+        ADLS_URL = os.getenv("ADLS_ACCOUNT_URL") or os.getenv("AZURE_STORAGE_URL", "")
+        ADLS_KEY  = os.getenv("ADLS_ACCOUNT_KEY") or os.getenv("AZURE_STORAGE_KEY", "")
+        CONTAINER = os.getenv("ADLS_CONTAINER", "duma-planta")
+
+        blob_svc = BlobServiceClient(account_url=ADLS_URL, credential=ADLS_KEY)
+        container_client = blob_svc.get_container_client(CONTAINER)
+
+        tmp_dir = os.path.join("static", "tmp_parquets")
+        os.makedirs(tmp_dir, exist_ok=True)
+
+        local_files = []
+
+        for day in days:
+            prefix = f"control-variable-reads/{day}/"
+            try:
+                blobs = list(container_client.list_blobs(name_starts_with=prefix))
+            except Exception:
+                continue
+
+            for b in blobs:
+                if not b.name.endswith(".parquet"):
+                    continue
+                
+                safe_bname = b.name.replace("/", "_").replace(" ", "")
+                local_path = os.path.join(tmp_dir, safe_bname)
+                
+                # Verificamos si existe y no es un archivo vacío/roto (> 100 bytes)
+                if os.path.exists(local_path) and os.path.getsize(local_path) > 100:
+                    local_files.append(local_path)
+                    continue
+                    
+                try:
+                    bc = container_client.get_blob_client(b.name)
+                    with open(local_path, "wb") as f:
+                        f.write(bc.download_blob().readall())
+                    local_files.append(local_path)
+                except Exception:
+                    pass
+
+        if not local_files:
+            return {"error": f"No se encontraron datos de Parquet para el rango {start_day} → {end_day}."}
+
+        # 4. Leer y filtrar con Polars (rápido y eficiente en memoria)
+        frames = []
+        for fpath in local_files:
+            try:
+                lf = pl.scan_parquet(fpath)
+                # Filtrar por variable
+                lf = lf.filter(
+                    pl.col("ProductionLineControlVariableId").cast(pl.Utf8).str.to_uppercase() == var_id_up
+                )
+                df = lf.select([
+                    pl.col("LocalTime").cast(pl.Utf8).alias("LocalTime"),
+                    pl.col("Value").cast(pl.Float64).alias("Value"),
+                ]).collect()
+                if df.height > 0:
+                    frames.append(df)
+            except Exception:
+                continue
+
+        if not frames:
+            return {"error": f"No hay lecturas de '{var_name}' ({device}) en el rango indicado."}
+
+        # 5. Unir y ordenar
+        df_all = pl.concat(frames).sort("LocalTime")
+        times  = df_all["LocalTime"].to_list()
+        values = df_all["Value"].to_list()
+
+        # 6. Calcular % fuera de rango operativo
+        total  = len(values)
+        out_of = sum(1 for v in values if v is not None and (v < op_min or v > op_max))
+        out_pct = round(out_of / total * 100, 2) if total > 0 else 0.0
+
+        # Clasificar puntos
+        times_ok, vals_ok, times_out, vals_out = [], [], [], []
+        for t, v in zip(times, values):
+            if v is None:
+                continue
+            if v < op_min or v > op_max:
+                times_out.append(t); vals_out.append(v)
+            else:
+                times_ok.append(t);  vals_ok.append(v)
+
+        # 7. Plotly — mismo estilo que el módulo crítico
+        fig = go.Figure()
+
+        # Banda operativa
+        if times:
+            fig.add_trace(go.Scatter(
+                x=[times[0], times[-1], times[-1], times[0], times[0]],
+                y=[op_min, op_min, op_max, op_max, op_min],
+                fill="toself",
+                fillcolor="rgba(34,197,94,0.08)",
+                line=dict(color="rgba(34,197,94,0.4)", width=1.5),
+                name="Rango operativo", mode="lines", hoverinfo="skip"
+            ))
+
+        # Lecturas normales
+        if times_ok:
+            fig.add_trace(go.Scatter(
+                x=times_ok, y=vals_ok,
+                mode="lines+markers",
+                name="Valor",
+                line=dict(color="#1abc9c", width=1.8),
+                marker=dict(size=4, color="#1abc9c"),
+            ))
+
+        # Lecturas fuera de rango
+        if times_out:
+            fig.add_trace(go.Scatter(
+                x=times_out, y=vals_out,
+                mode="markers",
+                name="Lecturas fuera de rango",
+                marker=dict(size=7, color="#c084fc", symbol="circle",
+                            line=dict(width=1, color="#a855f7")),
+            ))
+
+        # Layout dark premium
+        period_label = start_day if start_day == end_day else f"{start_day} → {end_day}"
+        fig.update_layout(
+            title=dict(text=f"{var_name} — {device}", font=dict(size=15, color="#e2e8f0"), x=0.02),
+            paper_bgcolor="#1a1a2e", plot_bgcolor="#1a1a2e",
+            font=dict(color="#e2e8f0", size=12),
+            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#cbd5e1")),
+            xaxis=dict(gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.1)"),
+            yaxis=dict(title="Valor", gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.1)"),
+            margin=dict(l=50, r=30, t=60, b=50),
+            hovermode="x unified",
+            annotations=[dict(
+                text=f"{period_label} | {total} lecturas | {out_pct}% fuera de rango",
+                xref="paper", yref="paper", x=0.5, y=1.06,
+                showarrow=False, font=dict(size=10, color="#94a3b8")
+            )]
+        )
+
+        # 8. Guardar HTML
+        safe_var  = re.sub(r"[^a-z0-9_]", "_", var_name.lower().strip())
+        safe_dev  = re.sub(r"[^a-z0-9_]", "_", device.lower().strip())
+        fname     = f"agente_{start_day}_{end_day}_{safe_dev}_{safe_var}.html"
+        out_path  = os.path.join(PLOTS_DIR, fname)
+        fig.write_html(out_path, include_plotlyjs="cdn", full_html=True)
+
+        return {
+            "url":     f"static/plots/{fname}",
+            "title":   f"{var_name} — {device}",
+            "points":  total,
+            "out_pct": out_pct,
+            "device":  device,
+            "name":    var_name,
+            "range":   period_label,
+            "error":   None,
+        }
+
+    except ImportError:
+        return {"error": "Polars no está instalado. Ejecuta: pip install polars"}
+    except Exception as e:
+        logging.exception("plot_variable_polars error")
+        return {"error": str(e)}
+
+
 # =========================
 # Control Variables module (Critical variables: Parquet + Plotly)
 # =========================
@@ -1411,17 +1734,89 @@ import tempfile
 
 ShiftName = Literal["Primer", "Segundo", "Tercer"]
 
-CRITICAL_VARS = {
-    "3AB4E612-5987-432C-8EF0-28EE3D74C313": {"name": "Temperatura del agua", "device": "Chiller", "min": 0.00, "max": 4.00, "crit_min": -1.00, "crit_max": 5.00},
-    "9057486C-3A01-417D-B5E0-33F848EB19FB": {"name": "Alertas", "device": "Detector de metales", "min": -1.00, "max": 1.00, "crit_min": -2.00, "crit_max": 1.00},
-    "11A4996C-FA1B-47D9-9A60-125D66F41F84": {"name": "Temperatura interna", "device": "IQF", "min": -42.00, "max": -20.00, "crit_min": -40.00, "crit_max": -18.00},
-    "F71768ED-3006-4880-A2FD-9F62344870CC": {"name": "Tiempo de permanencia del producto", "device": "IQF", "min": 31.00, "max": 90.00, "crit_min": 30.00, "crit_max": 95.00},
-    "AB2D10BC-B497-4049-AD39-554C2E4BCC24": {"name": "Temperatura del producto", "device": "Mezclador", "min": -4.50, "max": 4.00, "crit_min": -5.00, "crit_max": 5.00},
-    "5EF87231-BD89-41F1-B0D6-C5371B237684": {"name": "Temperatura del producto", "device": "Molino", "min": -18.00, "max": -10.00, "crit_min": -20.00, "crit_max": -8.00},
-    "D592EFE2-94FF-4DBF-95C8-C1C01FE37D4F": {"name": "Temperatura del agua", "device": "Volteador", "min": 0.00, "max": 25.00, "crit_min": -1.00, "crit_max": 26.00},
-    "7AA64D76-1AE9-41DA-85AA-F53A9B5F0162": {"name": "Tiempo de hidratación", "device": "Volteador", "min": -0.50, "max": 15.00, "crit_min": -1.00, "crit_max": 20.00},
-}
-CRITICAL_VAR_IDS = set(k.strip().lower() for k in CRITICAL_VARS.keys())
+# ---------------------------------------------------------------------------
+# Variables Críticas — cargadas dinámicamente desde ind.ProductionLineControlVariables
+# WHERE IsCritical = 1  (en lugar de un diccionario hardcodeado)
+# ---------------------------------------------------------------------------
+_critical_vars_cache: dict | None = None
+
+def _load_critical_vars_from_db() -> dict:
+    """
+    Consulta ind.ProductionLineControlVariables WHERE IsCritical = 1
+    y devuelve un dict con la misma estructura que antes:
+      { "UUID-UPPER": {name, device, min, max, crit_min, crit_max}, ... }
+    """
+    sql = """
+    SELECT
+        UPPER(CAST(ProductionLineControlVariableId AS VARCHAR(36))) AS var_id,
+        ISNULL(Name, '')       AS name,
+        ISNULL(DeviceName, '') AS device,
+        ISNULL(MinValue,      0) AS min_val,
+        ISNULL(MaxValue,      0) AS max_val,
+        ISNULL(CriticalMinValue, 0) AS crit_min,
+        ISNULL(CriticalMaxValue, 0) AS crit_max
+    FROM ind.ProductionLineControlVariables
+    WHERE IsCritical = 1
+      AND Active = 1
+    ORDER BY DeviceName, Name
+    """
+    try:
+        rows, cols = run_sql(sql)
+        result = {}
+        for row in rows:
+            r = dict(zip(cols, row))
+            var_id = str(r["var_id"]).strip().upper()
+            result[var_id] = {
+                "name":     str(r["name"]).strip(),
+                "device":   str(r["device"]).strip(),
+                "min":      float(r["min_val"]),
+                "max":      float(r["max_val"]),
+                "crit_min": float(r["crit_min"]),
+                "crit_max": float(r["crit_max"]),
+            }
+        return result
+    except Exception as e:
+        print(f"[WARN] No se pudo cargar CRITICAL_VARS desde BD, usando fallback vacío: {e}")
+        return {}
+
+def get_critical_vars() -> dict:
+    """Devuelve las variables críticas, cargándolas de la BD la primera vez (cache en memoria)."""
+    global _critical_vars_cache
+    if _critical_vars_cache is None:
+        _critical_vars_cache = _load_critical_vars_from_db()
+        print(f"[INFO] CRITICAL_VARS cargadas desde BD: {len(_critical_vars_cache)} variables")
+    return _critical_vars_cache
+
+def reload_critical_vars() -> dict:
+    """Fuerza recarga del cache (útil si se cambia IsCritical en BD sin reiniciar servidor)."""
+    global _critical_vars_cache
+    _critical_vars_cache = None
+    return get_critical_vars()
+
+# Alias de compatibilidad: se comporta como el dict original al ser accedido
+# pero ahora es dinámico desde la BD.
+class _CriticalVarsProxy(dict):
+    """Proxy que delega a get_critical_vars() en cada acceso, manteniendo compatibilidad total."""
+    def __getitem__(self, key):        return get_critical_vars()[key]
+    def __contains__(self, key):      return key in get_critical_vars()
+    def __iter__(self):               return iter(get_critical_vars())
+    def __len__(self):                return len(get_critical_vars())
+    def items(self):                  return get_critical_vars().items()
+    def keys(self):                   return get_critical_vars().keys()
+    def values(self):                 return get_critical_vars().values()
+    def get(self, key, default=None): return get_critical_vars().get(key, default)
+
+CRITICAL_VARS = _CriticalVarsProxy()
+
+@property
+def CRITICAL_VAR_IDS():
+    return set(k.strip().lower() for k in get_critical_vars().keys())
+
+# Compatibilidad directa (se recalcula en cada uso para reflejar el estado actual)
+def _get_critical_var_ids():
+    return set(k.strip().lower() for k in get_critical_vars().keys())
+
+CRITICAL_VAR_IDS = _get_critical_var_ids()
 
 def _normalize_shift(shift: str) -> ShiftName:
     s = (shift or "").strip().lower()
@@ -1494,7 +1889,7 @@ def load_critical_reads_for_shift(day: str, shift: ShiftName) -> pd.DataFrame:
 
     parquet_path = download_turn_parquet(day, shift)
 
-    crit_ids = list(CRITICAL_VAR_IDS)
+    crit_ids = list(_get_critical_var_ids())
     in_list = ", ".join([f"'{x}'" for x in crit_ids])
 
     con = duckdb.connect()
@@ -2792,6 +3187,19 @@ ORDER BY Duracion_Min DESC;
     return {"data": data, "total_min": round(total_min, 1)}
 
 
+@app.get("/api/cv/reload-critical-vars/")
+async def api_reload_critical_vars():
+    """Fuerza recarga de CRITICAL_VARS desde ind.ProductionLineControlVariables WHERE IsCritical=1."""
+    vars_dict = reload_critical_vars()
+    return {
+        "status": "ok",
+        "count": len(vars_dict),
+        "variables": [
+            {"id": k, "name": v["name"], "device": v["device"]}
+            for k, v in vars_dict.items()
+        ]
+    }
+
 @app.post("/api/cv/day/")
 async def api_control_variables_day(payload: dict):
     """Devuelve plots + resumen para rango de días de variables críticas."""
@@ -2989,13 +3397,14 @@ def _report_filename(prefix: str, ext: str) -> str:
 def _build_pdf_bytes(
     title: str,
     subtitle: str,
-    sections: List[dict],
+    sections: list,
     table_title: str,
-    table_rows: List[dict],
+    table_rows: list,
     logo_path: str | None = None,
     kpi_cards: list | None = None,
+    kpi_snapshot_path: str | None = None,
+    table_snapshot_path: str | None = None,
 ) -> bytes:
-    """PDF premium estilo Dashboard Duma."""
     import io
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib import colors
@@ -3005,19 +3414,22 @@ def _build_pdf_bytes(
     from reportlab.lib.units import inch
     from reportlab.lib.utils import ImageReader
     from datetime import datetime
+    import re, os
 
-    C_HDR   = colors.HexColor("#0d7a63")
+    C_HDR   = colors.HexColor("#0f766e")
     C_BRAND = colors.HexColor("#1abc9c")
     C_DARK  = colors.HexColor("#0e9e82")
-    C_TEXT  = colors.HexColor("#0f172a")
+    C_TEXT  = colors.HexColor("#334155")
     C_MUTED = colors.HexColor("#64748b")
-    C_LIGHT = colors.HexColor("#f0fdfa")
+    C_LIGHT = colors.HexColor("#f8fafc")
     C_WHITE = colors.white
     C_DIV   = colors.HexColor("#e2e8f0")
-    HDR_H   = 1.3 * inch
+    C_VAL   = colors.HexColor("#ea580c")
+    C_CARD_BG = colors.HexColor("#115e59")
+    HDR_H   = 1.1 * inch
 
     def _safe(s):
-        return (s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        return str(s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
     def _strip_md(s):
         s = re.sub(r"\*\*(.+?)\*\*", r"\1", s or "")
@@ -3028,10 +3440,10 @@ def _build_pdf_bytes(
     def on_page(c, doc):
         c.saveState()
         pw, ph = doc.pagesize
+        # Encabezado verde oscuro superior
         c.setFillColor(C_HDR)
         c.rect(0, ph - HDR_H, pw, HDR_H, fill=1, stroke=0)
-        c.setFillColor(C_BRAND)
-        c.rect(0, ph - HDR_H, pw, 3, fill=1, stroke=0)
+        
         LX, LY = 0.32*inch, ph - HDR_H + 0.18*inch
         LW, LH = 1.1*inch, 0.9*inch
         if logo_path and os.path.exists(logo_path):
@@ -3042,34 +3454,34 @@ def _build_pdf_bytes(
                 c.drawImage(logo_path, LX, LY, width=iw*sc, height=ih*sc, mask="auto")
             except Exception:
                 pass
+                
         TX = LX + LW + 0.15*inch
-        c.setStrokeColor(colors.HexColor("#2dd4bf"))
+        c.setStrokeColor(C_BRAND)
         c.setLineWidth(0.8)
         c.line(TX - 0.08*inch, ph - HDR_H + 0.12*inch, TX - 0.08*inch, ph - 0.14*inch)
+        
         c.setFillColor(C_WHITE)
-        c.setFont("Helvetica-Bold", 15)
-        c.drawString(TX, ph - 0.52*inch, _strip_md(title or "")[:80])
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(TX, ph - 0.45*inch, _strip_md(title or "")[:80])
         c.setFillColor(colors.HexColor("#a7f3d0"))
-        c.setFont("Helvetica", 8.5)
-        c.drawString(TX, ph - 0.74*inch, _strip_md(subtitle or "")[:100])
-        BX = pw - 1.15*inch
-        BY = ph - 0.72*inch
-        c.setFillColor(colors.HexColor("#0f766e"))
-        c.roundRect(BX - 0.05*inch, BY - 0.14*inch, 1.0*inch, 0.28*inch, 3, fill=1, stroke=0)
+        c.setFont("Helvetica", 9)
+        c.drawString(TX, ph - 0.65*inch, _strip_md(subtitle or "")[:100])
+        
+        BX = pw - 1.2*inch
+        BY = ph - 0.6*inch
+        c.setFillColor(C_DARK)
+        c.roundRect(BX - 0.05*inch, BY - 0.14*inch, 1.0*inch, 0.28*inch, 4, fill=1, stroke=0)
         c.setFillColor(colors.HexColor("#6ee7b7"))
-        c.setFont("Helvetica-Bold", 7.5)
-        c.drawString(BX + 0.04*inch, BY - 0.06*inch, "DUMA  AI")
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(BX + 0.15*inch, BY - 0.06*inch, "DUMA AI")
+        
         FY = 0.38*inch
         c.setStrokeColor(C_BRAND)
         c.setLineWidth(0.7)
         c.line(0.45*inch, FY + 0.2*inch, pw - 0.45*inch, FY + 0.2*inch)
-        try:
-            ds = datetime.now().strftime("%#d de %B de %Y")
-        except Exception:
-            ds = datetime.now().strftime("%d de %B de %Y")
         c.setFont("Helvetica", 7.5)
         c.setFillColor(C_MUTED)
-        c.drawString(0.45*inch, FY, "Duma AI  |  Reporte Confidencial  |  " + ds)
+        c.drawString(0.45*inch, FY, "Duma Analytics  |  Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M"))
         c.drawRightString(pw - 0.45*inch, FY, "Pagina " + str(doc.page))
         c.restoreState()
 
@@ -3078,50 +3490,78 @@ def _build_pdf_bytes(
         return ParagraphStyle(name, parent=ss[parent], **kw)
 
     ST = {
-        "H1":   sty("DH1","Heading1",  fontName="Helvetica-Bold", fontSize=14, leading=17,
-                    textColor=C_HDR,   spaceAfter=6, spaceBefore=4),
-        "H2":   sty("DH2","Heading2",  fontName="Helvetica-Bold", fontSize=11.5, leading=14,
-                    textColor=C_DARK,  spaceAfter=5, spaceBefore=5),
-        "H3":   sty("DH3","Heading3",  fontName="Helvetica-Bold", fontSize=10, leading=13,
-                    textColor=C_BRAND, spaceAfter=4),
-        "Body": sty("DB","BodyText",   fontName="Helvetica", fontSize=9.5, leading=13,
-                    textColor=C_TEXT),
-        "Blt":  sty("DBlt","BodyText", fontName="Helvetica", fontSize=9.5, leading=13,
-                    textColor=C_TEXT,  leftIndent=14, spaceAfter=3),
+        "H1":   sty("DH1","Heading1",  fontName="Helvetica-Bold", fontSize=15, leading=18, textColor=C_HDR, spaceAfter=8, spaceBefore=10),
+        "H2":   sty("DH2","Heading2",  fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=C_DARK, spaceAfter=6, spaceBefore=8),
+        "H3":   sty("DH3","Heading3",  fontName="Helvetica-Bold", fontSize=10.5, leading=13, textColor=C_BRAND, spaceAfter=4),
+        "Body": sty("DB","BodyText",   fontName="Helvetica", fontSize=9.5, leading=14, textColor=C_TEXT),
+        "Blt":  sty("DBlt","BodyText", fontName="Helvetica", fontSize=9.5, leading=14, textColor=C_TEXT, leftIndent=14, spaceAfter=4),
     }
 
     def md2fl(md):
+        """Convierte markdown a flowables de ReportLab con soporte mejorado de formato."""
         out = []
         if not md: return out
         md = md.replace("\r\n","\n").replace("\r","\n")
-        md = re.sub(r'([^\n])\s*###', r'\1\n\n###', md)
-        md = re.sub(r'([.?!:])\s*(\d+[\.\)]\s+)', r'\1\n\2', md)
-        md = re.sub(r'([.?!:])\s*([-*]\s+)', r'\1\n\2', md)
+        md = re.sub(r'([^\n])\s*(#{1,3} )', r'\1\n\n\2', md)
+        md = re.sub(r'([.?!:])\s*([-*\u2022\u2192][ \t])', r'\1\n\2', md)
+        md = re.sub(r'([.?!:])\s*(\d+[.):]\s)', r'\1\n\2', md)
+
         lines = [l.rstrip() for l in md.split("\n")]
         buf = []
+
+        def _inline(t):
+            t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
+            t = re.sub(r'\*(.+?)\*',    r'<i>\1</i>', t)
+            t = re.sub(r'__(.+?)__',    r'<b>\1</b>', t)
+            return t
+
+        def _text(raw):
+            t = re.sub(r'(?<!\w)\*{1,2}(?!\w)', '', raw)
+            t = re.sub(r'^#+\s*', '', t)
+            t = _safe(t.strip())
+            t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
+            t = re.sub(r'\*(.+?)\*',    r'<i>\1</i>', t)
+            return t
+
         def flush():
             if buf:
                 t = " ".join(b.strip() for b in buf).strip()
-                t = _safe(_strip_md(t))
-                if t and t != ".":
-                    out.append(Paragraph(t, ST["Body"]))
-                    out.append(Spacer(1, 6))
+                t = _text(t)
+                if t and t not in (".", ""):
+                    try:
+                        out.append(Paragraph(t, ST["Body"]))
+                    except Exception:
+                        out.append(Paragraph(_safe(_strip_md(t)), ST["Body"]))
+                    out.append(Spacer(1, 5))
                 buf.clear()
+
         for ln in lines:
             l = ln.strip()
-            if not l:               flush(); continue
-            if l.startswith("### "): flush(); out.append(Paragraph(_safe(_strip_md(l[4:])), ST["H3"])); out.append(Spacer(1,3)); continue
-            if l.startswith("## "):  flush(); out.append(Paragraph(_safe(_strip_md(l[3:])), ST["H2"])); out.append(Spacer(1,5)); continue
-            if l.startswith("# "):   flush(); out.append(Paragraph(_safe(_strip_md(l[2:])), ST["H1"])); out.append(Spacer(1,7)); continue
-            if l.startswith("- ") or l.startswith("* "):
+            if not l:
                 flush()
-                out.append(Paragraph("* " + _safe(_strip_md(l[2:])), ST["Blt"])); continue
-            m = re.match(r"^(\d+[\.\)])\s+(.*)", l)
-            if m:
+                continue
+            if l.startswith("### "):
+                flush(); out.append(Paragraph(_safe(_strip_md(l[4:])), ST["H3"])); out.append(Spacer(1, 4)); continue
+            if l.startswith("## "):
+                flush(); out.append(Paragraph(_safe(_strip_md(l[3:])), ST["H2"])); out.append(Spacer(1, 6)); continue
+            if l.startswith("# "):
+                flush(); out.append(Paragraph(_safe(_strip_md(l[2:])), ST["H1"])); out.append(Spacer(1, 8)); continue
+            if l.startswith("\u2192 ") or l.startswith("-> ") or l.startswith("\u2192"):
                 flush()
-                out.append(Paragraph(m.group(1) + " " + _safe(_strip_md(m.group(2))), ST["Blt"])); continue
+                content = l.lstrip("\u2192->").strip()
+                out.append(Paragraph("\u2192  " + _text(content), ST["Blt"])); continue
+            if l.startswith(("- ", "* ", "\u2022 ")):
+                flush()
+                out.append(Paragraph("\u2022  " + _text(l[2:]), ST["Blt"])); continue
+            m = re.match(r"^(\d+[.):]?)\s+(.*)", l)
+            if m and re.match(r"^\d", l):
+                flush()
+                out.append(Paragraph(m.group(1) + "  " + _text(m.group(2)), ST["Blt"])); continue
+            if re.match(r'^[-_]{3,}$', l):
+                flush(); out.append(Spacer(1, 6)); continue
             if l == ".": continue
             buf.append(l)
+
         flush()
         return out
 
@@ -3133,50 +3573,77 @@ def _build_pdf_bytes(
     doc = SimpleDocTemplate(
         buf_io, pagesize=psize,
         leftMargin=0.5*inch, rightMargin=0.5*inch,
-        topMargin=HDR_H + 0.25*inch, bottomMargin=0.82*inch,
+        topMargin=HDR_H + 0.3*inch, bottomMargin=0.82*inch,
     )
     story = []
 
-    # KPI Cards
-    if kpi_cards:
-        story.append(Spacer(1, 8))
-        NCOLS = min(len(kpi_cards), 3)
+    # KPI Cards (Snapshot Premium o Generadas)
+    if kpi_snapshot_path and os.path.exists(kpi_snapshot_path):
+        try:
+            ir = ImageReader(kpi_snapshot_path)
+            iw, ih = ir.getSize()
+            mxw = PW - 1.0*inch
+            sc = mxw / iw
+            story.append(Spacer(1, 10))
+            story.append(Image(kpi_snapshot_path, width=iw*sc, height=ih*sc))
+            story.append(Spacer(1, 15))
+        except Exception: pass
+    elif kpi_cards:
+        story.append(Spacer(1, 4))
+        NCOLS = min(len(kpi_cards), 4)
         avail = PW - 1.0*inch
         cw    = avail / NCOLS
-        lbl_st = sty("KL","Normal", fontName="Helvetica",     fontSize=7,   textColor=C_MUTED, alignment=1)
-        val_st = sty("KV","Normal", fontName="Helvetica-Bold",fontSize=20,  textColor=C_HDR,   alignment=1, leading=24)
-        sts_st = sty("KS","Normal", fontName="Helvetica",     fontSize=7.5, textColor=C_MUTED, alignment=1)
+        
+        lbl_st = sty("KL","Normal", fontName="Helvetica-Bold", fontSize=7.5, textColor=C_MUTED, alignment=0)
+        val_st = sty("KV","Normal", fontName="Helvetica-Bold", fontSize=22, textColor=C_VAL, alignment=0, leading=26)
+        sts_st = sty("KS","Normal", fontName="Helvetica", fontSize=8, textColor=C_TEXT, alignment=0)
+        
         groups, row_ = [], []
         for i, k in enumerate(kpi_cards):
             cell = [
+                Spacer(1, 4),
                 Paragraph(_safe((k.get("label") or "").upper()), lbl_st),
+                Spacer(1, 4),
                 Paragraph(_safe(k.get("value") or ""), val_st),
+                Spacer(1, 4),
                 Paragraph(_safe(k.get("status") or ""), sts_st),
+                Spacer(1, 4),
             ]
-            row_.append(cell)
+            
+            card_table = Table([[cell]], colWidths=[cw - 0.15*inch])
+            card_table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), C_WHITE),
+                ("ROUNDEDCORNERS", (0,0), (-1,-1), [8,8,8,8]),
+                ("BOX", (0,0), (-1,-1), 1, C_DIV),
+                ("LEFTPADDING", (0,0), (-1,-1), 12),
+                ("RIGHTPADDING", (0,0), (-1,-1), 12),
+                ("TOPPADDING", (0,0), (-1,-1), 10),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+            ]))
+            row_.append(card_table)
+            
             if len(row_) == NCOLS or i == len(kpi_cards)-1:
                 while len(row_) < NCOLS:
-                    row_.append([Paragraph("", ST["Body"])])
-                groups.append(row_); row_ = []
+                    row_.append(Paragraph("", ST["Body"]))
+                groups.append(row_)
+                row_ = []
+                
         for grp in groups:
-            t = Table([grp], colWidths=[cw]*NCOLS)
-            t.setStyle(TableStyle([
-                ("BACKGROUND",   (0,0),(-1,-1), colors.HexColor("#f8fffe")),
-                ("BOX",          (0,0),(-1,-1), 0.6, C_BRAND),
-                ("INNERGRID",    (0,0),(-1,-1), 0.4, C_DIV),
-                ("TOPPADDING",   (0,0),(-1,-1), 10),
-                ("BOTTOMPADDING",(0,0),(-1,-1), 10),
-                ("LEFTPADDING",  (0,0),(-1,-1), 6),
-                ("RIGHTPADDING", (0,0),(-1,-1), 6),
-                ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+            main_container = Table([grp], colWidths=[cw]*NCOLS)
+            main_container.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), C_CARD_BG),
+                ("ROUNDEDCORNERS", (0,0), (-1,-1), [12,12,12,12]),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                ("LEFTPADDING", (0,0), (-1,-1), 0.1*inch),
+                ("RIGHTPADDING", (0,0), (-1,-1), 0.1*inch),
+                ("TOPPADDING", (0,0), (-1,-1), 0.2*inch),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 0.2*inch),
             ]))
-            story.append(t)
-            story.append(Spacer(1, 5))
-        story.append(Spacer(1, 12))
+            story.append(main_container)
+            story.append(Spacer(1, 15))
 
     # Secciones
-    hdr_st = sty("SH","Normal", fontName="Helvetica-Bold", fontSize=10.5,
-                 textColor=C_WHITE, leading=14)
     for sec in (sections or []):
         if isinstance(sec, str):   sec = {"title":"", "text": sec}
         elif isinstance(sec,(list,tuple)) and len(sec)>=2:
@@ -3184,73 +3651,97 @@ def _build_pdf_bytes(
         ttl  = (sec.get("title") or "").strip()
         body = (sec.get("text")  or sec.get("content") or "").strip()
         imgs =  sec.get("images") or []
+        
         if ttl:
-            ht = Table([[Paragraph(_safe(_strip_md(ttl)), hdr_st)]],
-                       colWidths=[PW - 1.0*inch])
+            ht = Table([[Paragraph(_safe(_strip_md(ttl)), ST["H2"])]], colWidths=[PW - 1.0*inch])
             ht.setStyle(TableStyle([
-                ("BACKGROUND",   (0,0),(-1,-1), C_HDR),
-                ("TOPPADDING",   (0,0),(-1,-1), 6),
-                ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+                ("BACKGROUND",   (0,0),(-1,-1), C_LIGHT),
+                ("ROUNDEDCORNERS", (0,0),(-1,-1), [6,6,6,6]),
+                ("BOX", (0,0), (-1,-1), 0.5, C_DIV),
+                ("TOPPADDING",   (0,0),(-1,-1), 8),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 8),
                 ("LEFTPADDING",  (0,0),(-1,-1), 10),
-                ("RIGHTPADDING", (0,0),(-1,-1), 10),
             ]))
             story.append(ht)
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 8))
+            
         if body:
             story.extend(md2fl(body))
+            story.append(Spacer(1, 12))
+            
         for ip in imgs:
             if not ip or not os.path.exists(ip): continue
             try:
                 ir = ImageReader(ip)
                 iw, ih = ir.getSize()
                 mxw = (9.0 if use_ls else 7.2)*inch
-                mxh = 4.5*inch
+                mxh = 4.0*inch
                 sc  = min(mxw/iw, mxh/ih)
-                story.append(Image(ip, width=iw*sc, height=ih*sc))
-                story.append(Spacer(1, 8))
+                # Envolvemos las imagenes en tarjetas
+                img_tb = Table([[Image(ip, width=iw*sc, height=ih*sc)]], colWidths=[PW - 1.0*inch])
+                img_tb.setStyle(TableStyle([
+                    ("BACKGROUND", (0,0), (-1,-1), C_WHITE),
+                    ("ROUNDEDCORNERS", (0,0), (-1,-1), [8,8,8,8]),
+                    ("BOX", (0,0), (-1,-1), 1, C_DIV),
+                    ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                    ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                    ("TOPPADDING", (0,0), (-1,-1), 15),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 15),
+                ]))
+                story.append(img_tb)
+                story.append(Spacer(1, 12))
             except Exception:
                 continue
-        story.append(Spacer(1, 12))
 
-    # Tabla de datos
+    # Tabla de datos (Snapshot Premium o Generada)
     if table_rows:
         story.append(PageBreak())
-        th = Table([[Paragraph(_safe(table_title or "Detalle de Datos"), hdr_st)]],
-                   colWidths=[PW - 1.0*inch])
-        th.setStyle(TableStyle([
-            ("BACKGROUND",   (0,0),(-1,-1), C_HDR),
-            ("TOPPADDING",   (0,0),(-1,-1), 6),
-            ("BOTTOMPADDING",(0,0),(-1,-1), 6),
-            ("LEFTPADDING",  (0,0),(-1,-1), 10),
-        ]))
-        story.append(th)
-        story.append(Spacer(1, 8))
-        cols_ = list(table_rows[0].keys())
-        cw_   = (PW - 1.0*inch) / len(cols_) if cols_ else (PW - 1.0*inch)
-        th_st = sty("TH","Normal", fontName="Helvetica-Bold", fontSize=7,
-                    leading=8, alignment=1, textColor=C_WHITE)
-        tb_st = sty("TB","Normal", fontName="Helvetica",      fontSize=7,
-                    leading=8, alignment=1, textColor=C_TEXT)
-        hrow  = [Paragraph(_safe(str(c)), th_st) for c in cols_]
-        drows = [[Paragraph(_safe(str(r.get(c,""))), tb_st) for c in cols_]
-                 for r in table_rows]
-        dtbl  = Table([hrow]+drows, colWidths=[cw_]*len(cols_), repeatRows=1)
-        ts    = [
-            ("BACKGROUND",   (0,0),(-1,0),  C_BRAND),
-            ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
-            ("TOPPADDING",   (0,0),(-1,-1), 4),
-            ("BOTTOMPADDING",(0,0),(-1,-1), 4),
-            ("LEFTPADDING",  (0,0),(-1,-1), 2),
-            ("RIGHTPADDING", (0,0),(-1,-1), 2),
-            ("GRID",         (0,0),(-1,-1), 0.4, C_DIV),
-        ]
-        for i in range(1, len(drows)+1):
-            ts.append(("BACKGROUND",(0,i),(-1,i), C_LIGHT if i%2==0 else C_WHITE))
-        dtbl.setStyle(TableStyle(ts))
-        story.append(dtbl)
+        if table_snapshot_path and os.path.exists(table_snapshot_path):
+            try:
+                ir = ImageReader(table_snapshot_path)
+                iw, ih = ir.getSize()
+                mxw = PW - 1.0*inch
+                sc = mxw / iw
+                story.append(Image(table_snapshot_path, width=iw*sc, height=ih*sc))
+            except Exception: pass
+        else:
+            th = Table([[Paragraph(_safe(table_title or "Métricas por Variable"), ST["H2"])]], colWidths=[PW - 1.0*inch])
+            th.setStyle(TableStyle([
+                ("BACKGROUND",   (0,0),(-1,-1), C_LIGHT),
+                ("ROUNDEDCORNERS", (0,0),(-1,-1), [6,6,6,6]),
+                ("BOX", (0,0), (-1,-1), 0.5, C_DIV),
+                ("TOPPADDING",   (0,0),(-1,-1), 8),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 8),
+                ("LEFTPADDING",  (0,0),(-1,-1), 10),
+            ]))
+            story.append(th)
+            story.append(Spacer(1, 10))
+            
+            cols_ = list(table_rows[0].keys())
+            cw_   = (PW - 1.0*inch) / len(cols_) if cols_ else (PW - 1.0*inch)
+            th_st = sty("TH","Normal", fontName="Helvetica-Bold", fontSize=8, leading=10, alignment=1, textColor=C_WHITE)
+            tb_st = sty("TB","Normal", fontName="Helvetica", fontSize=8, leading=10, alignment=1, textColor=C_TEXT)
+            
+            hrow  = [Paragraph(_safe(str(c).upper()), th_st) for c in cols_]
+            drows = [[Paragraph(_safe(str(r.get(c,""))), tb_st) for c in cols_] for r in table_rows]
+            dtbl  = Table([hrow]+drows, colWidths=[cw_]*len(cols_), repeatRows=1)
+            ts    = [
+                ("BACKGROUND",   (0,0),(-1,0),  C_HDR),
+                ("VALIGN",       (0,0),(-1,-1), "MIDDLE"),
+                ("TOPPADDING",   (0,0),(-1,-1), 6),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+                ("LEFTPADDING",  (0,0),(-1,-1), 4),
+                ("RIGHTPADDING", (0,0),(-1,-1), 4),
+                ("GRID",         (0,0),(-1,-1), 0.5, C_DIV),
+            ]
+            for i in range(1, len(drows)+1):
+                ts.append(("BACKGROUND",(0,i),(-1,i), C_LIGHT if i%2==0 else C_WHITE))
+            dtbl.setStyle(TableStyle(ts))
+            story.append(dtbl)
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf_io.getvalue()
+
 
 
 def _as_file_response(content: bytes, filename: str, media_type: str):
@@ -3274,9 +3765,7 @@ async def report_control_variables_day(payload: dict):
         raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
 
     try:
-        # Siempre cargamos df_day si queremos gráficas (y para el resumen si no viene)
         df_day = load_critical_reads_for_day(day)
-        
         if provided_summary is not None:
             summary_rows = provided_summary
         else:
@@ -3288,34 +3777,23 @@ async def report_control_variables_day(payload: dict):
         print(f"Error generando reporte PDF: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
-    # ---------- Resumen ejecutivo backend (corto) ----------
     exec_lines = []
     if summary_rows:
         worst = summary_rows[0]
         exec_lines.append(f"- Variables analizadas: {len(summary_rows)}")
-        exec_lines.append(
-            f"- Mayor % fuera de crítico: {worst.get('name','')} — {worst.get('device','')} ({worst.get('out_pct',0)}%)"
-        )
+        exec_lines.append(f"- Mayor % fuera de crítico: {worst.get('name','')} — {worst.get('device','')} ({worst.get('out_pct',0)}%)")
         for i, r in enumerate(summary_rows[:3], start=1):
-            exec_lines.append(
-                f"- Top {i}: {r.get('name','')} — {r.get('device','')}: {r.get('out_pct',0)}% "
-                f"({r.get('out_points',0)}/{r.get('points',0)} pts)"
-            )
+            exec_lines.append(f"- Top {i}: {r.get('name','')} — {r.get('device','')}: {r.get('out_pct',0)}% ({r.get('out_points',0)}/{r.get('points',0)} pts)")
     executive_summary = "\n".join(exec_lines)
 
-    # ---------- IA (SIEMPRE AL FINAL) ----------
     ai_text = provided_ai if provided_ai is not None else ""
-    if provided_ai is None:
+    if not ai_text:
         try:
-            # OJO: tu función ai_control_variables_day requiere (day, summary, executive_summary)
             ai_text = ai_control_variables_day(day=day, summary=summary_rows, executive_summary=executive_summary)
-        except Exception:
-            ai_text = ""
+        except Exception: ai_text = ""
 
-    # ---------- PNGs para el reporte ----------
     png_dir = os.path.join("static", "report_imgs")
     os.makedirs(png_dir, exist_ok=True)
-
     images = []
     if df_day is not None and not df_day.empty:
         var_ids = sorted(df_day["ProductionLineControlVariableId"].dropna().astype(str).str.lower().unique().tolist())
@@ -3326,71 +3804,75 @@ async def report_control_variables_day(payload: dict):
             out_png = os.path.join(png_dir, f"{day}_control_{safe_name}.png")
             p = plot_critical_timeseries_day_png(df_day, vid, out_png)
             if p and os.path.exists(p):
-                images.append({
-                    "title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid,
-                    "path": p
-                })
+                images.append({"title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid, "path": p})
 
-    # ---------- Tabla (nombres ejecutivos) ----------
     table = []
     for r in summary_rows:
         table.append({
-            "Equipo": r.get("device",""),
-            "Variable": r.get("name",""),
-            "Lecturas": r.get("points",0),
-            "Fuera de crítico": r.get("out_points",0),
-            "% fuera": r.get("out_pct",0),
-            "Promedio": r.get("avg_value",""),
-            "Mín": r.get("min_value",""),
-            "Máx": r.get("max_value",""),
+            "Equipo": r.get("device",""), "Variable": r.get("name",""), "Lecturas": r.get("points",0),
+            "Fuera de crítico": r.get("out_points",0), "% fuera": r.get("out_pct",0),
+            "Promedio": r.get("avg_value",""), "Mín": r.get("min_value",""), "Máx": r.get("max_value","")
         })
 
     title = "Reporte — Variables de Control"
     subtitle = f"Día: {day}"
-
     sections = []
-    sections.append({"title": "Resumen ejecutivo", "text": executive_summary or "- (Sin datos)"})
-
+    # SE QUITA EL RESUMEN EJECUTIVO SEGUN PETICION DEL USUARIO
+    # sections.append({"title": "Resumen ejecutivo", "text": executive_summary or "- (Sin datos)"})
     if images:
-        # Aquí van las gráficas ANTES de la IA (como quieres en el documento)
-        sections.append({
-            "title": "Gráficas (PNG)",
-            "text": "Lecturas por variable (día completo).",
-            "images": [x["path"] for x in images]
-        })
-
-    # IA SIEMPRE AL FINAL
+        sections.append({"title": "Gráficas de Variables", "text": "Lecturas registradas durante el periodo.", "images": [x["path"] for x in images]})
     if ai_text:
         sections.append({"title": "Análisis mediante IA (Duma)", "text": ai_text})
-
-    fmt = (fmt or "pdf").lower()
 
     if fmt in ("docx", "word"):
         content = _build_docx_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH)
         filename = f"variables_control_{day}.docx"
-        return Response(
-            content=content,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-        )
+        return Response(content=content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     _kpis = []
     try:
         if summary_rows:
-            _w = summary_rows[0]; _b = summary_rows[-1]
+            pcts = [float(r.get("out_pct", 0)) for r in summary_rows]
+            avg_out = sum(pcts) / len(pcts) if pcts else 0
+            salud = 100 - avg_out
+            criticas_count = len([p for p in pcts if p >= 75])
+            worst = summary_rows[0]
+            en_rango_count = len([p for p in pcts if p <= 10])
             _kpis = [
-                {"label": "Variables Analizadas", "value": str(len(summary_rows)), "status": "Total del dia"},
-                {"label": "Mayor % Fuera",        "value": f"{_w.get('out_pct',0)}%", "status": f"{_w.get('name','')} — {_w.get('device','')}"},
-                {"label": "Mejor Variable",       "value": f"{_b.get('out_pct',0)}%", "status": f"{_b.get('name','')} — {_b.get('device','')}"},
+                {"label": "Salud Global del Proceso", "value": f"{salud:.1f}%", "status": "Intervención necesaria" if salud < 70 else "Operación estable"},
+                {"label": "Variables Críticas",        "value": f"{criticas_count} / {len(summary_rows)}", "status": "con >=75% fuera de rango"},
+                {"label": "Equipo más Problemático",  "value": worst.get("device","N/A"), "status": f"{worst.get('out_pct',0)}% desviación promedio"},
+                {"label": "Promedio % Fuera de Rango", "value": f"{avg_out:.2f}%", "status": f"entre {len(summary_rows)} variables"},
+                {"label": "Variables en Rango",       "value": f"{en_rango_count} / {len(summary_rows)}", "status": "operando dentro de límites"},
             ]
     except Exception: _kpis = []
-    content = _build_pdf_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH, kpi_cards=_kpis)
+
+    kpi_snap_path = None
+    table_snap_path = None
+    kpi_snapshot_b64 = payload.get("kpi_snapshot")
+    table_snapshot_b64 = payload.get("table_snapshot")
+    
+    import base64, uuid
+    snap_dir = os.path.join("static", "temp_snaps")
+    os.makedirs(snap_dir, exist_ok=True)
+
+    if kpi_snapshot_b64 and "," in kpi_snapshot_b64:
+        try:
+            data = base64.b64decode(kpi_snapshot_b64.split(",", 1)[1])
+            kpi_snap_path = os.path.join(snap_dir, f"kpi_snap_{uuid.uuid4().hex[:8]}.png")
+            with open(kpi_snap_path, "wb") as f: f.write(data)
+        except Exception as e: print(f"Error kpi_snap: {e}")
+
+    if table_snapshot_b64 and "," in table_snapshot_b64:
+        try:
+            data = base64.b64decode(table_snapshot_b64.split(",", 1)[1])
+            table_snap_path = os.path.join(snap_dir, f"table_snap_{uuid.uuid4().hex[:8]}.png")
+            with open(table_snap_path, "wb") as f: f.write(data)
+        except Exception as e: print(f"Error table_snap: {e}")
+
+    content = _build_pdf_bytes(title, subtitle, sections, "Métricas por variable", table, logo_path=_LOGO_PATH, kpi_cards=_kpis, kpi_snapshot_path=kpi_snap_path, table_snapshot_path=table_snap_path)
     filename = f"variables_control_{day}.pdf"
-    return Response(
-        content=content,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 
@@ -3730,7 +4212,6 @@ async def report_oee_day(payload: dict):
             api_payload["shift_name"] = shift_name
 
         try:
-            # Bypass de IA para consultar tabla rapida
             api_payload["skip_ai"] = True
             data = await api_oee_day_turn(api_payload)
             cols = data.get("columns") or []
@@ -3748,10 +4229,8 @@ async def report_oee_day(payload: dict):
     if not cols or not rows:
         raise HTTPException(status_code=404, detail="No hay datos para esa fecha/rango.")
 
-    # rows viene como lista de listas => lo convertimos a lista de dicts
     table_rows = []
     for r in rows:
-        # r puede venir como tuple o list
         r_list = list(r) if isinstance(r, (tuple, list)) else [r]
         row_dict = {c: (r_list[i] if i < len(r_list) else "") for i, c in enumerate(cols)}
         table_rows.append(row_dict)
@@ -3760,10 +4239,8 @@ async def report_oee_day(payload: dict):
     title = "Reporte Ejecutivo de Inteligencia Operacional — Duma"
     subtitle = f"Periodo: {period_label}" + (f" — Turno: {shift_name}" if shift_name else "")
 
-    # El análisis ya viene en data["ai_analysis"] (markdown) desde /api/oee/day-turn
     ai_text = provided_ai or ""
 
-    # SECCIÓN: Gráficas de Desempeño
     image_paths = []
     provided_images = payload.get("images") or []
 
@@ -3795,45 +4272,44 @@ async def report_oee_day(payload: dict):
             if provided_stops:
                 image_paths.extend(_generate_pareto_pdf_plt(provided_stops, period_label))
         except Exception as e:
-            print(f"Error Graficando Histórico Nativo: {e}")
+            print(f"Error Graficando Histrico Nativo: {e}")
 
     sections = []
-    sections.append({"title": "Resumen Operacional", "text": "Indicadores consolidados para el periodo analizado."})
+    # Capturas visuales del dashboard - sin texto redundante
     
     if image_paths:
-        # Gráficas de Evolución
         evol_imgs = [img for img in image_paths if "hist_oee" in img or "hist_prod" in img or "hist_np" in img or "hist_cnt" in img]
         pareto_imgs = [img for img in image_paths if "pareto" in img or "treemap" in img]
         other_imgs = [img for img in image_paths if img not in evol_imgs and img not in pareto_imgs]
 
         if evol_imgs:
             sections.append({
-                "title": "Evolución de Desempeño y Producción",
-                "text": "Seguimiento diario de OEE y cumplimiento de producción.",
+                "title": "Evolucin de Desempeo y Produccin",
+                "text": "Seguimiento diario de OEE y cumplimiento de produccin.",
                 "images": evol_imgs[:2]
             })
             sections.append({
-                "title": "Análisis de Disponibilidad y Paros",
-                "text": "Duración y frecuencia de eventos de paro (P/NP).",
+                "title": "Anlisis de Disponibilidad y Paros",
+                "text": "Duracin y frecuencia de eventos de paro (P/NP).",
                 "images": evol_imgs[2:]
             })
         
         if pareto_imgs:
             sections.append({
-                "title": "Diagnóstico Raíz (Pareto 80/20)",
-                "text": "Principales causas de pérdida de disponibilidad.",
+                "title": "Diagnstico Raz (Pareto 80/20)",
+                "text": "Principales causas de prdida de disponibilidad.",
                 "images": pareto_imgs
             })
         
         if other_imgs:
             sections.append({
-                "title": "Análisis Visual Adicional",
-                "text": "Otras métricas operativas detectadas.",
+                "title": "Anlisis Visual Adicional",
+                "text": "Otras mtricas operativas detectadas.",
                 "images": other_imgs
             })
 
     if ai_text.strip():
-        sections.append({"title": "Diagnóstico y Recomendaciones (Duma AI)", "text": ai_text})
+        sections.append({"title": "Diagnstico y Recomendaciones (Duma AI)", "text": ai_text})
 
     fmt = (fmt or "pdf").lower()
     rep_slug = f"oee_{from_day}" if from_day == to_day else f"oee_{from_day}_to_{to_day}"
@@ -3847,17 +4323,15 @@ async def report_oee_day(payload: dict):
 
     _kpis = []
     try:
-        # Intentar sacar de summary_obj (calculado por el backend)
         if 'summary_obj' in locals() and summary_obj:
             def _f(v): return float(v) if v is not None else 0.0
             _kpis = [
                 {"label": "OEE Consolidado",   "value": f"{_f(summary_obj.get('OEE')):.1f}%",           "status": "Eficiencia del rango"},
                 {"label": "Disponibilidad",     "value": f"{_f(summary_obj.get('Availability')):.1f}%",  "status": "Uso del tiempo"},
-                {"label": "Desempeño",          "value": f"{_f(summary_obj.get('Performance')):.1f}%",   "status": "Ritmo de producción"},
+                {"label": "Desempeo",          "value": f"{_f(summary_obj.get('Performance')):.1f}%",   "status": "Ritmo de produccin"},
                 {"label": "Calidad",            "value": f"{_f(summary_obj.get('Quality')):.1f}%",       "status": "Producto conforme"},
             ]
         else:
-            # Fallback a calculo manual si no hay summary_obj
             _ov = [float(r.get("OEE") or 0) for r in table_rows if r.get("OEE") is not None]
             _pv = [float(r.get("CurrentProduction") or r.get("CurrentShiftProduction") or 0) for r in table_rows]
             _np = [float(r.get("TiempoNoProdNoProgramadoMin") or 0) for r in table_rows]
@@ -3867,19 +4341,35 @@ async def report_oee_day(payload: dict):
     except Exception as e: 
         print(f"Error extrae KPIs HIST: {e}")
         _kpis = []
-    
-    content = _build_pdf_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH, kpi_cards=_kpis)
+
+    import base64, uuid
+    snap_dir = os.path.join("static", "temp_snaps")
+    os.makedirs(snap_dir, exist_ok=True)
+
+    kpi_snap_path = None
+    kpi_snapshot_b64 = payload.get("kpi_snapshot")
+    if kpi_snapshot_b64 and "," in kpi_snapshot_b64:
+        try:
+            data = base64.b64decode(kpi_snapshot_b64.split(",", 1)[1])
+            kpi_snap_path = os.path.join(snap_dir, f"oee_kpi_snap_{uuid.uuid4().hex[:8]}.png")
+            with open(kpi_snap_path, "wb") as f: f.write(data)
+        except Exception as e: print(f"Error oee kpi_snap: {e}")
+
+    table_snap_path = None
+    table_snapshot_b64 = payload.get("table_snapshot")
+    if table_snapshot_b64 and "," in table_snapshot_b64:
+        try:
+            data = base64.b64decode(table_snapshot_b64.split(",", 1)[1])
+            table_snap_path = os.path.join(snap_dir, f"oee_table_snap_{uuid.uuid4().hex[:8]}.png")
+            with open(table_snap_path, "wb") as f: f.write(data)
+        except Exception as e: print(f"Error oee table_snap: {e}")
+
+    content = _build_pdf_bytes(title, subtitle, sections, "Resultado", table_rows, logo_path=_LOGO_PATH, kpi_cards=_kpis, kpi_snapshot_path=kpi_snap_path, table_snapshot_path=table_snap_path)
     return _as_file_response(
         content,
         _report_filename(rep_slug + (f"_{shift_name}" if shift_name else ""), "pdf"),
         "application/pdf",
     )
-
-
-
-
-
-
 @app.post("/api/agent/report/pdf/")
 async def chat_report_pdf(payload: dict):
     chat_log = payload.get("chat_log", [])
