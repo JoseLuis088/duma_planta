@@ -4126,7 +4126,7 @@ async def report_oee_realtime(payload: dict):
     provided_images = payload.get("images") or []
     
     if provided_images:
-        import base64, uuid, os
+        import base64, uuid
         for b64 in provided_images:
             if b64.startswith("data:image/png;base64,"):
                 try:
@@ -4245,7 +4245,7 @@ async def report_oee_day(payload: dict):
     provided_images = payload.get("images") or []
 
     if provided_images:
-        import base64, uuid, os
+        import base64, uuid
         for b64 in provided_images:
             if b64.startswith("data:image/png;base64,"):
                 try:
