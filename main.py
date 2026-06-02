@@ -4298,32 +4298,32 @@ async def report_oee_day(payload: dict):
 
         if evol_imgs:
             sections.append({
-                "title": "Evolucin de Desempeo y Produccin",
-                "text": "Seguimiento diario de OEE y cumplimiento de produccin.",
+                "title": "Evolución de Desempeño y Producción",
+                "text": "Seguimiento diario de OEE y cumplimiento de producción.",
                 "images": evol_imgs[:2]
             })
             sections.append({
-                "title": "Anlisis de Disponibilidad y Paros",
-                "text": "Duracin y frecuencia de eventos de paro (P/NP).",
+                "title": "Análisis de Disponibilidad y Paros",
+                "text": "Duración y frecuencia de eventos de paro (P/NP).",
                 "images": evol_imgs[2:]
             })
         
         if pareto_imgs:
             sections.append({
-                "title": "Diagnstico Raz (Pareto 80/20)",
-                "text": "Principales causas de prdida de disponibilidad.",
+                "title": "Diagnóstico Raíz (Pareto 80/20)",
+                "text": "Principales causas de pérdida de disponibilidad.",
                 "images": pareto_imgs
             })
         
         if other_imgs:
             sections.append({
-                "title": "Anlisis Visual Adicional",
-                "text": "Otras mtricas operativas detectadas.",
+                "title": "Análisis Visual Adicional",
+                "text": "Otras métricas operativas detectadas.",
                 "images": other_imgs
             })
 
     if ai_text.strip():
-        sections.append({"title": "Diagnstico y Recomendaciones (Duma AI)", "text": ai_text})
+        sections.append({"title": "Diagnóstico y Recomendaciones (Duma AI)", "text": ai_text})
 
     fmt = (fmt or "pdf").lower()
     rep_slug = f"oee_{from_day}" if from_day == to_day else f"oee_{from_day}_to_{to_day}"
@@ -4342,7 +4342,7 @@ async def report_oee_day(payload: dict):
             _kpis = [
                 {"label": "OEE Consolidado",   "value": f"{_f(summary_obj.get('OEE')):.1f}%",           "status": "Eficiencia del rango"},
                 {"label": "Disponibilidad",     "value": f"{_f(summary_obj.get('Availability')):.1f}%",  "status": "Uso del tiempo"},
-                {"label": "Desempeo",          "value": f"{_f(summary_obj.get('Performance')):.1f}%",   "status": "Ritmo de produccin"},
+                {"label": "Desempeño",          "value": f"{_f(summary_obj.get('Performance')):.1f}%",   "status": "Ritmo de producción"},
                 {"label": "Calidad",            "value": f"{_f(summary_obj.get('Quality')):.1f}%",       "status": "Producto conforme"},
             ]
         else:
