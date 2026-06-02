@@ -2,6 +2,49 @@
 <html lang="es">
 
 <head>
+  <script>
+    (function() {
+      function getBasePath() {
+        let path = window.location.pathname;
+        if (path.endsWith('/')) {
+          path = path.slice(0, -1);
+        }
+        if (path.endsWith('/index.html')) {
+          path = path.slice(0, -11);
+        }
+        return path;
+      }
+      const base = getBasePath();
+      window.API_BASE_PATH = base;
+      
+      // Override fetch to support proxy root path prefixing
+      const originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        if (typeof input === 'string' && !input.startsWith('http') && !input.startsWith('/')) {
+          input = base + '/' + input;
+        }
+        return originalFetch(input, init);
+      };
+      
+      // Resolve asset URLs with the base path
+      window.resolveAssetUrl = function(url) {
+        if (typeof url === 'string' && !url.startsWith('http') && !url.startsWith('/') && base) {
+          return base + '/' + url;
+        }
+        return url;
+      };
+      
+      // Fix static image paths on DOMContentLoaded
+      document.addEventListener("DOMContentLoaded", function() {
+        document.querySelectorAll("img").forEach(img => {
+          const src = img.getAttribute("src");
+          if (src && src.startsWith("static/images/")) {
+            img.src = base + "/" + src;
+          }
+        });
+      });
+    })();
+  </script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Duma - Dashboard Analítico</title>
@@ -2906,14 +2949,14 @@
           btn.className = "plot-expand-btn";
           btn.innerHTML = "⛶"; // Icono de expandir
           btn.title = "Ver en pantalla completa";
-          btn.onclick = () => openFullScreen(p.url, p.title || p.var_id);
+          btn.onclick = () => openFullScreen(resolveAssetUrl(p.url), p.title || p.var_id);
 
           header.appendChild(titleDiv);
           header.appendChild(btn);
 
           const iframe = document.createElement("iframe");
           iframe.className = "plot-frame";
-          iframe.src = p.url;
+          iframe.src = resolveAssetUrl(p.url);
 
           card.appendChild(header);
           card.appendChild(iframe);
@@ -2926,7 +2969,7 @@
       // ===========================
       function openFullScreen(url, title) {
         el("fsTitle").textContent = title || "Gráfica";
-        el("fsFrame").src = url;
+        el("fsFrame").src = resolveAssetUrl(url);
         el("fsModal").style.display = "flex";
       }
 
@@ -3033,14 +3076,14 @@
           btn.className = "plot-expand-btn";
           btn.innerHTML = "⛶";
           btn.title = "Ver en pantalla completa";
-          btn.onclick = () => openFullScreen(p.url, p.title || "");
+          btn.onclick = () => openFullScreen(resolveAssetUrl(p.url), p.title || "");
 
           header.appendChild(titleDiv);
           header.appendChild(btn);
 
           const iframe = document.createElement("iframe");
           iframe.className = "plot-frame";
-          iframe.src = p.url;
+          iframe.src = resolveAssetUrl(p.url);
 
           card.appendChild(header);
           card.appendChild(iframe);
@@ -3138,14 +3181,14 @@
           btn.className = "plot-expand-btn";
           btn.innerHTML = "⛶";
           btn.title = "Ver en pantalla completa";
-          btn.onclick = () => openFullScreen(p.url, p.title || "");
+          btn.onclick = () => openFullScreen(resolveAssetUrl(p.url), p.title || "");
 
           header.appendChild(titleDiv);
           header.appendChild(btn);
 
           const iframe = document.createElement("iframe");
           iframe.className = "plot-frame";
-          iframe.src = p.url;
+          iframe.src = resolveAssetUrl(p.url);
 
           card.appendChild(header);
           card.appendChild(iframe);

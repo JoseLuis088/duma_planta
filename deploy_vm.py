@@ -27,11 +27,13 @@ def run_command(ssh, command, sudo=False):
     
     exit_status = stdout.channel.recv_exit_status()
     
-    out = stdout.read().decode().strip()
-    err = stderr.read().decode().strip()
+    out = stdout.read().decode('utf-8', errors='ignore').strip()
+    err = stderr.read().decode('utf-8', errors='ignore').strip()
     
-    if out: print(f"STDOUT: {out}")
-    if err: print(f"STDERR: {err}")
+    if out:
+        print(f"STDOUT: {out.encode(sys.stdout.encoding or 'utf-8', errors='replace').decode(sys.stdout.encoding or 'utf-8')}")
+    if err:
+        print(f"STDERR: {err.encode(sys.stdout.encoding or 'utf-8', errors='replace').decode(sys.stdout.encoding or 'utf-8')}")
     
     if exit_status != 0:
         print(f"Error executing command: {command}")
