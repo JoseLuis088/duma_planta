@@ -768,7 +768,7 @@ SELECT
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
     wses.ProductiveTimeMin         AS TiempoProductivoMin,
-    wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
+    wses.ExpectedProductionSummaryModified AS ProduccionEstimadaKg,
     wses.CurrentProductionSummary  AS ProduccionRealKg,
     wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
     wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
@@ -2324,7 +2324,7 @@ SELECT
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
     wses.ProductiveTimeMin         AS TiempoProductivoMin,
-    wses.ExpectedProductionSummary AS ProduccionEstimadaKg,
+    wses.ExpectedProductionSummaryModified AS ProduccionEstimadaKg,
     wses.CurrentProductionSummary  AS ProduccionRealKg,
     wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
     wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
@@ -2965,13 +2965,13 @@ SELECT
     ROUND(SUM(CAST(wses.AvailableTimeMin AS FLOAT)), 2) AS TotalAvailableMin,
     ROUND(SUM(CAST(wses.ProductiveTimeMin AS FLOAT)), 2) AS TotalProductiveMin,
     ROUND(SUM(CAST(wses.CurrentProductionSummary AS FLOAT)), 2) AS TotalRealKg,
-    ROUND(SUM(CAST(wses.ExpectedProductionSummary AS FLOAT)), 2) AS TotalExpectedKg,
+    ROUND(SUM(CAST(wses.ExpectedProductionSummaryModified AS FLOAT)), 2) AS TotalExpectedKg,
     ROUND((CASE WHEN SUM(wses.AvailableTimeMin) > 0 THEN SUM(CAST(wses.ProductiveTimeMin AS FLOAT)) / SUM(wses.AvailableTimeMin) ELSE 0 END) * 100, 2) AS Availability,
-    ROUND((CASE WHEN SUM(wses.ExpectedProductionSummary) > 0 THEN SUM(CAST(wses.CurrentProductionSummary AS FLOAT)) / SUM(wses.ExpectedProductionSummary) ELSE 0 END) * 100, 2) AS Performance,
+    ROUND((CASE WHEN SUM(wses.ExpectedProductionSummaryModified) > 0 THEN SUM(CAST(wses.CurrentProductionSummary AS FLOAT)) / SUM(wses.ExpectedProductionSummaryModified) ELSE 0 END) * 100, 2) AS Performance,
     ROUND(CAST(SUM(wses.CurrentProductionSummary - wses.ConfiscationKg) AS FLOAT) / NULLIF(SUM(wses.CurrentProductionSummary), 0) * 100, 2) AS Quality,
     ROUND(
       ((CASE WHEN SUM(wses.AvailableTimeMin) > 0 THEN SUM(CAST(wses.ProductiveTimeMin AS FLOAT)) / SUM(wses.AvailableTimeMin) ELSE 0 END)) *
-      ((CASE WHEN SUM(wses.ExpectedProductionSummary) > 0 THEN SUM(CAST(wses.CurrentProductionSummary AS FLOAT)) / SUM(wses.ExpectedProductionSummary) ELSE 0 END)) *
+      ((CASE WHEN SUM(wses.ExpectedProductionSummaryModified) > 0 THEN SUM(CAST(wses.CurrentProductionSummary AS FLOAT)) / SUM(wses.ExpectedProductionSummaryModified) ELSE 0 END)) *
       (ISNULL(CAST(SUM(wses.CurrentProductionSummary - wses.ConfiscationKg) AS FLOAT) / NULLIF(SUM(wses.CurrentProductionSummary), 0), 1.0)) * 100, 2
     ) AS OEE
 FROM ind.WorkShiftExecutionSummaries AS wses
@@ -3024,7 +3024,7 @@ SELECT
     ISNULL(wses.UnscheduledStopageMin, 0) AS TiempoNoProdNoProgramadoMin,
     ISNULL(wses.ScheduledStopageMin, 0) AS TiempoNoProdProgramadoMin,
     wses.CurrentProductionSummary AS CurrentProduction,
-    wses.ExpectedProductionSummary AS ExpectedProduction,
+    wses.ExpectedProductionSummaryModified AS ExpectedProduction,
     wses.Quality AS Quality,
     ISNULL(wses.UnscheduledStopagesCount, 0) AS ParosNoProgramadosCont,
     ISNULL(wses.ScheduledStopagesCount, 0) AS ParosProgramadosCont
