@@ -1827,6 +1827,255 @@
     [data-theme="dark"] .flatpickr-weekday {
       color: #94a3b8 !important;
     }
+
+    /* ==================== VIEW AGENT LAYOUT ==================== */
+    .agent-container {
+      display: flex;
+      height: 100%;
+      width: 100%;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .agent-sidebar {
+      width: 290px;
+      min-width: 290px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      padding: 24px 20px;
+    }
+
+    .agent-chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      position: relative;
+    }
+
+    .agent-chat-header {
+      height: 65px;
+      min-height: 65px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 30px;
+      background: var(--panel);
+    }
+
+    .agent-conversations-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .agent-conversation-item {
+      padding: 12px 14px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+      background: transparent;
+      border: 1px solid transparent;
+      position: relative;
+    }
+
+    .agent-conversation-item:hover {
+      background: var(--panel-hover);
+      color: var(--text);
+    }
+
+    .agent-conversation-item.active {
+      background: var(--brand-glow);
+      color: var(--brand);
+      border-color: rgba(12, 167, 164, 0.2);
+      font-weight: 600;
+    }
+
+    .agent-conversation-item .chat-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .agent-conversation-item .chat-actions {
+      display: none;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .agent-conversation-item:hover .chat-actions {
+      display: flex;
+    }
+
+    .agent-conversation-item .action-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 2px;
+      font-size: 12px;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+
+    .agent-conversation-item .action-btn:hover {
+      opacity: 1;
+    }
+
+    /* Suggested Cards */
+    .agent-suggestions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 0 30px 16px 30px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .agent-suggestions .chat-suggestion-chip {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 20px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      line-height: 1.5;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+      margin: 0;
+      white-space: normal;
+      width: 100%;
+    }
+
+    .agent-suggestions .chat-suggestion-chip:hover {
+      border-color: var(--brand);
+      background: var(--panel-hover);
+      box-shadow: 0 4px 12px var(--brand-glow);
+      transform: translateY(-1px);
+    }
+
+    /* Customize User Profile footer */
+    .agent-profile-footer {
+      margin-top: auto;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .profile-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px var(--brand-glow);
+      transition: transform 0.2s;
+    }
+    .profile-avatar:hover {
+      transform: scale(1.05);
+    }
+
+    .profile-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .profile-name:hover {
+      color: var(--brand);
+    }
+
+    /* Inputs y contenedores en pantalla completa */
+    #viewAgent .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-height: none;
+    }
+
+    #viewAgent .chat-input-area {
+      padding: 20px 30px 30px 30px;
+      border-top: 1px solid var(--border);
+      background: var(--panel);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.02);
+    }
+
+    #viewAgent .chat-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+
+    #viewAgent .chat-input {
+      width: 100%;
+      height: 52px;
+      border-radius: 26px;
+      padding: 0 60px 0 24px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      transition: all 0.3s ease;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    #viewAgent .chat-input:focus {
+      outline: none;
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-glow);
+    }
+
+    #viewAgent .chat-send-btn {
+      position: absolute;
+      right: 8px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: white;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    }
+
+    #viewAgent .chat-send-btn:hover {
+      background: var(--brand-hover);
+      transform: scale(1.05);
+    }
   </style>
 </head>
 
@@ -1850,6 +2099,10 @@
         <button class="menu-item" id="btnMenuOEE">
           <span class="menu-icon">📊</span>
           <span>OEE (Eficiencia)</span>
+        </button>
+        <button class="menu-item" id="btnMenuAgent">
+          <span class="menu-icon">💬</span>
+          <span>Duma AI Agent</span>
         </button>
 
         <div class="menu-hint">
@@ -2192,6 +2445,93 @@
             </div>
           </div>
         </section>
+
+        <!-- ===================== -->
+        <!-- VIEW: DUMA AI AGENT -->
+        <!-- ===================== -->
+        <section id="viewAgent" class="shell" style="display:none; padding: 0; margin: 0; height: calc(100vh - 70px); max-height: calc(100vh - 70px); width: 100%;">
+          <div class="agent-container">
+            <!-- Panel Izquierdo: Conversaciones -->
+            <div class="agent-sidebar">
+              <div class="agent-sidebar-header">
+                <div style="font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 18px;">🤖</span> Duma Agent
+                </div>
+              </div>
+              
+              <button class="btn primary" id="btnNewChat" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 500; height: 42px; border-radius: 12px; margin-bottom: 24px; background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%); border: none;">
+                <span>+</span> Nueva Conversación
+              </button>
+              
+              <div style="font-size: 11px; font-weight: 700; color: #a1a1aa; letter-spacing: 0.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                🕒 CONVERSACIONES RECIENTES
+              </div>
+              
+              <div class="agent-conversations-list" id="agentConversationsList">
+                <div class="agent-conversation-item active">
+                  💬 Conversación actual
+                </div>
+              </div>
+              
+              <!-- Footer de Perfil -->
+              <div class="agent-profile-footer">
+                <div class="profile-avatar" id="profileAvatar">
+                  U
+                </div>
+                <div class="profile-info" style="flex: 1; display: flex; flex-direction: column;">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="profile-name" id="profileName">Definir Nombre</span>
+                    <span class="edit-icon" id="btnEditProfile" style="cursor: pointer; opacity: 0.6; font-size: 12px;">✏️</span>
+                  </div>
+                  <span style="font-size: 11px; color: #10b981; display: flex; align-items: center; gap: 4px;">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span> online
+                  </span>
+                </div>
+                <button class="btn-icon" id="btnAgentSettings" style="background: none; border: none; font-size: 16px; cursor: pointer; opacity: 0.7;">⚙️</button>
+              </div>
+            </div>
+            
+            <!-- Panel Derecho: Conversación -->
+            <div class="agent-chat-panel">
+              <!-- Chat Header -->
+              <div class="agent-chat-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></div>
+                  <div>
+                    <div style="font-weight: 600; font-size: 14px;">Duma Agent</div>
+                    <div style="font-size: 11px; color: #a1a1aa;">Online</div>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                  <button class="chat-export-btn btn" id="chatExportPdfBtn" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-radius: 8px; background: transparent; border: 1px solid var(--border); color: var(--text);">
+                    📄 Descargar PDF
+                  </button>
+                  <button class="btn danger" id="chatClearBtn" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+                    Limpiar Chat
+                  </button>
+                </div>
+              </div>
+              
+              <!-- Chat Message History -->
+              <div class="chat-messages" id="chatMsgs">
+                <!-- Mensajes -->
+              </div>
+              
+              <!-- Suggestion Cards Container -->
+              <div class="agent-suggestions" id="chatSuggestions">
+                <!-- Chips dinámicos rectangulares -->
+              </div>
+              
+              <!-- Input Area -->
+              <div class="chat-input-area">
+                <div class="chat-input-wrapper">
+                  <input type="text" class="chat-input" id="chatInput" placeholder="Escribe tu pregunta..." autocomplete="off">
+                  <button class="chat-send-btn" id="chatSendBtn">➤</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
 
@@ -2205,53 +2545,7 @@
         <iframe id="fsFrame" class="fs-frame"></iframe>
       </div>
     </div>
-    <!-- DUNA CHAT WIDGET -->
-    <div id="duma-chat-widget">
-      <button class="chat-bubble-btn" id="chatBubbleBtn">
-        <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-btn-logo">
-        <span style="letter-spacing: -0.2px;">Ask Duma</span>
-      </button>
-      <div class="chat-window" id="chatWindow">
-        <!-- Resize handle -->
-        <div class="chat-resize-handle" id="chatResizeHandle" title="Arrastra para cambiar tamaño">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M1 11L11 1M6 11L11 6" stroke="white" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <div class="chat-header">
-          <div class="chat-header-info">
-            <img src="static/images/LOGO%20DUMA.png" alt="Duma" class="chat-header-img">
-            <div class="chat-header-title">Duma AI Agent</div>
-          </div>
-          <div class="chat-header-actions">
-            <button class="chat-export-btn" id="chatExportPdfBtn" title="Exportar a PDF Operativo">
-              <i class="fa fa-file-text-o"></i>
-              <span>Descargar PDF</span>
-            </button>
-            <button class="chat-clear-btn" id="chatClearBtn" title="Limpiar conversación">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
-            </button>
-            <button class="chat-close-btn" id="chatCloseBtn">✕</button>
-          </div>
-        </div>
-        <div class="chat-messages" id="chatMsgs">
-          <div class="msg bot">
-            ¡Hola! Soy <strong>Duma</strong>, tu analista de piso. ¿En qué puedo ayudarte hoy?
-          </div>
-        </div>
-        <div class="chat-suggestions" id="chatSuggestions">
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Duma, dame un informe ejecutivo del problema más crítico ahora</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">¿Dónde estamos perdiendo más producción hoy y por qué?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Analiza las anomalías actuales en sensores y posibles riesgos</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Con el ritmo actual, ¿qué tan lejos estamos de la meta diaria?</div>
-          <div class="chat-suggestion-chip" onclick="chatWidget.handleSuggestion(this)">Genera un diagnóstico Pareto (80/20) de las de fallas de ayer</div>
-        </div>
-        <div class="chat-input-area">
-          <input type="text" class="chat-input" id="chatInput" placeholder="Pregúntame algo..." autocomplete="off">
-          <button class="chat-send-btn" id="chatSendBtn">➤</button>
-        </div>
-      </div>
-    </div>
+
 
     <script>
       const el = (id) => document.getElementById(id);
@@ -2680,27 +2974,36 @@
       // Menu Navigation
       // ===========================
       function showView(name) {
-        const views = ["CV", "OEE"];
+        const views = ["CV", "OEE", "Agent"];
         for (const v of views) {
           el("view" + v).style.display = (v === name) ? "" : "none";
         }
 
         el("btnMenuCV").classList.toggle("active", name === "CV");
         el("btnMenuOEE").classList.toggle("active", name === "OEE");
+        el("btnMenuAgent").classList.toggle("active", name === "Agent");
+
+        // Ocultar topbar general si estamos en el Agente
+        const topbar = document.querySelector(".topbar");
+        if (topbar) {
+          topbar.style.display = (name === "Agent") ? "none" : "";
+        }
 
         if (name === "CV") {
           el("topTitle").textContent = "Variables de Control";
           el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
-        } else {
+        } else if (name === "OEE") {
           el("topTitle").textContent = "OEE (Eficiencia)";
           el("topSubtitle").textContent = "Desempeño global y por turno";
-          // Ya no se consulta automáticamente al entrar (a petición del usuario)
-          // Solo se disparará al dar click en 'Actualizar Ahora'
         }
       }
 
       el("btnMenuCV").addEventListener("click", () => showView("CV"));
       el("btnMenuOEE").addEventListener("click", () => showView("OEE"));
+      el("btnMenuAgent").addEventListener("click", () => {
+        showView("Agent");
+        chatWidget.open();
+      });
 
       // OEE Tabs
       function setOeeTab(active) {
@@ -3629,10 +3932,12 @@
         threadId: null,
         isOpen: false,
         isTyping: false,
+        isChatInitialized: false,
+        isTypingEffectRunning: false,
 
         init() {
-          el("chatBubbleBtn").addEventListener("click", () => this.toggle());
-          el("chatCloseBtn").addEventListener("click", () => this.toggle());
+          if (el("chatBubbleBtn")) el("chatBubbleBtn").addEventListener("click", () => this.toggle());
+          if (el("chatCloseBtn")) el("chatCloseBtn").addEventListener("click", () => this.toggle());
           el("chatClearBtn").addEventListener("click", () => this.clearChat());
           el("chatExportPdfBtn").addEventListener("click", () => this.exportPdf());
           el("chatSendBtn").addEventListener("click", () => this.handleSend());
@@ -3640,22 +3945,80 @@
             if (e.key === "Enter") this.handleSend();
           });
 
+          if (el("btnNewChat")) {
+            el("btnNewChat").addEventListener("click", () => this.clearChat());
+          }
+
+          // Inicializar nombre de usuario personalizado
+          this.initUserName();
+
+          this.isChatInitialized = false;
           this.threadId = localStorage.getItem("duma_thread_id") || null;
           this.messages = [];
+          
+          // Cargar sugerencias por defecto
+          this.loadDynamicChips(100);
+
+          // Cargar lista de conversaciones
+          this.loadConversations();
+
+          if (this.threadId) {
+            this.loadHistory();
+          } else {
+            this.initializeProactiveChat();
+          }
+        },
+
+        initUserName() {
+          let name = localStorage.getItem("duma_user_name") || "";
+          if (!name) {
+            name = "Definir Nombre";
+          }
+          this.setUserName(name);
+
+          const editAction = () => {
+            const currentName = localStorage.getItem("duma_user_name") || "";
+            const newName = prompt("Introduce tu nombre:", currentName === "Definir Nombre" ? "" : currentName);
+            if (newName !== null) {
+              const cleanName = newName.trim();
+              if (cleanName) {
+                localStorage.setItem("duma_user_name", cleanName);
+                this.setUserName(cleanName);
+                this.loadConversations(); // Recargar historial del nuevo usuario
+              }
+            }
+          };
+
+          if (el("profileName")) el("profileName").addEventListener("click", editAction);
+          if (el("btnEditProfile")) el("btnEditProfile").addEventListener("click", editAction);
+          if (el("profileAvatar")) el("profileAvatar").addEventListener("click", editAction);
+        },
+
+        setUserName(name) {
+          if (el("profileName")) el("profileName").textContent = name;
+          const parts = name.split(" ").filter(p => p);
+          let initials = "U";
+          if (name === "Definir Nombre") {
+            initials = "⚙️";
+          } else if (parts.length > 1) {
+            initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+          } else if (parts.length > 0) {
+            initials = parts[0][0].substring(0, 2).toUpperCase();
+          }
+          if (el("profileAvatar")) el("profileAvatar").textContent = initials;
         },
 
         clearChat() {
-          if (!confirm("¿Deseas limpiar la conversación actual?")) return;
+          if (!confirm("¿Deseas iniciar una nueva conversación?")) return;
           this.threadId = null;
           this.messages = [];
           localStorage.removeItem("duma_thread_id");
-          const container = el("chatMsgs");
-          container.innerHTML = `
-            <div class="msg bot">
-              ¡Hola! Soy <strong>Duma</strong>, tu analista de piso. He reiniciado mi memoria. ¿En qué puedo ayudarte hoy?
-            </div>
-          `;
-          if (el("chatSuggestions")) el("chatSuggestions").style.display = "flex";
+          
+          // Deseleccionar elementos activos del sidebar
+          const items = document.querySelectorAll(".agent-conversation-item");
+          items.forEach(item => item.classList.remove("active"));
+          
+          this.initializeProactiveChat();
         },
 
         toggle() {
@@ -3722,20 +4085,298 @@
           }
         },
 
+        async loadConversations() {
+          const username = localStorage.getItem("duma_user_name") || "Definir Nombre";
+          if (username === "Definir Nombre") {
+            const listEl = el("agentConversationsList");
+            if (listEl) {
+              listEl.innerHTML = `
+                <div style="font-style: italic; color: #a1a1aa; font-size: 12px; padding: 12px 14px;">
+                  Define tu nombre abajo para ver tu historial
+                </div>
+              `;
+            }
+            return;
+          }
+
+          try {
+            const res = await fetch(`chat/threads/${encodeURIComponent(username)}`);
+            if (res.ok) {
+              const data = await res.json();
+              const listEl = el("agentConversationsList");
+              if (!listEl) return;
+              listEl.innerHTML = "";
+
+              if (!data.threads || data.threads.length === 0) {
+                listEl.innerHTML = `
+                  <div style="font-style: italic; color: #a1a1aa; font-size: 12px; padding: 12px 14px;">
+                    No hay conversaciones previas.
+                  </div>
+                `;
+                return;
+              }
+
+              data.threads.forEach(t => {
+                const item = document.createElement("div");
+                item.className = "agent-conversation-item";
+                if (this.threadId === t.thread_id) {
+                  item.classList.add("active");
+                }
+                item.setAttribute("data-id", t.thread_id);
+                
+                // Formatear título e incluir botones de renombrar y borrar
+                item.innerHTML = `
+                  <span class="chat-icon">💬</span>
+                  <span class="chat-title" title="${t.title}">${t.title}</span>
+                  <div class="chat-actions">
+                    <button class="action-btn rename-btn" title="Renombrar">✏️</button>
+                    <button class="action-btn delete-btn" title="Eliminar">🗑️</button>
+                  </div>
+                `;
+
+                // Navegar al hacer clic en el item
+                item.addEventListener("click", (e) => {
+                  if (e.target.closest(".action-btn")) return;
+                  this.switchThread(t.thread_id);
+                });
+
+                // Renombrar
+                const renameBtn = item.querySelector(".rename-btn");
+                renameBtn.addEventListener("click", (e) => {
+                  e.stopPropagation();
+                  this.renameThread(t.thread_id, t.title);
+                });
+
+                // Borrar
+                const deleteBtn = item.querySelector(".delete-btn");
+                deleteBtn.addEventListener("click", (e) => {
+                  e.stopPropagation();
+                  this.deleteThread(t.thread_id);
+                });
+
+                listEl.appendChild(item);
+              });
+            }
+          } catch (e) {
+            console.error("Error cargando conversaciones:", e);
+          }
+        },
+
+        async switchThread(threadId) {
+          if (this.threadId === threadId) return;
+          this.threadId = threadId;
+          localStorage.setItem("duma_thread_id", threadId);
+          
+          // Actualizar clases activas en sidebar
+          const items = document.querySelectorAll(".agent-conversation-item");
+          items.forEach(item => {
+            item.classList.toggle("active", item.getAttribute("data-id") === threadId);
+          });
+
+          // Cargar el historial del hilo
+          await this.loadHistory();
+        },
+
+        async renameThread(threadId, currentTitle) {
+          const newTitle = prompt("Ingresa el nuevo título:", currentTitle);
+          if (newTitle === null) return;
+          const cleanTitle = newTitle.trim();
+          if (!cleanTitle) return;
+
+          try {
+            const res = await fetch(`chat/threads/${threadId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: cleanTitle })
+            });
+            if (res.ok) {
+              this.loadConversations();
+            } else {
+              const data = await res.json();
+              alert("Error al renombrar la conversación: " + (data.error || "desconocido"));
+            }
+          } catch (e) {
+            console.error("Error renombrando conversación:", e);
+            alert("Error de conexión al renombrar.");
+          }
+        },
+
+        async deleteThread(threadId) {
+          if (!confirm("¿Estás seguro de que deseas eliminar esta conversación? Se borrará de la base de datos y de los servidores de la IA.")) return;
+          
+          try {
+            const res = await fetch(`chat/threads/${threadId}`, {
+              method: "DELETE"
+            });
+            if (res.ok) {
+              if (this.threadId === threadId) {
+                this.threadId = null;
+                localStorage.removeItem("duma_thread_id");
+                this.messages = [];
+                const container = el("chatMsgs");
+                if (container) container.innerHTML = "";
+                this.initializeProactiveChat();
+              }
+              this.loadConversations();
+            } else {
+              const data = await res.json();
+              alert("Error al eliminar la conversación: " + (data.error || "desconocido"));
+            }
+          } catch (e) {
+            console.error("Error eliminando conversación:", e);
+            alert("Error de conexión al eliminar.");
+          }
+        },
+
+        async loadHistory() {
+          try {
+            const res = await fetch(`chat/history/${this.threadId}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.history && data.history.length > 0) {
+                this.isChatInitialized = true;
+                const container = el("chatMsgs");
+                container.innerHTML = "";
+                data.history.forEach(m => {
+                  this.addMessage(m.role === "assistant" ? "bot" : "user", m.text, m.images || []);
+                });
+                if (el("chatSuggestions")) el("chatSuggestions").style.display = "none";
+                return;
+              }
+            }
+            this.initializeProactiveChat();
+          } catch (e) {
+            console.error("Error loading chat history:", e);
+            this.initializeProactiveChat();
+          }
+        },
+
+        async initializeProactiveChat() {
+          const container = el("chatMsgs");
+          container.innerHTML = `
+            <div class="msg bot" id="chatLoadingGreeting">
+              <span style="font-style: italic; color: #a1a1aa;">Estableciendo conexión con Duma...</span>
+            </div>
+          `;
+          if (el("chatSuggestions")) el("chatSuggestions").style.display = "flex";
+          
+          try {
+            const rtRes = await fetch("api/oee/realtime/");
+            let oeeVal = 100;
+            if (rtRes.ok) {
+              const rtData = await rtRes.json();
+              if (rtData && rtData.snapshot) {
+                oeeVal = parseFloat(rtData.snapshot.OEE || 100);
+              }
+            }
+            
+            this.loadDynamicChips(oeeVal);
+
+            const initRes = await fetch("chat/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ input: "[init]" })
+            });
+
+            if (initRes.ok) {
+              const data = await initRes.json();
+              if (this.isChatInitialized) {
+                return;
+              }
+              this.isChatInitialized = true;
+
+              const loadingEl = el("chatLoadingGreeting");
+              if (loadingEl) loadingEl.remove();
+
+              if (data.thread_id) {
+                this.threadId = data.thread_id;
+                localStorage.setItem("duma_thread_id", data.thread_id);
+              }
+              if (data.message) {
+                this.addMessage("bot", data.message, [], true);
+              }
+            } else {
+              throw new Error("Failed to load proactive greeting");
+            }
+          } catch (e) {
+            console.error("Error initializing proactive chat:", e);
+            const loadingEl = el("chatLoadingGreeting");
+            if (loadingEl) {
+              loadingEl.innerHTML = `¡Hola! Soy <strong>Duma</strong>, tu analista de piso. ¿En qué puedo ayudarte hoy?`;
+            }
+            this.loadDynamicChips(100);
+          }
+        },
+
+        loadDynamicChips(oeeVal) {
+          const suggestionsEl = el("chatSuggestions");
+          if (!suggestionsEl) return;
+
+          const now = new Date();
+          const hour = now.getHours();
+          const chips = [];
+
+          if (oeeVal < 50) {
+            chips.push("🚨 OEE Crítico — analiza causa raíz ahora");
+          }
+
+          if (hour >= 7 && hour < 9) {
+            chips.push("¿Cómo cerró el turno nocturno?");
+            chips.push("¿Qué problemas de paros heredamos?");
+          } else if (hour >= 15 && hour < 17) {
+            chips.push("Balance del turno matutino");
+            chips.push("¿Vamos a cumplir la meta hoy?");
+          } else if (hour >= 23 || hour < 1) {
+            chips.push("Balance del turno vespertino");
+            chips.push("¿Cómo va el inicio del nocturno?");
+          }
+
+          const defaultChips = [
+            "Duma, dame un informe ejecutivo del problema más crítico ahora",
+            "¿Dónde estamos perdiendo más producción hoy y por qué?",
+            "Analiza las anomalías actuales en sensores y posibles riesgos",
+            "Con el ritmo actual, ¿qué tan lejos estamos de la meta diaria?",
+            "Genera un diagnóstico Pareto (80/20) de las de fallas de ayer"
+          ];
+
+          for (const d of defaultChips) {
+            if (chips.length >= 5) break;
+            if (!chips.includes(d)) {
+              chips.push(d);
+            }
+          }
+
+          suggestionsEl.innerHTML = "";
+          chips.forEach(chipText => {
+            const chip = document.createElement("div");
+            chip.className = "chat-suggestion-chip";
+            chip.textContent = chipText;
+            chip.onclick = () => this.handleSuggestion(chip);
+            suggestionsEl.appendChild(chip);
+          });
+        },
+
         open() {
-          el("chatWindow").style.display = "flex";
           this.isOpen = true;
-          el("chatInput").focus();
+          if (el("chatInput")) el("chatInput").focus();
+          if (this.messages.length === 0 && !this.threadId) {
+            this.initializeProactiveChat();
+          }
         },
 
         close() {
-          el("chatWindow").style.display = "none";
           this.isOpen = false;
         },
 
         async handleSend() {
           const input = el("chatInput").value.trim();
-          if (!input || this.isTyping) return;
+          if (!input || this.isTyping || this.isTypingEffectRunning) return;
+
+          const username = localStorage.getItem("duma_user_name") || "Anónimo";
+
+          this.isChatInitialized = true;
+          const loadingEl = el("chatLoadingGreeting");
+          if (loadingEl) loadingEl.remove();
 
           el("chatInput").value = "";
           this.addMessage("user", input);
@@ -3750,7 +4391,8 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 input: input,
-                thread_id: this.threadId
+                thread_id: this.threadId,
+                username: username
               })
             });
 
@@ -3758,12 +4400,17 @@
             this.showTyping(false);
 
             if (data.thread_id) {
+              const oldThreadId = this.threadId;
               this.threadId = data.thread_id;
               localStorage.setItem("duma_thread_id", data.thread_id);
+              
+              if (oldThreadId !== data.thread_id) {
+                this.loadConversations();
+              }
             }
 
             if (data.message) {
-              this.addMessage("bot", data.message, data.images);
+              this.addMessage("bot", data.message, data.images, true);
             } else if (data.error) {
               this.addMessage("bot", "⚠️ Error: " + data.error);
             }
@@ -3774,69 +4421,110 @@
           }
         },
 
-        addMessage(role, text, images = []) {
+        appendImagesToMessage(msgEl, images) {
+          if (!images || images.length === 0) return;
+          images.forEach(imgUrl => {
+            const safeUrl = imgUrl.replace('sandbox:', '');
+            
+            const wrap = document.createElement("div");
+            wrap.style.marginTop = "10px";
+            wrap.style.borderRadius = "8px";
+            wrap.style.overflow = "hidden";
+            wrap.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+            wrap.style.background = "#1e1e1e";
+            
+            if (safeUrl.toLowerCase().endsWith(".png")) {
+              const img = document.createElement("img");
+              img.src = safeUrl;
+              img.style.width = "100%";
+              img.style.height = "auto";
+              img.style.display = "block";
+              wrap.appendChild(img);
+            } else {
+              const frame = document.createElement("iframe");
+              frame.src = safeUrl;
+              frame.style.width = "100%";
+              frame.style.height = "350px";
+              frame.style.border = "none";
+              frame.style.display = "block";
+              frame.style.overflow = "hidden";
+              wrap.appendChild(frame);
+            }
+            
+            const fsBtn = document.createElement("div");
+            fsBtn.className = "chat-plot-btn";
+            fsBtn.innerHTML = `<span style="font-weight:bold; font-size:13px;"><i class="fa fa-expand" style="margin-right:5px;"></i> Pantalla Completa</span>`;
+            fsBtn.style.marginTop = "0px";
+            fsBtn.style.borderRadius = "0 0 8px 8px";
+            if (safeUrl.toLowerCase().endsWith(".png")) {
+               fsBtn.onclick = () => openFullScreen(safeUrl, "Gráfica Inteligente Duma");
+            } else {
+               fsBtn.onclick = () => openFullScreen(safeUrl, "Dashboard Operacional Duma");
+            }
+            
+            wrap.appendChild(fsBtn);
+            msgEl.appendChild(wrap);
+          });
+        },
+
+        addMessage(role, text, images = [], isLive = false) {
           if (!this.messages) this.messages = [];
-          this.messages.push({ role, text, images });
+          
+          const alreadyExists = this.messages.some(m => m.role === role && m.text === text);
+          if (!alreadyExists) {
+            this.messages.push({ role, text, images });
+          }
           
           const container = el("chatMsgs");
           const msg = document.createElement("div");
           msg.className = "msg " + role;
 
-          // Usar mdToHtml existente para el asistente
           if (role === "bot") {
-            msg.innerHTML = mdToHtml(text);
+            if (isLive) {
+              this.isTypingEffectRunning = true;
+              if (el("chatSendBtn")) el("chatSendBtn").disabled = true;
+              if (el("chatInput")) el("chatInput").disabled = true;
 
-            if (images && images.length > 0) {
-              images.forEach(imgUrl => {
-                const safeUrl = imgUrl.replace('sandbox:', '');
-                
-                const wrap = document.createElement("div");
-                wrap.style.marginTop = "10px";
-                wrap.style.borderRadius = "8px";
-                wrap.style.overflow = "hidden";
-                wrap.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-                wrap.style.background = "#1e1e1e";
-                
-                if (safeUrl.toLowerCase().endsWith(".png")) {
-                  const img = document.createElement("img");
-                  img.src = safeUrl;
-                  img.style.width = "100%";
-                  img.style.height = "auto";
-                  img.style.display = "block";
-                  wrap.appendChild(img);
+              const words = text.split(" ");
+              let idx = 0;
+              let currentText = "";
+              
+              container.appendChild(msg);
+              
+              const timer = setInterval(() => {
+                if (idx < words.length) {
+                  currentText += (idx === 0 ? "" : " ") + words[idx];
+                  msg.innerHTML = mdToHtml(currentText);
+                  container.scrollTop = container.scrollHeight;
+                  idx++;
                 } else {
-                  const frame = document.createElement("iframe");
-                  frame.src = safeUrl;
-                  frame.style.width = "100%";
-                  frame.style.height = "350px";
-                  frame.style.border = "none";
-                  frame.style.display = "block";
-                  frame.style.overflow = "hidden";
-                  wrap.appendChild(frame);
+                  clearInterval(timer);
+                  this.isTypingEffectRunning = false;
+                  if (el("chatSendBtn")) el("chatSendBtn").disabled = false;
+                  if (el("chatInput")) {
+                    el("chatInput").disabled = false;
+                    el("chatInput").focus();
+                  }
+
+                  if (images && images.length > 0) {
+                    this.appendImagesToMessage(msg, images);
+                  }
+                  container.scrollTop = container.scrollHeight;
                 }
-                
-                const fsBtn = document.createElement("div");
-                fsBtn.className = "chat-plot-btn";
-                fsBtn.innerHTML = `<span style="font-weight:bold; font-size:13px;"><i class="fa fa-expand" style="margin-right:5px;"></i> Pantalla Completa</span>`;
-                fsBtn.style.marginTop = "0px";
-                fsBtn.style.borderRadius = "0 0 8px 8px";
-                if (safeUrl.toLowerCase().endsWith(".png")) {
-                   fsBtn.onclick = () => openFullScreen(safeUrl, "Gráfica Inteligente Duma");
-                } else {
-                   fsBtn.onclick = () => openFullScreen(safeUrl, "Dashboard Operacional Duma");
-                }
-                
-                wrap.appendChild(fsBtn);
-                
-                msg.appendChild(wrap);
-              });
+              }, 30);
+            } else {
+              msg.innerHTML = mdToHtml(text);
+              if (images && images.length > 0) {
+                this.appendImagesToMessage(msg, images);
+              }
+              container.appendChild(msg);
+              container.scrollTop = container.scrollHeight;
             }
           } else {
             msg.textContent = text;
+            container.appendChild(msg);
+            container.scrollTop = container.scrollHeight;
           }
-
-          container.appendChild(msg);
-          container.scrollTop = container.scrollHeight;
         },
 
         handleSuggestion(chipEl) {

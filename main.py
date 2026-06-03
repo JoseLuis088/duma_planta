@@ -2,6 +2,7 @@ import os
 import io
 import uuid
 import json
+import logging
 import time
 import base64
 import re
@@ -69,8 +70,37 @@ CONN_STR = (
     "Connect Timeout=60;"
 )
 
+# --- Duma Chat History Database (Local Warehouse) ---
+HISTORY_SERVER = os.getenv("HISTORY_SQL_SERVER", "172.168.10.106")
+HISTORY_DB     = os.getenv("HISTORY_SQL_DB", "Duma_Planta")
+HISTORY_USER   = os.getenv("HISTORY_SQL_USER", "sa")
+HISTORY_PASS   = os.getenv("HISTORY_SQL_PASS", "chepr$nASt70r6t4+bro")
+
+HISTORY_CONN_STR = (
+    f"DRIVER={{{SQL_DRIVER}}};"
+    f"SERVER={HISTORY_SERVER};"
+    f"DATABASE={HISTORY_DB};"
+    f"UID={HISTORY_USER};"
+    f"PWD={HISTORY_PASS};"
+    "Encrypt=no;"
+    "TrustServerCertificate=yes;"
+    "Connect Timeout=15;"
+)
+
+HISTORY_MASTER_CONN_STR = (
+    f"DRIVER={{{SQL_DRIVER}}};"
+    f"SERVER={HISTORY_SERVER};"
+    f"DATABASE=master;"
+    f"UID={HISTORY_USER};"
+    f"PWD={HISTORY_PASS};"
+    "Encrypt=no;"
+    "TrustServerCertificate=yes;"
+    "Connect Timeout=15;"
+)
+
 # Ruta absoluta al logo de DUMA (para PDF y Word)
 _LOGO_PATH = os.path.join("static", "images", "LOGO DUMA.png")
+
 
 
 # ---------- Clientes Azure ----------
@@ -85,6 +115,126 @@ async_client = AsyncAzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY,
     api_version=AZURE_OPENAI_API_VERSION,
 )
+
+# ---------- Inicialización y Limpieza de Historial en SQL Server ----------
+def init_history_db():
+    logging.info("Iniciando verificación/creación de base de datos Duma_Planta...")
+    try:
+        # 1) Conectar a master para crear Duma_Planta si no existe
+        with pyodbc.connect(HISTORY_MASTER_CONN_STR, autocommit=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT database_id FROM sys.databases WHERE name = 'Duma_Planta'")
+            if not cursor.fetchone():
+                logging.info("Creando base de datos Duma_Planta en SQL Server...")
+                cursor.execute("CREATE DATABASE Duma_Planta")
+                logging.info("Base de datos Duma_Planta creada con éxito.")
+            else:
+                logging.info("La base de datos Duma_Planta ya existe.")
+    except Exception as e:
+        logging.error(f"Error al verificar/crear la base de datos Duma_Planta en master: {e}")
+        return
+
+    try:
+        # 2) Conectar a Duma_Planta para crear las tablas
+        with pyodbc.connect(HISTORY_CONN_STR, autocommit=True) as conn:
+            cursor = conn.cursor()
+            
+            # Tabla dbo.duma_conversations
+            cursor.execute("""
+                IF OBJECT_ID('dbo.duma_conversations', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.duma_conversations (
+                        thread_id VARCHAR(100) PRIMARY KEY,
+                        user_name NVARCHAR(100) NOT NULL,
+                        title NVARCHAR(255) NOT NULL,
+                        created_at DATETIME DEFAULT GETDATE(),
+                        active BIT DEFAULT 1
+                    );
+                    CREATE INDEX idx_conversations_user ON dbo.duma_conversations(user_name);
+                END
+            """)
+            
+            # Tabla dbo.duma_messages
+            cursor.execute("""
+                IF OBJECT_ID('dbo.duma_messages', 'U') IS NULL
+                BEGIN
+                    CREATE TABLE dbo.duma_messages (
+                        message_id INT IDENTITY(1,1) PRIMARY KEY,
+                        thread_id VARCHAR(100) FOREIGN KEY REFERENCES dbo.duma_conversations(thread_id) ON DELETE CASCADE,
+                        role VARCHAR(50) NOT NULL,
+                        text NVARCHAR(MAX) NOT NULL,
+                        images NVARCHAR(MAX) NULL,
+                        created_at DATETIME DEFAULT GETDATE()
+                    );
+                    CREATE INDEX idx_messages_thread ON dbo.duma_messages(thread_id);
+                END
+                ELSE
+                BEGIN
+                    IF COL_LENGTH('dbo.duma_messages', 'images') IS NULL
+                    BEGIN
+                        ALTER TABLE dbo.duma_messages ADD images NVARCHAR(MAX) NULL;
+                    END
+                END
+            """)
+            logging.info("Tablas de historial duma_conversations y duma_messages (con columna 'images') verificadas/creadas con éxito.")
+    except Exception as e:
+        logging.error(f"Error al verificar/crear tablas en la base de datos Duma_Planta: {e}")
+
+
+def run_thread_cleanup():
+    logging.info("Iniciando purga automática de chats con más de 30 días...")
+    cutoff_date = datetime.now() - timedelta(days=30)
+    threads_to_delete = []
+    
+    try:
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT thread_id FROM dbo.duma_conversations WHERE created_at < ?",
+                (cutoff_date,)
+            )
+            rows = cursor.fetchall()
+            threads_to_delete = [r[0] for r in rows]
+    except Exception as e:
+        logging.error(f"Error al buscar hilos antiguos en la base de datos: {e}")
+        return
+
+    if not threads_to_delete:
+        logging.info("No se encontraron hilos de más de 30 días para limpiar.")
+        return
+
+    logging.info(f"Se encontraron {len(threads_to_delete)} hilos antiguos para purgar.")
+    for t_id in threads_to_delete:
+        # 1) Eliminar de OpenAI
+        try:
+            logging.info(f"Purgando hilo {t_id} de los servidores de OpenAI...")
+            client.beta.threads.delete(t_id)
+        except Exception as oe:
+            logging.warning(f"No se pudo eliminar el hilo {t_id} de OpenAI (posiblemente ya no existe): {oe}")
+            
+        # 2) Eliminar de la base de datos local
+        try:
+            logging.info(f"Eliminando hilo {t_id} de la base de datos local...")
+            with pyodbc.connect(HISTORY_CONN_STR) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM dbo.duma_conversations WHERE thread_id = ?", (t_id,))
+                conn.commit()
+            logging.info(f"Hilo {t_id} eliminado exitosamente de la base de datos local.")
+        except Exception as e:
+            logging.error(f"Error al eliminar el hilo {t_id} de la base de datos local: {e}")
+
+
+async def periodic_cleanup_task():
+    # Esperar 10 segundos tras el inicio para no interferir con el arranque
+    await asyncio.sleep(10)
+    while True:
+        try:
+            run_thread_cleanup()
+        except Exception as e:
+            logging.error(f"Error en tarea de limpieza periódica: {e}")
+        # Esperar 24 horas
+        await asyncio.sleep(86400)
+
 
 import os
 import json
@@ -205,9 +355,9 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
         ],
     }
     user_prompt = (
-        "Estos son los resultados del backend.\n"
-        "Genera el análisis ejecutivo y recomendaciones.\n\n"
-        f"JSON:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        "Estos son los resultados del backend.\r\n"
+        "Genera el análisis ejecutivo y recomendaciones.\r\n\r\n"
+        f"JSON:\r\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
     return aoai_text(CONTROL_VARS_AI_SYSTEM, user_prompt, temperature=0.25, max_tokens=1100)
 
@@ -258,15 +408,15 @@ Eres **Duma**, el Agente de Inteligencia Operacional de nivel ejecutivo (Directo
 async def ai_oee_realtime(snapshot: dict, stop_reasons: List[dict] = None) -> str:
     """Genera análisis ejecutivo para OEE en tiempo real con diagnóstico de paros."""
     user_prompt = (
-        "Analiza el siguiente SNAPSHOT de OEE en tiempo real y los MOTIVOS DE PARO acumulados hoy.\n\n"
-        "SNAPSHOT ACTUAL:\n"
-        f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}\n\n"
-        "MOTIVOS DE PARO ACUMULADOS (Turno Actual):\n"
-        f"{json.dumps(stop_reasons or [], ensure_ascii=False, indent=2)}\n\n"
-        "Instrucciones:\n"
-        "- Diagnostica el OEE actual y relaciónalo con los paros acumulados hoy.\n"
-        "- Identifica el 'KPI Limitante' de este momento.\n"
-        "- Si hay paros importantes en el Pareto, úsalos para explicar la baja disponibilidad actual.\n"
+        "Analiza el siguiente SNAPSHOT de OEE en tiempo real y los MOTIVOS DE PARO acumulados hoy.\r\n\r\n"
+        "SNAPSHOT ACTUAL:\r\n"
+        f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}\r\n\r\n"
+        "MOTIVOS DE PARO ACUMULADOS (Turno Actual):\r\n"
+        f"{json.dumps(stop_reasons or [], ensure_ascii=False, indent=2)}\r\n\r\n"
+        "Instrucciones:\r\n"
+        "- Diagnostica el OEE actual y relaciónalo con los paros acumulados hoy.\r\n"
+        "- Identifica el 'KPI Limitante' de este momento.\r\n"
+        "- Si hay paros importantes en el Pareto, úsalos para explicar la baja disponibilidad actual.\r\n"
         "- Sigue la ESTRUCTURA OBLIGATORIA (Resumen, Diagnóstico, RCA, Plan de Acción)."
     )
     return await aoai_text_async(OEE_AI_SYSTEM, user_prompt, temperature=0.15, max_tokens=1000)
@@ -295,17 +445,17 @@ def ai_oee_range_analysis(range_data: dict) -> str:
     }
 
     user_prompt = (
-        f"Genera el informe ejecutivo de OEE para el periodo.\n\n"
-        f"KPIs CONSOLIDADOS:\n{json.dumps(enriched, ensure_ascii=False, indent=2)}\n\n"
-        f"PRINCIPALES MOTIVOS DE PARO (PARETO):\n{json.dumps(stops, ensure_ascii=False, indent=2)}\n\n"
-        f"DÍAS CRÍTICOS (menor OEE primero):\n{json.dumps(worst, ensure_ascii=False, indent=2)}\n\n"
-        f"DETALLE POR TURNO ({len(details)} registros):\n{json.dumps(details[:20], ensure_ascii=False, indent=2)}\n\n"
-        "Instrucciones:\n"
-        "- Analiza prioritariamente los MOTIVOS DE PARO para explicar la baja disponibilidad.\n"
-        "- OEE<50% es estado CRÍTICO. Reporta gap en kg y % cumplimiento.\n"
-        "- Si los paros no programados son altos, correlaciona con los motivos encontrados.\n"
-        "- HIPÓTESIS DE CONTROL: Menciona explícitamente variables de control (sensores) que podrían estar fallando (IQF, Chiller, etc.) según los tipos de paros.\n"
-        "- Cuantifica siempre: kg perdidos, horas de paro, % de cumplimiento.\n"
+        f"Genera el informe ejecutivo de OEE para el periodo.\r\n\r\n"
+        f"KPIs CONSOLIDADOS:\r\n{json.dumps(enriched, ensure_ascii=False, indent=2)}\r\n\r\n"
+        f"PRINCIPALES MOTIVOS DE PARO (PARETO):\r\n{json.dumps(stops, ensure_ascii=False, indent=2)}\r\n\r\n"
+        f"DÍAS CRÍTICOS (menor OEE primero):\r\n{json.dumps(worst, ensure_ascii=False, indent=2)}\r\n\r\n"
+        f"DETALLE POR TURNO ({len(details)} registros):\r\n{json.dumps(details[:20], ensure_ascii=False, indent=2)}\r\n\r\n"
+        "Instrucciones:\r\n"
+        "- Analiza prioritariamente los MOTIVOS DE PARO para explicar la baja disponibilidad.\r\n"
+        "- OEE<50% es estado CRÍTICO. Reporta gap en kg y % cumplimiento.\r\n"
+        "- Si los paros no programados son altos, correlaciona con los motivos encontrados.\r\n"
+        "- HIPÓTESIS DE CONTROL: Menciona explícitamente variables de control (sensores) que podrían estar fallando (IQF, Chiller, etc.) según los tipos de paros.\r\n"
+        "- Cuantifica siempre: kg perdidos, horas de paro, % de cumplimiento.\r\n"
         "- Usa el término 'Producto conforme' en el reporte."
     )
     return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.15, max_tokens=1400)
@@ -324,6 +474,12 @@ app.add_middleware(
 
 # Montar estáticos (sirve index.html, imágenes y gráficos)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/Bafar/static", StaticFiles(directory="static"), name="static_bafar")
+
+@app.on_event("startup")
+async def startup_event():
+    init_history_db()
+    asyncio.create_task(periodic_cleanup_task())
 
 # ---------- Helpers SQL ----------
 def run_sql(select_sql: str):
@@ -331,7 +487,7 @@ def run_sql(select_sql: str):
     Ejecuta un SELECT y regresa (rows, columns).
     Garantiza el retorno de ([], []) incluso en caso de error tras reintentos.
     """
-    print("\n====== EJECUTANDO EN SQL SERVER ======")
+    print("\r\n====== EJECUTANDO EN SQL SERVER ======")
     print(select_sql)
     print("======================================")
 
@@ -381,10 +537,35 @@ def run_sql(select_sql: str):
 PLOTS_DIR = os.path.join("static", "plots")
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
-
-
-
-
+def wrap_plotly_fig_for_pdf_capture(fig, fname_html: str) -> str:
+    return f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; font-family: sans-serif; }}
+        </style>
+    </head>
+    <body data-chart-url="{fname_html}" style="height: 100vh; margin: 0; min-height: 100vh; display: flex; flex-direction: column;">
+        {fig.to_html(include_plotlyjs="cdn", full_html=False, default_height="100vh", default_width="100%")}
+        <script>
+            window.addEventListener("message", async (e) => {{
+                if (e.data && e.data.action === "GET_PNG") {{
+                    const gd = document.querySelector('.plotly-graph-div');
+                    if (gd) {{
+                        try {{
+                            const dataUrl = await Plotly.toImage(gd, {{format: 'png', width: 900, height: 450}});
+                            window.parent.postMessage({{ action: "PNG_RESULT", src: document.body.getAttribute('data-chart-url'), dataUrl: dataUrl }}, "*");
+                        }} catch (err) {{
+                            console.error("Error toImage:", err);
+                        }}
+                    }}
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
 
 def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     import numpy as np
@@ -407,6 +588,182 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
         if y in df.columns:
             df[y] = pd.to_numeric(df[y], errors="coerce")
 
+    # Agrupación si se solicita en spec (ej. agg="mean" o agg="sum" para graficar OEE general sin turnos)
+    agg_func = spec.get("agg")
+    
+    # Auto-activar agrupación: si hay duplicados en X y la métrica es OEE, forzar ponderación
+    if not agg_func and x in df.columns and ys:
+        is_oee_auto = any("OEE" in str(y).upper() for y in ys)
+        if is_oee_auto and df[x].duplicated().any():
+            agg_func = "weighted_oee"  # marca especial para ponderación
+
+    if agg_func and x in df.columns and ys:
+        try:
+            # PONDERACIÓN DE OEE DIARIO: Evitamos promedio simple de porcentajes
+            is_oee = any("OEE" in str(y).upper() for y in ys)
+            avail_col = next((c for c in df.columns if c in ("AvailableTimeMin", "TiempoDisponibleMin")), None)
+            prod_col = next((c for c in df.columns if c in ("ProductiveTimeMin", "TiempoProductivoMin")), None)
+            real_col = next((c for c in df.columns if c in ("CurrentProduction", "ProduccionRealKg", "CurrentShiftProduction")), None)
+            exp_col = next((c for c in df.columns if c in ("ExpectedProduction", "ProduccionEstimadaKg", "ExpectedShiftProduction")), None)
+            qual_col = next((c for c in df.columns if c.strip() in ("Quality", "Producto Conforme", "ProductoConforme", "[Producto Conforme]")), None)
+
+            if is_oee and not (avail_col and prod_col and real_col and exp_col):
+                # Intentar obtener las columnas crudas desde la BD en caliente para hacer la ponderación correcta
+                try:
+                    dates_in_df = df[x].dropna().unique()
+                    formatted_dates = []
+                    for dt in dates_in_df:
+                        try:
+                            formatted_dates.append(pd.to_datetime(dt).strftime('%Y-%m-%d'))
+                        except:
+                            s_dt = str(dt).strip()
+                            if len(s_dt) >= 10:
+                                formatted_dates.append(s_dt[:10])
+                    
+                    if formatted_dates:
+                        sql_dates = ", ".join(f"'{d}'" for d in formatted_dates)
+                        raw_sql = f"""
+SELECT 
+    CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+         ELSE CAST(wse.StartDate AS date) END AS Fecha,
+    wses.AvailableTimeMin, 
+    wses.ProductiveTimeMin,
+    wses.CurrentProductionSummary AS CurrentProduction,
+    wses.ExpectedProductionSummaryModified AS ExpectedProduction,
+    wses.Quality
+FROM ind.WorkShiftExecutionSummaries wses
+JOIN dbo.WorkShiftExecutions wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+JOIN dbo.WorkShiftTemplates wst ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
+WHERE wse.Status='closed' AND wse.Active = 1 AND wses.Active = 1
+  AND wse.DayOff = 0
+  AND (CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date) END) IN ({sql_dates})
+"""
+                        r_rows, r_cols = run_sql(raw_sql)
+                        if r_rows:
+                            raw_df = pd.DataFrame(r_rows, columns=r_cols)
+                            for col in ["AvailableTimeMin", "ProductiveTimeMin", "CurrentProduction", "ExpectedProduction", "Quality"]:
+                                raw_df[col] = pd.to_numeric(raw_df[col], errors="coerce").fillna(0.0)
+                            raw_df["Fecha"] = pd.to_datetime(raw_df["Fecha"]).dt.strftime('%Y-%m-%d')
+                            
+                            raw_df["_ConformingKg"] = (raw_df["Quality"] / 100.0) * raw_df["CurrentProduction"]
+                            grouped = raw_df.groupby("Fecha", as_index=False).agg({
+                                "AvailableTimeMin": "sum",
+                                "ProductiveTimeMin": "sum",
+                                "CurrentProduction": "sum",
+                                "ExpectedProduction": "sum",
+                                "_ConformingKg": "sum"
+                            })
+                            
+                            avail_s = grouped["AvailableTimeMin"]
+                            prod_s = grouped["ProductiveTimeMin"]
+                            real_s = grouped["CurrentProduction"]
+                            exp_s = grouped["ExpectedProduction"]
+                            conf_s = grouped["_ConformingKg"]
+                            
+                            disp_s = (prod_s / avail_s.replace(0, 1)) * 100
+                            desemp_s = (real_s / exp_s.replace(0, 1)) * 100
+                            qual_s = (conf_s / real_s.replace(0, 1)) * 100
+                            qual_s.loc[real_s == 0] = 100.0
+                            
+                            grouped["OEE_weighted"] = (disp_s / 100.0) * (desemp_s / 100.0) * (qual_s / 100.0) * 100.0
+                            
+                            weighted_map = dict(zip(grouped["Fecha"], grouped["OEE_weighted"]))
+                            disp_map = dict(zip(grouped["Fecha"], disp_s))
+                            perf_map = dict(zip(grouped["Fecha"], desemp_s))
+                            qual_map = dict(zip(grouped["Fecha"], qual_s))
+                            
+                            df_temp_dates = pd.to_datetime(df[x]).dt.strftime('%Y-%m-%d')
+                            oee_col = next((y for y in ys if "OEE" in str(y).upper()), ys[0])
+                            df[oee_col] = df_temp_dates.map(weighted_map).fillna(df[oee_col])
+                            
+                            for y in ys:
+                                if y == oee_col:
+                                    continue
+                                if y in ("Availability", "Disponibilidad"):
+                                    df[y] = df_temp_dates.map(disp_map).fillna(df[y])
+                                elif y in ("Performance", "Desempeno", "Desempeño"):
+                                    df[y] = df_temp_dates.map(perf_map).fillna(df[y])
+                                elif y in ("Quality", "Producto Conforme", "ProductoConforme"):
+                                    df[y] = df_temp_dates.map(qual_map).fillna(df[y])
+                except Exception as ex:
+                    print(f"Error fetching raw DB columns for OEE weighting: {ex}")
+
+            # Re-read raw columns if they were successfully added / mapped
+            avail_col = next((c for c in df.columns if c in ("AvailableTimeMin", "TiempoDisponibleMin")), None)
+            prod_col = next((c for c in df.columns if c in ("ProductiveTimeMin", "TiempoProductivoMin")), None)
+            real_col = next((c for c in df.columns if c in ("CurrentProduction", "ProduccionRealKg", "CurrentShiftProduction")), None)
+            exp_col = next((c for c in df.columns if c in ("ExpectedProduction", "ProduccionEstimadaKg", "ExpectedShiftProduction")), None)
+            qual_col = next((c for c in df.columns if c.strip() in ("Quality", "Producto Conforme", "ProductoConforme", "[Producto Conforme]")), None)
+
+            if is_oee and avail_col and prod_col and real_col and exp_col:
+                for c in [avail_col, prod_col, real_col, exp_col]:
+                    df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+                if qual_col:
+                    df[qual_col] = pd.to_numeric(df[qual_col], errors="coerce").fillna(100.0)
+                
+                agg_dict = {
+                    prod_col: "sum",
+                    avail_col: "sum",
+                    real_col: "sum",
+                    exp_col: "sum"
+                }
+                if qual_col:
+                    df["_ConformingKg"] = (df[qual_col] / 100.0) * df[real_col]
+                    agg_dict["_ConformingKg"] = "sum"
+
+                grouped_df = df.groupby(x, as_index=False).agg(agg_dict)
+                
+                avail_sum = grouped_df[avail_col]
+                prod_sum = grouped_df[prod_col]
+                real_sum = grouped_df[real_col]
+                exp_sum = grouped_df[exp_col]
+                
+                disp = (prod_sum / avail_sum.replace(0, 1)) * 100
+                disp = disp.fillna(0.0)
+                
+                desemp = (real_sum / exp_sum.replace(0, 1)) * 100
+                desemp = desemp.fillna(0.0)
+                
+                if qual_col:
+                    conf_sum = grouped_df["_ConformingKg"]
+                    quality = (conf_sum / real_sum.replace(0, 1)) * 100
+                    quality = quality.fillna(100.0)
+                    quality.loc[real_sum == 0] = 100.0
+                else:
+                    quality = 100.0
+                
+                oee_val = (disp / 100.0) * (desemp / 100.0) * (quality / 100.0) * 100.0
+                
+                oee_col = next((y for y in ys if "OEE" in str(y).upper()), ys[0])
+                grouped_df[oee_col] = oee_val
+                
+                for y in ys:
+                    if y == oee_col:
+                        continue
+                    if y in ("Availability", "Disponibilidad"):
+                        grouped_df[y] = disp
+                    elif y in ("Performance", "Desempeno", "Desempeño"):
+                        grouped_df[y] = desemp
+                    elif y in ("Quality", "Producto Conforme", "ProductoConforme"):
+                        grouped_df[y] = quality
+                
+                cols_to_keep = [x] + ys
+                df = grouped_df[[c for c in cols_to_keep if c in grouped_df.columns]].copy()
+            else:
+                cols_to_keep = [x] + [y for y in ys if y in df.columns]
+                df_to_agg = df[cols_to_keep].copy()
+                if agg_func == "mean":
+                    df = df_to_agg.groupby(x, as_index=False).mean()
+                elif agg_func == "sum":
+                    df = df_to_agg.groupby(x, as_index=False).sum()
+                elif agg_func == "max":
+                    df = df_to_agg.groupby(x, as_index=False).max()
+                elif agg_func == "min":
+                    df = df_to_agg.groupby(x, as_index=False).min()
+        except Exception as e:
+            print(f"Error agrupando DataFrame en render_chart_from_df: {e}")
+
     if x:
         if np.issubdtype(df[x].dtype, np.number) is False:
             try: df[x] = pd.to_datetime(df[x], errors="ignore")
@@ -417,10 +774,11 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     hue = spec.get("hue")
     df.columns = [c.strip() for c in df.columns]
 
-    if not hue and x in df.columns:
+    if not hue and not agg_func and x in df.columns:
         has_duplicates = df[x].duplicated().any()
-        is_oee = any("OEE" in str(y).upper() for y in ys)
-        if has_duplicates or is_oee:
+        # Solo aplicar auto-hue si hay duplicados REALES en el eje X.
+        # No forzar segmentación por turno solo porque la métrica sea OEE.
+        if has_duplicates:
             for potential in ["Turno", "WorkShiftName", "WorkShift", "Shift", "Linea"]:
                 if potential in df.columns and potential != x:
                     hue = potential
@@ -479,55 +837,7 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     
     fpath_png = os.path.join(PLOTS_DIR, f"{fname_base}.png")
     
-    html_content = f"""
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; font-family: sans-serif; }}
-        </style>
-    </head>
-    <body data-chart-url="{fname_html}" style="height: 100vh; margin: 0; min-height: 100vh; display: flex; flex-direction: column;">
-        {fig.to_html(include_plotlyjs="cdn", full_html=False, default_height="100vh", default_width="100%")}
-        <script>
-            window.addEventListener("message", async (e) => {{
-                if (e.data && e.data.action === "GET_PNG") {{
-                    const gd = document.querySelector('.plotly-graph-div');
-                    if (gd) {{
-                        try {{
-                            // Preparamos para lienzo blanco de PDF: Poner textos en negro
-                            const update = {{
-                                'font.color': '#0f172a',
-                                'title.font.color': '#0f172a',
-                                'xaxis.color': '#0f172a',
-                                'yaxis.color': '#0f172a',
-                                'legend.font.color': '#0f172a'
-                            }};
-                            await Plotly.relayout(gd, update);
-                            
-                            const dataUrl = await Plotly.toImage(gd, {{format: 'png', width: 900, height: 450}});
-                            
-                            // Revertir tema oscuro para el chat
-                            const revert = {{
-                                'font.color': '#e2e8f0',
-                                'title.font.color': '#e2e8f0',
-                                'xaxis.color': '#e2e8f0',
-                                'yaxis.color': '#e2e8f0',
-                                'legend.font.color': '#e2e8f0'
-                            }};
-                            await Plotly.relayout(gd, revert);
-
-                            window.parent.postMessage({{ action: "PNG_RESULT", src: document.body.getAttribute('data-chart-url'), dataUrl: dataUrl }}, "*");
-                        }} catch (err) {{
-                            console.error("Error toImage:", err);
-                        }}
-                    }}
-                }}
-            }});
-        </script>
-    </body>
-    </html>
-    """
+    html_content = wrap_plotly_fig_for_pdf_capture(fig, fname_html)
     
     with open(fpath_html, "w", encoding="utf-8") as f:
         f.write(html_content)
@@ -727,14 +1037,14 @@ ORDER BY pli.IntervalBegin DESC, pli.CreatedAt DESC;
                                 shift_filter = ""
                                 if shift_name:
                                     safe_shift = str(shift_name).replace("'", "''")
-                                    shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+                                    shift_filter = f"\r\n    AND wst.Name = N'{safe_shift}'"
 
                                 select_sql = f"""
 DECLARE @day DATE = {day_sql};
 
 SELECT
     wst.Name AS Turno,
-    -- ✅ Fecha técnica (Fecha Operativa): 
+    -- Fecha técnica (Fecha Operativa): 
     CASE
         WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
         ELSE CAST(wse.StartDate AS date)
@@ -782,7 +1092,7 @@ WHERE
     AND wse.Active = 1
     AND wses.Active = 1
     AND wst.Active = 1
-    -- ✅ Filtro por Fecha Operativa
+    -- Filtro por Fecha Operativa
     AND (
         CASE
             WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
@@ -810,7 +1120,7 @@ ORDER BY
                                 shift_filter = ""
                                 if shift_name:
                                     safe_shift = str(shift_name).replace("'", "''")
-                                    shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+                                    shift_filter = f"\r\n    AND wst.Name = N'{safe_shift}'"
 
                                 select_sql = f"""
 DECLARE @fromDay DATE = {from_sql};
@@ -844,7 +1154,15 @@ SELECT
               AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
         ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
     ) AS ParosProgramadosCont,
-    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin
+    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+
+    wses.WorkshiftDurationMin      AS DuracionTurnoMin,
+    wses.AvailableTimeMin          AS TiempoDisponibleMin,
+    wses.ProductiveTimeMin         AS TiempoProductivoMin,
+    wses.ExpectedProductionSummaryModified AS ProduccionEstimadaKg,
+    wses.CurrentProductionSummary  AS ProduccionRealKg,
+    wses.AvgExpectedVelocity       AS VelocidadPromedioEstimadaKgHr,
+    wses.AvgCurrentVelocity        AS VelocidadPromedioRealKgHr
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions      AS wse
     ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
@@ -872,9 +1190,9 @@ ORDER BY Fecha, Turno;
 """
 
                             # 🔍 DEBUG: ver qué SQL se está ejecutando
-                            print("\n========== SQL GENERADO POR BACKEND ==========")
+                            print("\r\n========== SQL GENERADO POR BACKEND ==========")
                             print(select_sql)
-                            print("==============================================\n")
+                            print("==============================================\r\n")
 
                             rows, columns = run_sql(select_sql)
                             tool_outputs.append({
@@ -916,6 +1234,11 @@ ORDER BY Fecha, Turno;
                                         
                                         # Generar si no existe o forzar actualización
                                         plot_critical_timeseries_day(df_day, vid, out_path)
+                                        try:
+                                            out_png_path = out_path.replace(".html", ".png")
+                                            plot_critical_timeseries_day_png(df_day, vid, out_png_path)
+                                        except Exception as pe:
+                                            logging.error(f"Error generando PNG de gráfica crítica en assistant tool: {pe}")
                                         plots.append({
                                             "var_id": vid,
                                             "title": f"{meta.get('name','Variable')} — {meta.get('device','')}".strip(" —") if meta else vid,
@@ -948,15 +1271,154 @@ ORDER BY Fecha, Turno;
                                 raise ValueError("Proporciona 'rows/columns' o 'select_sql'.")
 
                             print(f"DEBUG viz_render tool called with spec: {json.dumps(spec, indent=2)}")
-                            img_url = render_chart_from_df(df, spec)
                             print(f"DEBUG viz_render DataFrame columns: {df.columns.tolist()}")
-                            images_out.append(img_url)
-                            captions_out.append(spec.get("title") or "Gráfico")
 
-                            tool_outputs.append({
-                                "tool_call_id": tool.id,
-                                "output": json.dumps({"image_url": img_url}, ensure_ascii=False)
-                            })
+                            # Find Fecha/date column case-insensitively
+                            fecha_col = None
+                            for col in df.columns:
+                                if str(col).lower() in ("fecha", "date"):
+                                    fecha_col = col
+                                    break
+
+                            ys_spec = spec.get("ys", [])
+                            x_spec = spec.get("x")
+                            is_oee_chart = any("OEE" in str(y).upper() for y in ys_spec) or any("OEE" in str(col).upper() for col in df.columns)
+                            is_time_series = False
+                            if fecha_col is not None:
+                                if x_spec and str(x_spec).lower() == str(fecha_col).lower():
+                                    is_time_series = True
+                                elif not x_spec:
+                                    is_time_series = True
+
+                            if is_oee_chart and is_time_series:
+                                print("DEBUG viz_render: OEE time-series chart detected. Intercepting to re-query and aggregate correctly.")
+                                import pandas as pd
+                                from datetime import date
+
+                                parsed_dates = pd.to_datetime(df[fecha_col], errors="coerce").dropna()
+                                if len(parsed_dates) > 0:
+                                    from_day_v = parsed_dates.min().strftime("%Y-%m-%d")
+                                    to_day_v = parsed_dates.max().strftime("%Y-%m-%d")
+                                else:
+                                    from_day_v = date.today().isoformat()
+                                    to_day_v = from_day_v
+
+                                shift_val = None
+                                shift_cols = [col for col in df.columns if str(col).lower() in ("turno", "shift")]
+                                if shift_cols:
+                                    sc = shift_cols[0]
+                                    unique_shifts = df[sc].dropna().unique()
+                                    if len(unique_shifts) == 1:
+                                        shift_val = str(unique_shifts[0])
+
+                                from_sql_h = f"CONVERT(date, '{from_day_v}')"
+                                to_sql_h   = f"CONVERT(date, '{to_day_v}')"
+                                shift_filter_h = ""
+                                if shift_val and str(shift_val).strip() and str(shift_val).lower() not in ("(todos)", "todos", "(all)", "all"):
+                                    safe_sh = str(shift_val).replace("'", "''")
+                                    shift_filter_h = f"\n    AND wst.Name = N'{safe_sh}'"
+
+                                detail_sql_v = f"""
+DECLARE @fromDay DATE = {from_sql_h}, @toDay DATE = {to_sql_h};
+SELECT
+    CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+         ELSE CAST(wse.StartDate AS date) END AS Fecha,
+    wst.Name AS Turno,
+    wses.Oee AS OEE,
+    wses.AvailableTimeMin,
+    wses.ProductiveTimeMin,
+    ISNULL(wses.UnscheduledStopageMin,0) AS TiempoNoProdNoProgramadoMin,
+    ISNULL(wses.ScheduledStopageMin,0) AS TiempoNoProdProgramadoMin,
+    wses.CurrentProductionSummary AS CurrentProduction,
+    wses.ExpectedProductionSummaryModified AS ExpectedProduction,
+    wses.Quality AS Quality,
+    ISNULL(wses.UnscheduledStopagesCount,0) AS ParosNoProgramadosCont,
+    ISNULL(wses.ScheduledStopagesCount,0) AS ParosProgramadosCont
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates  AS wst ON wse.WorkShiftTemplateId  = wst.WorkShiftTemplateId
+WHERE wse.Status='closed' AND wse.Active=1 AND wses.Active=1 AND wse.DayOff=0
+  AND (CASE WHEN wst.EndTime<wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date) END) BETWEEN @fromDay AND @toDay
+  {shift_filter_h}
+ORDER BY Fecha DESC, Turno;
+"""
+                                print(f"DEBUG viz_render: Re-querying DB for OEE calculation between {from_day_v} and {to_day_v}")
+                                rws_v, cols_v = run_sql(detail_sql_v)
+                                rows_dicts_v = [dict(zip(cols_v, r)) for r in rws_v]
+
+                                plots_v = plot_oee_historical_comparison(from_day_v, rows_dicts_v, False)
+                                for p in plots_v:
+                                    images_out.append(p["url"])
+                                    captions_out.append(p.get("title", "OEE Historico"))
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({"plots": plots_v, "message": "Graficas generadas con calculo identico al modulo OEE Historico."}, ensure_ascii=False)
+                                })
+                            else:
+                                img_url = render_chart_from_df(df, spec)
+                                images_out.append(img_url)
+                                captions_out.append(spec.get("title") or "Grafico")
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({"image_url": img_url}, ensure_ascii=False)
+                                })
+
+                        elif name == "get_oee_historical_charts":
+                            # Herramienta que usa la misma logica que el modulo OEE Historico
+                            from_day_h = args.get("from_day") or args.get("day") or date.today().isoformat()
+                            to_day_h   = args.get("to_day") or from_day_h
+                            shift_h    = args.get("shift_name")
+                            try:
+                                from_sql_h = f"CONVERT(date, '{from_day_h}')"
+                                to_sql_h   = f"CONVERT(date, '{to_day_h}')"
+                                shift_filter_h = ""
+                                if shift_h and str(shift_h).strip() and shift_h not in ("(Todos)", "todos", "(All)"):
+                                    safe_sh = str(shift_h).replace("'", "''")
+                                    shift_filter_h = f"\n    AND wst.Name = N'{safe_sh}'"
+                                detail_sql_h = f"""
+DECLARE @fromDay DATE = {from_sql_h}, @toDay DATE = {to_sql_h};
+SELECT
+    CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+         ELSE CAST(wse.StartDate AS date) END AS Fecha,
+    wst.Name AS Turno,
+    wses.Oee AS OEE,
+    wses.AvailableTimeMin,
+    wses.ProductiveTimeMin,
+    ISNULL(wses.UnscheduledStopageMin,0) AS TiempoNoProdNoProgramadoMin,
+    ISNULL(wses.ScheduledStopageMin,0) AS TiempoNoProdProgramadoMin,
+    wses.CurrentProductionSummary AS CurrentProduction,
+    wses.ExpectedProductionSummaryModified AS ExpectedProduction,
+    wses.Quality AS Quality,
+    ISNULL(wses.UnscheduledStopagesCount,0) AS ParosNoProgramadosCont,
+    ISNULL(wses.ScheduledStopagesCount,0) AS ParosProgramadosCont
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates  AS wst ON wse.WorkShiftTemplateId  = wst.WorkShiftTemplateId
+WHERE wse.Status='closed' AND wse.Active=1 AND wses.Active=1 AND wse.DayOff=0
+  AND (CASE WHEN wst.EndTime<wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date) END) BETWEEN @fromDay AND @toDay
+  {shift_filter_h}
+ORDER BY Fecha DESC, Turno;
+"""
+                                rows_h, cols_h = run_sql(detail_sql_h)
+                                rows_dicts_h   = [dict(zip(cols_h, r)) for r in rows_h]
+                                plots_h = plot_oee_historical_comparison(from_day_h, rows_dicts_h, False)
+                                for p in plots_h:
+                                    images_out.append(p["url"])
+                                    captions_out.append(p.get("title", "OEE Historico"))
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": json.dumps({
+                                        "plots": plots_h,
+                                        "from_day": from_day_h, "to_day": to_day_h,
+                                        "message": f"Se generaron {len(plots_h)} graficas de OEE del {from_day_h} al {to_day_h} con calculo identico al modulo OEE Historico."
+                                    }, ensure_ascii=False)
+                                })
+                                print(f"DEBUG get_oee_historical_charts: {len(plots_h)} plots {from_day_h}-{to_day_h}")
+                            except Exception as e_h:
+                                print(f"ERROR get_oee_historical_charts: {e_h}")
+                                tool_outputs.append({"tool_call_id": tool.id, "output": json.dumps({"error": str(e_h)})})
 
                         elif name == "get_stopages_pareto":
                             day_from  = args.get("from_day") or date.today().isoformat()
@@ -968,16 +1430,16 @@ ORDER BY Fecha, Turno;
                             to_sql_t   = f"CONVERT(date, '{day_to}')"
                             sf = ""
                             if shift and shift not in ("todos", "(Todos)"):
-                                sf = f"\n    AND wst.Name = N'{str(shift).replace(chr(39), chr(39)*2)}'"
+                                sf = f"\r\n    AND wst.Name = N'{str(shift).replace(chr(39), chr(39)*2)}'"
                             tf = ""
                             if stop_type == "NP":
-                                tf = "\n    AND m.StoppageType = 'NP'"
+                                tf = "\r\n    AND m.StoppageType = 'NP'"
                             elif stop_type == "P":
-                                tf = "\n    AND m.StoppageType = 'P'"
+                                tf = "\r\n    AND m.StoppageType = 'P'"
 
                             sp_sql = f"""
 DECLARE @fromDay DATE = {from_sql_t}, @toDay DATE = {to_sql_t};
-SELECT TOP 15
+SELECT TOP 50
     mt.Name        AS Tipo_General,
     m.Name         AS Motivo_Particular,
     m.StoppageType AS Clasificacion,
@@ -1235,30 +1697,34 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
         is_pure_greeting = msg in greeting_set or msg.rstrip("!.?") in greeting_set
 
         extra_instructions = (
-            f"{system_prompt_content}\n\n"
-            "CATÁLOGO DE SENSORES (VARIABLES DE CONTROL):\n"
-            f"{json.dumps(CRITICAL_VARS, indent=2, ensure_ascii=False)}\n\n"
-            "INSTRUCCIONES ADICIONALES DE SESIÓN:\n"
+            f"{system_prompt_content}\r\n\r\n"
+            "CATÁLOGO DE SENSORES (VARIABLES DE CONTROL):\r\n"
+            f"{json.dumps(CRITICAL_VARS, indent=2, ensure_ascii=False)}\r\n\r\n"
+            "INSTRUCCIONES ADICIONALES DE SESIÓN:\r\n"
             "Responde en español. "
             "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
             "NO muestres consultas SQL en la respuesta final. "
-            "HERRAMIENTAS DISPONIBLES Y CUÁNDO USARLAS:\n"
-            "  • sql_query (modos: realtime|hist_turno_dia|hist_turno_rango): Para consultar OEE, producción y tiempos de turno.\n"
+            "HERRAMIENTAS DISPONIBLES Y CUÁNDO USARLAS:\r\n"
+            "  • sql_query (modos: realtime|hist_turno_dia|hist_turno_rango): Para consultar OEE, producción y tiempos de turno.\r\n"
+            "  • get_oee_historical_charts (from_day, to_day?, shift_name?): HERRAMIENTA PRINCIPAL para graficar OEE DIARIO CONSOLIDADO (sin segmentar por turnos). Usa esta herramienta cuando el usuario pida una gráfica de OEE por día/semana/rango SIN segmentar por turnos. Produce exactamente los mismos valores que el módulo OEE Histórico del dashboard.\r\n"
             "  • get_stopages_pareto (from_day, to_day, shift_name?, type?): Para responder preguntas sobre motivos de paro, "
-            "causas más frecuentes, paros no programados, análisis 80/20. ÚSALO cuando el usuario pregunte por causas de paros.\n"
+            "causas más frecuentes, paros no programados, análisis 80/20. ÚSALO cuando el usuario pregunte por causas de paros.\r\n"
             "  • get_control_variables_correlation (day): Para correlacionar lecturas de sensores con paros y OEE. "
-            "ÚSALO cuando el usuario pregunte por variables de control, sensores, o pida correlaciones.\n"
-            "  • get_control_variables (day): Para ver datos detallados de sensores de un día específico.\n"
-            "  • viz_render: Solo si el usuario pide explícitamente una gráfica.\n\n"
-            "PROTOCOLO AGÉNTICO (sigue estos pasos cuando detectes OEE bajo o preguntas de rendimiento):\n"
+            "ÚSALO cuando el usuario pregunte por variables de control, sensores, o pida correlaciones.\r\n"
+            "  • get_control_variables (day): Para ver datos detallados de sensores de un día específico.\r\n"
+            "  • viz_render: Solo si el usuario pide explícitamente una gráfica.\r\n\r\n"
+            "PROTOCOLO AGÉNTICO (sigue estos pasos cuando detectes OEE bajo o preguntas de rendimiento):\r\n"
             "1. Consulta OEE con sql_query → 2. Identifica KPI limitante → "
             "3. Si disponibilidad baja, usa get_stopages_pareto → "
             "4. Usa get_control_variables_correlation para correlacionar sensores → "
-            "5. Presenta hipótesis causa-efecto y recomendaciones cuantificadas.\n\n"
-            "**REGLA CRÍTICA DE GRÁFICAS:** Si usas viz_render o get_control_variables, PROHIBIDO usar sintaxis `![]()`. "
-            "El sistema detecta la imagen automáticamente. "
+            "5. Presenta hipótesis causa-efecto y recomendaciones cuantificadas.\r\n\r\n"
+            "**REGLA CRITICA DE GRAFICAS:** Si usas viz_render o get_control_variables, PROHIBIDO usar sintaxis `![]()`. "
+            "El sistema detecta la imagen automaticamente. "
             "Usa rutas relativas (ej: static/plots/archivo.png) solo en herramientas, nunca en el texto final. "
-            "Para OEE por turno/día usa chart='line', x='Fecha', ys=['OEE'], hue='Turno'. "
+            "Para OEE por TURNO (segmentado): chart='line', x='Fecha', ys=['OEE'], hue='Turno'. "
+            "Para OEE DIARIO CONSOLIDADO (sin segmentar por turno): USA get_oee_historical_charts en vez de viz_render. "
+            "Esa herramienta genera automaticamente las graficas con el calculo correcto y ponderado. "
+            "NUNCA uses viz_render para graficar OEE consolidado diario — siempre usa get_oee_historical_charts. "
             "Para comparaciones usa chart='bar', x='Turno', ys=['OEE']. "
             "Para TIEMPO REAL usa RT.1 del cookbook. "
             "Para TURNOS/FECHAS usa H1.x del cookbook."
@@ -1276,33 +1742,33 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
                 "para consultar dbo.ProductionLineIntervals (último snapshot de la línea). "
                 "No inventes otra consulta: usa RT.1 tal cual está definida en el cookbook. "
                 "Después interpreta los campos según el system prompt (estatus, tiempos, velocidades, producción, OEE y sus componentes)."
-                " Los campos importantes de ese registro significan lo siguiente:\n"
-                "   - TimeSinceLastStatusChange: duración que la línea lleva en el estatus actual.\n"
-                "   - TimeSinceLastWorkshiftBegin: tiempo natural transcurrido desde que inició el turno.\n"
-                "   - EffectiveAvailableTime: TIEMPO PRODUCTIVO (minutos u horas según la columna).\n"
-                "   - ScheduledStopageTime: tiempo NO productivo PROGRAMADO.\n"
-                "   - UnscheduledStopageTime: tiempo NO productivo NO programado.\n"
-                "   - CurrentRate: velocidad actual (kg/h).\n"
-                "   - ExpectedRate: velocidad esperada (kg/h).\n"
-                "   - CurrentShiftProduction: producción real del turno actual (kg).\n"
-                "   - ExpectedShiftProduction: producción estimada del turno a la hora actual (kg).\n"
-                "   - CurrentProduction: producción actual del día (kg).\n"
-                "   - ExpectedDayProduction: producción planificada del día (kg).\n"
-                "   - IntervalProductionLineStatus: estado actual de la línea.\n"
-                "   - OEE: indicador OEE global.\n"
-                "   - OEEAvailability: disponibilidad.\n"
-                "   - OEEPerformance: desempeño.\n"
-                "   - OEEQuality: Producto Conforme.\n"
-                " Cuando el usuario pregunte por 'tiempo productivo', responde usando EffectiveAvailableTime.\n"
-                " Cuando pregunte por 'tiempo no productivo programado', usa ScheduledStopageTime.\n"
-                " Cuando pregunte por 'tiempo no productivo no programado', usa UnscheduledStopageTime.\n"
+                " Los campos importantes de ese registro significan lo siguiente:\r\n"
+                "   - TimeSinceLastStatusChange: duración que la línea lleva en el estatus actual.\r\n"
+                "   - TimeSinceLastWorkshiftBegin: tiempo natural transcurrido desde que inició el turno.\r\n"
+                "   - EffectiveAvailableTime: TIEMPO PRODUCTIVO (minutos u horas según la columna).\r\n"
+                "   - ScheduledStopageTime: tiempo NO productivo PROGRAMADO.\r\n"
+                "   - UnscheduledStopageTime: tiempo NO productivo NO programado.\r\n"
+                "   - CurrentRate: velocidad actual (kg/h).\r\n"
+                "   - ExpectedRate: velocidad esperada (kg/h).\r\n"
+                "   - CurrentShiftProduction: producción real del turno actual (kg).\r\n"
+                "   - ExpectedShiftProduction: producción estimada del turno a la hora actual (kg).\r\n"
+                "   - CurrentProduction: producción actual del día (kg).\r\n"
+                "   - ExpectedDayProduction: producción planificada del día (kg).\r\n"
+                "   - IntervalProductionLineStatus: estado actual de la línea.\r\n"
+                "   - OEE: indicador OEE global.\r\n"
+                "   - OEEAvailability: disponibilidad.\r\n"
+                "   - OEEPerformance: desempeño.\r\n"
+                "   - OEEQuality: Producto Conforme.\r\n"
+                " Cuando el usuario pregunte por 'tiempo productivo', responde usando EffectiveAvailableTime.\r\n"
+                " Cuando pregunte por 'tiempo no productivo programado', usa ScheduledStopageTime.\r\n"
+                " Cuando pregunte por 'tiempo no productivo no programado', usa UnscheduledStopageTime.\r\n"
                 " Si pide 'tiempo no productivo' en general, puedes explicar que es la suma de los tiempos "
-                "no productivos programados y no programados, e indicar ambos valores por separado.\n"
+                "no productivos programados y no programados, e indicar ambos valores por separado.\r\n"
                 " Si el usuario pregunta 'qué es' un indicador (por ejemplo: 'qué es tiempo productivo'), "
-                "explica su definición usando estas descripciones sin llamar a sql_query.\n"
+                "explica su definición usando estas descripciones sin llamar a sql_query.\r\n"
                 " Si el usuario pregunta 'cuánto es' un indicador (por ejemplo: 'cuál es el tiempo productivo'), "
                 "llama a sql_query con la SELECT indicada, toma el valor del último registro y devuelve el "
-                "resultado de forma clara (incluyendo la unidad de medida si está disponible).\n"
+                "resultado de forma clara (incluyendo la unidad de medida si está disponible).\r\n"
     )
 
 
@@ -1328,7 +1794,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
                     for c in m.content:
                         if getattr(c, "type", "") == "text":
                             chunks.append(c.text.value)
-                    last_text = "\n".join(chunks).strip()
+                    last_text = "\r\n".join(chunks).strip()
                     if last_text:
                         break
         except Exception as e:
@@ -1339,18 +1805,18 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
         asks_for_kpis = any(k in msg_low for k in KPI_KEYWORDS)
         if (not tool_used) and asks_for_kpis:
             forced_instructions = (
-                "Debes responder ejecutando SIEMPRE una consulta con la función sql_query.\n"
+                "Debes responder ejecutando SIEMPRE una consulta con la función sql_query.\r\n"
                 "Si la pregunta es de TIEMPO REAL / ACTUAL / AHORA, usa la receta RT.1 del archivo duma_cookbook.txt "
-                "sobre dbo.ProductionLineIntervals para obtener el último snapshot.\n"
+                "sobre dbo.ProductionLineIntervals para obtener el último snapshot.\r\n"
                 "Si la pregunta es por TURNOS o FECHAS (día específico, rango de fechas, ayer, último turno, etc.), "
                 "usa EXCLUSIVAMENTE las recetas H1.x del duma_cookbook.txt basadas en "
                 "dbo.WorkShiftExecutions + dbo.WorkShiftTemplates + ind.WorkShiftExecutionSummaries "
-                "(por ejemplo H1.1 para un solo día por turno, H1.2 para rangos de fechas).\n"
+                "(por ejemplo H1.1 para un solo día por turno, H1.2 para rangos de fechas).\r\n"
                 "No inventes nuevas consultas SQL: copia la receta que corresponda, ajusta solo las fechas o filtros necesarios, "
-                "y pásala a sql_query.\n"
+                "y pásala a sql_query.\r\n"
                 "En la respuesta, entrega OEE, disponibilidad, desempeño y producto conforme en % (En la base de datos ya están en porcentaje, no multipliques por 100), "
                 "producción estimada vs real, velocidades promedio estimada y real (si están en la receta), "
-                "y tiempos productivos vs no productivos.\n"
+                "y tiempos productivos vs no productivos.\r\n"
                 "NO muestres la consulta SQL en el mensaje final."
             )
 
@@ -1370,7 +1836,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
                         for c in m.content:
                             if getattr(c, "type", "") == "text":
                                 chunks.append(c.text.value)
-                        last_text = "\n".join(chunks).strip()
+                        last_text = "\r\n".join(chunks).strip()
                         if last_text:
                             break
             except Exception as e:
@@ -1409,7 +1875,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
                         for c in m.content:
                             if getattr(c, "type", "") == "text":
                                 chunks.append(c.text.value)
-                        last_text = "\n".join(chunks).strip()
+                        last_text = "\r\n".join(chunks).strip()
                         if last_text:
                             break
             except Exception as e:
@@ -1448,7 +1914,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
             # Eliminar restos de sintaxis markdown vacía
             last_text = last_text.replace("()", "").replace("[]", "").replace("![]", "").strip()
             # Limpiar posibles dobles saltos de línea generados por la eliminación
-            last_text = re.sub(r"\n\s*\n", "\n\n", last_text)
+            last_text = re.sub(r"\r\n\s*\r\n", "\r\n\r\n", last_text)
 
         if not last_text:
             last_text = "No se recibió respuesta del asistente."
@@ -1712,6 +2178,25 @@ def plot_variable_polars(
         fname     = f"agente_{start_day}_{end_day}_{safe_dev}_{safe_var}.html"
         out_path  = os.path.join(PLOTS_DIR, fname)
         fig.write_html(out_path, include_plotlyjs="cdn", full_html=True)
+
+        # 9. Guardar PNG
+        try:
+            out_png_path = out_path.replace(".html", ".png")
+            plot_variable_polars_png(
+                times=times,
+                values=values,
+                op_min=op_min,
+                op_max=op_max,
+                var_name=var_name,
+                device=device,
+                start_day=start_day,
+                end_day=end_day,
+                total=total,
+                out_pct=out_pct,
+                out_png_path=out_png_path
+            )
+        except Exception as pe:
+            logging.error(f"Error generando PNG de variable polars: {pe}")
 
         return {
             "url":     f"static/plots/{fname}",
@@ -2031,8 +2516,84 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
     )
 
     os.makedirs(os.path.dirname(out_html_path), exist_ok=True)
-    with open(out_html_path, "w", encoding="utf-8") as _f: _f.write(fig.to_html(include_plotlyjs="cdn"))
+    with open(out_html_path, "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig, os.path.basename(out_html_path)))
     return out_html_path
+
+def plot_variable_polars_png(
+    times: list,
+    values: list,
+    op_min: float,
+    op_max: float,
+    var_name: str,
+    device: str,
+    start_day: str,
+    end_day: str,
+    total: int,
+    out_pct: float,
+    out_png_path: str
+) -> str:
+    """Versión PNG (matplotlib) para reportes PDF/DOCX de variables polars."""
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import os
+    import matplotlib.dates as mdates
+    
+    # Asegurar backend no interactivo
+    plt.switch_backend('Agg')
+
+    if not times:
+        return ""
+
+    parsed_times = pd.to_datetime(times, errors="coerce")
+    
+    fig, ax = plt.subplots(figsize=(10, 3.8), dpi=160)
+
+    # Banda operativa (Verde claro)
+    ax.fill_between(parsed_times, op_min, op_max, alpha=0.1, color="#2ecc71", label="Rango operativo")
+    ax.axhline(op_min, color="#2ecc71", linestyle="--", linewidth=0.8, alpha=0.5)
+    ax.axhline(op_max, color="#2ecc71", linestyle="--", linewidth=0.8, alpha=0.5)
+
+    # Valores normales y fuera de rango
+    times_ok, vals_ok = [], []
+    times_out, vals_out = [], []
+    for t, v in zip(parsed_times, values):
+        if v is None or pd.isna(t):
+            continue
+        if v < op_min or v > op_max:
+            times_out.append(t)
+            vals_out.append(v)
+        else:
+            times_ok.append(t)
+            vals_ok.append(v)
+
+    # Graficar línea principal (tendencia)
+    ax.plot(parsed_times, values, color="#2c3e50", linewidth=1.0, alpha=0.7, label="Tendencia")
+
+    # Scatter de puntos
+    if times_ok:
+        ax.scatter(times_ok, vals_ok, s=10, color="#2ecc71", alpha=0.8, label="En rango", zorder=3)
+    if times_out:
+        ax.scatter(times_out, vals_out, s=12, color="#e74c3c", alpha=0.9, label="Fuera de rango", zorder=4)
+
+    period_label = start_day if start_day == end_day else f"{start_day} a {end_day}"
+    title = f"{var_name} — {device}\n({period_label} | {total} lecturas | {out_pct}% fuera de rango)"
+    ax.set_title(title, fontsize=11, fontweight='bold', pad=15)
+    ax.set_xlabel("Hora local" if start_day == end_day else "Fecha / Hora", fontsize=9)
+    ax.set_ylabel("Valor", fontsize=9)
+    ax.grid(True, alpha=0.15)
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02), fontsize=8, ncol=3, frameon=True, framealpha=0.9)
+
+    # Formatear eje X
+    if start_day == end_day:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    else:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+        
+    os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_png_path, bbox_inches="tight")
+    plt.close(fig)
+    return out_png_path
 
 def plot_critical_timeseries_day_png(
     df_day: pd.DataFrame,
@@ -2282,7 +2843,7 @@ def _sql_oee_day_turn(day: str, shift_name: str | None = None) -> str:
     shift_filter = ""
     if shift_name:
         safe_shift = str(shift_name).replace("'", "''")
-        shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+        shift_filter = f"\r\n    AND wst.Name = N'{safe_shift}'"
 
     return f"""
 DECLARE @day DATE = {day_sql};
@@ -2626,15 +3187,19 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
     daily: dict = defaultdict(lambda: {
         "prod_min": 0.0, "avail_min": 0.0,
         "real_kg": 0.0, "exp_kg": 0.0,
+        "conf_kg": 0.0,
         "np_min": 0.0, "p_min": 0.0,
         "np_cnt": 0.0, "p_cnt": 0.0,
     })
     for r in rows_dicts:
         f = str(r.get("Fecha", ""))[:10]
+        real_val = to_f(r.get("CurrentProduction"))
         daily[f]["prod_min"]  += to_f(r.get("ProductiveTimeMin"))
         daily[f]["avail_min"] += to_f(r.get("AvailableTimeMin"))
-        daily[f]["real_kg"]   += to_f(r.get("CurrentProduction"))
+        daily[f]["real_kg"]   += real_val
         daily[f]["exp_kg"]    += to_f(r.get("ExpectedProduction"))
+        q_pct = to_f(r.get("Quality")) if r.get("Quality") is not None else 100.0
+        daily[f]["conf_kg"]   += (q_pct / 100.0) * real_val
         daily[f]["np_min"]    += to_f(r.get("TiempoNoProdNoProgramadoMin"))
         daily[f]["p_min"]     += to_f(r.get("TiempoNoProdProgramadoMin"))
         daily[f]["np_cnt"]    += to_f(r.get("ParosNoProgramadosCont"))
@@ -2651,9 +3216,11 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
         dv = daily[d]
         avail, prod = dv["avail_min"], dv["prod_min"]
         real, exp   = dv["real_kg"], dv["exp_kg"]
+        conf_kg     = dv["conf_kg"]
         disp   = round(prod / avail * 100, 1)   if avail > 0 else 0.0
         desemp = round(real / exp  * 100, 1)    if exp   > 0 else 0.0
-        oee    = round((prod / avail) * (real / exp) * 100, 1) if avail > 0 and exp > 0 else 0.0
+        qual   = conf_kg / real if real > 0 else 1.0
+        oee    = round((prod / avail) * (real / exp) * qual * 100, 1) if avail > 0 and exp > 0 else 0.0
         oee_v.append(oee); disp_v.append(disp); desemp_v.append(desemp)
         real_v.append(round(real, 0)); exp_v.append(round(exp, 0))
         np_v.append(round(dv["np_min"], 1)); p_v.append(round(dv["p_min"], 1))
@@ -2686,7 +3253,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
         hovermode="x unified",
     )
     fname1 = f"oee_ts_kpi_{ts}.html"
-    with open(os.path.join(out_dir, fname1), "w", encoding="utf-8") as _f: _f.write(fig1.to_html(include_plotlyjs="cdn"))
+    with open(os.path.join(out_dir, fname1), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig1, fname1))
     plots.append({"title": "📈 Histórico OEE por Día", "url": f"static/plots/{fname1}"})
 
     # ── GRÁFICA 2: Producción Real vs Esperada por día ───────────────
@@ -2710,7 +3277,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
         yaxis=dict(title="Kg"),
     )
     fname2 = f"oee_ts_prod_{ts}.html"
-    with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(fig2.to_html(include_plotlyjs="cdn"))
+    with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig2, fname2))
     plots.append({"title": "📦 Producción Real vs Esperada", "url": f"static/plots/{fname2}"})
 
     # ── GRÁFICA 3: Paros No Prog + Prog por día (barras agrupadas min) ─
@@ -2742,7 +3309,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
         bargroupgap=0.05
     )
     fname3 = f"oee_ts_stops_{ts}.html"
-    with open(os.path.join(out_dir, fname3), "w", encoding="utf-8") as _f: _f.write(fig3.to_html(include_plotlyjs="cdn"))
+    with open(os.path.join(out_dir, fname3), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig3, fname3))
     plots.append({"title": "⏱️ Tiempos de Paro por Día", "url": f"static/plots/{fname3}"})
 
     # ── GRÁFICA 4: Eventos de Paro por Día (conteos) ──────────────────
@@ -2777,7 +3344,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
         bargroupgap=0.05
     )
     fname4 = f"oee_ts_events_{ts}.html"
-    with open(os.path.join(out_dir, fname4), "w", encoding="utf-8") as _f: _f.write(fig4.to_html(include_plotlyjs="cdn"))
+    with open(os.path.join(out_dir, fname4), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig4, fname4))
     plots.append({"title": "🚨 Frecuencia de Paros (Eventos)", "url": f"static/plots/{fname4}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
@@ -2867,7 +3434,7 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
         fig.update_yaxes(title_text="% Acumulado", secondary_y=True, range=[0, 108], ticksuffix="%")
 
         fname = f"pareto_np_{ts}.html"
-        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as _f: _f.write(fig.to_html(include_plotlyjs="cdn"))
+        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig, fname))
         plots.append({"title": "🚨 Pareto 80/20 — Paros No Programados", "url": f"static/plots/{fname}"})
 
     # --- 2. TREEMAP: Jerarquía MotivesType → Motivo ---
@@ -2906,7 +3473,7 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
             template="plotly_dark", height=460, margin=dict(l=20, r=20, t=60, b=20),
         )
         fname2 = f"pareto_treemap_{ts}.html"
-        with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(fig2.to_html(include_plotlyjs="cdn"))
+        with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig2, fname2))
         plots.append({"title": "🗺️ Mapa de Categorías de Paro", "url": f"static/plots/{fname2}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
@@ -2956,7 +3523,7 @@ async def api_oee_day_turn(payload: dict):
     shift_filter = ""
     if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "todos", "(All)"):
         safe_shift = str(shift_name).replace("'", "''")
-        shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+        shift_filter = f"\r\n    AND wst.Name = N'{safe_shift}'"
 
     # --- CONSULTA 1: CONSOLIDACIÓN (Receta R5) ---
     consolidated_sql = f"""
@@ -3155,13 +3722,13 @@ async def api_oee_stop_reasons(payload: dict):
     shift_filter = ""
     if shift_name and str(shift_name).strip() and shift_name not in ("(Todos)", "todos", "(All)"):
         safe_shift = str(shift_name).replace("'", "''")
-        shift_filter = f"\n    AND wst.Name = N'{safe_shift}'"
+        shift_filter = f"\r\n    AND wst.Name = N'{safe_shift}'"
 
     type_filter = ""
     if stop_type == "NP":
-        type_filter = "\n    AND m.StoppageType = 'NP'"
+        type_filter = "\r\n    AND m.StoppageType = 'NP'"
     elif stop_type == "P":
-        type_filter = "\n    AND m.StoppageType = 'P'"
+        type_filter = "\r\n    AND m.StoppageType = 'P'"
 
     sql = f"""
 DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
@@ -3256,6 +3823,11 @@ async def api_control_variables_day(payload: dict):
             out_path = os.path.join(out_dir, filename)
 
             plot_critical_timeseries_day(df_day, vid, out_path)
+            try:
+                out_png_path = out_path.replace(".html", ".png")
+                plot_critical_timeseries_day_png(df_day, vid, out_png_path)
+            except Exception as pe:
+                logging.error(f"Error generando PNG de gráfica crítica en api /api/cv/day/: {pe}")
 
             plots.append({
                 "var_id": vid,
@@ -3280,7 +3852,7 @@ async def api_control_variables_day(payload: dict):
                 f"({r.get('out_points',0)}/{r.get('points',0)} pts)"
             )
 
-    executive_summary = "\n".join(exec_lines)
+    executive_summary = "\r\n".join(exec_lines)
 
     ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary)
 
@@ -3309,31 +3881,249 @@ async def bafar_page():
 @app.post("/chat/")
 async def chat(request: Request):
     """
-    Body esperado: { "input": string, "thread_id"?: string }
+    Body esperado: { "input": string, "thread_id"?: string, "username"?: string }
     Respuesta: { "thread_id", "message", "images"?, "captions"? }
     """
     try:
         body = await request.json()
         user_text = (body.get("input") or "").strip()
         thread_id = body.get("thread_id")
+        username = (body.get("username") or "").strip() or "Anónimo"
 
         if not user_text:
             return JSONResponse({"error": "input vacío"}, status_code=400)
 
+        # REC-04: Inicialización proactiva con estado real-time
+        if user_text == "[init]":
+            try:
+                sql_recent = _sql_oee_realtime()
+                rows, cols = run_sql(sql_recent)
+                if rows:
+                    snap = dict(zip(cols, rows[0]))
+                    oee = snap.get("OEE")
+                    availability = snap.get("Availability")
+                    performance = snap.get("Performance")
+                    quality = snap.get("Producto Conforme")
+                    status_code = snap.get("StatusCode")
+                    status_time = snap.get("StatusTimeMin")
+                    line_name = snap.get("LineName", "Línea Hamburguesas")
+                    
+                    user_text = (
+                        f"[system: El estado actual en tiempo real de la línea '{line_name}' es:\r\n"
+                        f"- OEE: {oee}%\r\n"
+                        f"- Disponibilidad: {availability}%\r\n"
+                        f"- Desempeño: {performance}%\r\n"
+                        f"- Calidad: {quality}%\r\n"
+                        f"- Estado actual: {status_code} (lleva {status_time} minutos en este estado).\r\n"
+                        f"Por favor, saluda al usuario presentándote como Duma, su asistente de excelencia operacional. "
+                        f"Haz un resumen extremadamente breve de 1-2 líneas sobre cómo se encuentra la línea hoy (mencionando si el OEE es óptimo, en riesgo o crítico, o si hay un paro actual) "
+                        f"y finaliza preguntando cordialmente en qué puedes apoyarlo hoy. Sé conciso e inteligente.]"
+                    )
+                else:
+                    user_text = (
+                        "[system: No hay datos en tiempo real disponibles en este momento. "
+                        "Preséntate como Duma, saluda cordialmente y pregunta en qué puedes ayudar al usuario hoy.]"
+                    )
+            except Exception as ex:
+                logging.error(f"Error cargando contexto inicial OEE: {ex}")
+                user_text = (
+                    "[system: Preséntate como Duma, saluda cordialmente y pregunta en qué puedes ayudar al usuario hoy.]"
+                )
+
         out = run_assistant_cycle(user_text, thread_id)
+        resolved_thread_id = out.get("thread_id")
+        
+        # Registrar y guardar en base de datos local si no es llamada de inicialización proactiva [init]
+        if user_text != "[init]" and resolved_thread_id:
+            try:
+                with pyodbc.connect(HISTORY_CONN_STR) as conn:
+                    cursor = conn.cursor()
+                    
+                    # Verificar si la conversación ya existe en la base de datos
+                    cursor.execute("SELECT 1 FROM dbo.duma_conversations WHERE thread_id = ?", (resolved_thread_id,))
+                    exists = bool(cursor.fetchone())
+                    
+                    if not exists:
+                        # Crear título simplificado a partir del primer mensaje
+                        clean_title = user_text.replace("\n", " ").replace("\r", " ").strip()
+                        title = clean_title[:47] + "..." if len(clean_title) > 47 else clean_title
+                        cursor.execute(
+                            "INSERT INTO dbo.duma_conversations (thread_id, user_name, title) VALUES (?, ?, ?)",
+                            (resolved_thread_id, username, title)
+                        )
+                    
+                    # Guardar mensaje de usuario
+                    cursor.execute(
+                        "INSERT INTO dbo.duma_messages (thread_id, role, text, images) VALUES (?, ?, ?, ?)",
+                        (resolved_thread_id, "user", user_text, None)
+                    )
+                    
+                    # Guardar respuesta del bot
+                    if out.get("message"):
+                        images_json = None
+                        if out.get("images"):
+                            images_json = json.dumps(out.get("images"))
+                        cursor.execute(
+                            "INSERT INTO dbo.duma_messages (thread_id, role, text, images) VALUES (?, ?, ?, ?)",
+                            (resolved_thread_id, "assistant", out.get("message"), images_json)
+                        )
+                    conn.commit()
+            except Exception as dbe:
+                logging.error(f"Error al guardar la conversación/mensajes en base de datos local: {dbe}")
+                
         return JSONResponse(out)
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/chat/threads/{username}")
+async def get_user_threads(username: str):
+    try:
+        threads = []
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT thread_id, title, created_at FROM dbo.duma_conversations "
+                "WHERE user_name = ? AND active = 1 "
+                "ORDER BY created_at DESC",
+                (username,)
+            )
+            rows = cursor.fetchall()
+            for r in rows:
+                threads.append({
+                    "thread_id": r[0],
+                    "title": r[1],
+                    "created_at": r[2].isoformat() if r[2] else ""
+                })
+        return JSONResponse({"threads": threads})
+    except Exception as e:
+        logging.error(f"Error fetching threads for user {username}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.put("/chat/threads/{thread_id}")
+async def rename_thread(thread_id: str, request: Request):
+    try:
+        body = await request.json()
+        new_title = (body.get("title") or "").strip()
+        if not new_title:
+            return JSONResponse({"error": "Título vacío"}, status_code=400)
+        
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE dbo.duma_conversations SET title = ? WHERE thread_id = ?",
+                (new_title, thread_id)
+            )
+            conn.commit()
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        logging.error(f"Error renaming thread {thread_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.delete("/chat/threads/{thread_id}")
+async def delete_thread(thread_id: str):
+    try:
+        # Delete from OpenAI
+        try:
+            logging.info(f"Deleting thread {thread_id} from OpenAI API...")
+            client.beta.threads.delete(thread_id)
+        except Exception as oe:
+            logging.warning(f"Error deleting thread {thread_id} from OpenAI: {oe}")
+            
+        # Delete from database (foreign key cascade deletes messages automatically)
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM dbo.duma_conversations WHERE thread_id = ?", (thread_id,))
+            conn.commit()
+            
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        logging.error(f"Error deleting thread {thread_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/chat/history/{thread_id}")
+async def get_chat_history(thread_id: str):
+    try:
+        if not thread_id.startswith("thread_"):
+            return JSONResponse({"error": "Thread ID inválido"}, status_code=400)
+        
+        history = []
+        try:
+            with pyodbc.connect(HISTORY_CONN_STR) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT role, text, images FROM dbo.duma_messages WHERE thread_id = ? ORDER BY created_at ASC",
+                    (thread_id,)
+                )
+                rows = cursor.fetchall()
+                for r in rows:
+                    images_list = []
+                    if r[2]:
+                        try:
+                            images_list = json.loads(r[2])
+                        except Exception:
+                            pass
+                    history.append({
+                        "role": r[0],
+                        "text": r[1],
+                        "images": images_list
+                    })
+        except Exception as dbe:
+            logging.error(f"Error cargando historial de la base de datos local para {thread_id}: {dbe}")
+            
+        # Fallback a OpenAI API si no hay historial local
+        if not history:
+            logging.info(f"Hilo {thread_id} sin historial local. Buscando en OpenAI...")
+            msgs = client.beta.threads.messages.list(thread_id=thread_id, order="asc", limit=50)
+            for m in msgs.data:
+                content_value = ""
+                for c in m.content:
+                    if getattr(c, "type", "") == "text":
+                        content_value += c.text.value
+                
+                # Ocultar mensajes de sistema/inicialización
+                if content_value.startswith("[system_date=") or content_value.startswith("[system:"):
+                    continue
+                
+                history.append({
+                    "role": m.role,
+                    "text": content_value
+                })
+        return JSONResponse({"history": history})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ---------------------------------------------------------
 # 🔥 Alias para compatibilidad con el frontend:
-#     /Bafar/chat  → funciona igual que /chat
 # ---------------------------------------------------------
 @app.post("/Bafar/chat")
 async def chat_bafar(request: Request):
     return await chat(request)
+
+
+@app.get("/Bafar/chat/threads/{username}")
+async def get_user_threads_bafar(username: str):
+    return await get_user_threads(username)
+
+
+@app.put("/Bafar/chat/threads/{thread_id}")
+async def rename_thread_bafar(thread_id: str, request: Request):
+    return await rename_thread(thread_id, request)
+
+
+@app.delete("/Bafar/chat/threads/{thread_id}")
+async def delete_thread_bafar(thread_id: str):
+    return await delete_thread(thread_id)
+
+
+@app.get("/Bafar/chat/history/{thread_id}")
+async def get_chat_history_bafar(thread_id: str):
+    return await get_chat_history(thread_id)
 
 
 # =========================================================
@@ -3506,7 +4296,7 @@ def _build_pdf_bytes(
     ST = {
         "H1":   sty("DH1","Heading1",  fontName="Helvetica-Bold", fontSize=15, leading=18, textColor=C_HDR, spaceAfter=8, spaceBefore=10),
         "H2":   sty("DH2","Heading2",  fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=C_DARK, spaceAfter=6, spaceBefore=8),
-        "H3":   sty("DH3","Heading3",  fontName="Helvetica-Bold", fontSize=10.5, leading=13, textColor=C_BRAND, spaceAfter=4),
+        "H3":   sty("DH3","Heading3",  fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=C_HDR, spaceAfter=6, spaceBefore=8),
         "Body": sty("DB","BodyText",   fontName="Helvetica", fontSize=9.5, leading=14, textColor=C_TEXT),
         "Blt":  sty("DBlt","BodyText", fontName="Helvetica", fontSize=9.5, leading=14, textColor=C_TEXT, leftIndent=14, spaceAfter=4),
     }
@@ -3515,7 +4305,11 @@ def _build_pdf_bytes(
         """Convierte markdown a flowables de ReportLab con soporte mejorado de formato."""
         out = []
         if not md: return out
-        md = md.replace("\r\n","\n").replace("\r","\n")
+        
+        # Normalizar saltos de línea a \n
+        md = md.replace("\r\n", "\n").replace("\r", "\n")
+        
+        # Insertar saltos de línea inteligentes si no existen antes de headings o listas
         md = re.sub(r'([^\n])\s*(#{1,3} )', r'\1\n\n\2', md)
         md = re.sub(r'([.?!:])\s*([-*\u2022\u2192][ \t])', r'\1\n\2', md)
         md = re.sub(r'([.?!:])\s*(\d+[.):]\s)', r'\1\n\2', md)
@@ -3523,18 +4317,13 @@ def _build_pdf_bytes(
         lines = [l.rstrip() for l in md.split("\n")]
         buf = []
 
-        def _inline(t):
+        def _text(raw):
+            t = raw.strip()
+            t = _safe(t)
             t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
             t = re.sub(r'\*(.+?)\*',    r'<i>\1</i>', t)
             t = re.sub(r'__(.+?)__',    r'<b>\1</b>', t)
-            return t
-
-        def _text(raw):
-            t = re.sub(r'(?<!\w)\*{1,2}(?!\w)', '', raw)
-            t = re.sub(r'^#+\s*', '', t)
-            t = _safe(t.strip())
-            t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
-            t = re.sub(r'\*(.+?)\*',    r'<i>\1</i>', t)
+            t = re.sub(r'_([^_]+)_',    r'<i>\1</i>', t)
             return t
 
         def flush():
@@ -3798,7 +4587,7 @@ async def report_control_variables_day(payload: dict):
         exec_lines.append(f"- Mayor % fuera de crítico: {worst.get('name','')} — {worst.get('device','')} ({worst.get('out_pct',0)}%)")
         for i, r in enumerate(summary_rows[:3], start=1):
             exec_lines.append(f"- Top {i}: {r.get('name','')} — {r.get('device','')}: {r.get('out_pct',0)}% ({r.get('out_points',0)}/{r.get('points',0)} pts)")
-    executive_summary = "\n".join(exec_lines)
+    executive_summary = "\r\n".join(exec_lines)
 
     ai_text = provided_ai if provided_ai is not None else ""
     if not ai_text:
@@ -4006,14 +4795,21 @@ def _generate_hist_pdf_plt(rows_dicts: list) -> list[str]:
     images = []
     uid = uuid.uuid4().hex[:8]
 
-    daily = defaultdict(lambda: {"prod":0.0,"avail":0.0,"real":0.0,"exp":0.0,"np_min":0.0,"p_min":0.0,"np_cnt":0.0,"p_cnt":0.0})
+    daily = defaultdict(lambda: {"prod":0.0,"avail":0.0,"real":0.0,"exp":0.0,"conf_kg":0.0,"np_min":0.0,"p_min":0.0,"np_cnt":0.0,"p_cnt":0.0})
     for r in rows_dicts:
         f = str(r.get("Fecha", ""))[:10]
         try:
-            daily[f]["prod"]  += float(r.get("ProductiveTimeMin") or 0)
-            daily[f]["avail"] += float(r.get("AvailableTimeMin") or 0)
-            daily[f]["real"]  += float(r.get("CurrentProduction") or 0)
-            daily[f]["exp"]   += float(r.get("ExpectedProduction") or 0)
+            prod_val  = float(r.get("ProductiveTimeMin") or 0)
+            avail_val = float(r.get("AvailableTimeMin") or 0)
+            real_val  = float(r.get("CurrentProduction") or 0)
+            exp_val   = float(r.get("ExpectedProduction") or 0)
+            q_pct     = float(r.get("Quality") or 100.0) if r.get("Quality") is not None else 100.0
+            
+            daily[f]["prod"]  += prod_val
+            daily[f]["avail"] += avail_val
+            daily[f]["real"]  += real_val
+            daily[f]["exp"]   += exp_val
+            daily[f]["conf_kg"] += (q_pct / 100.0) * real_val
             daily[f]["np_min"]+= float(r.get("TiempoNoProdNoProgramadoMin") or 0)
             daily[f]["p_min"] += float(r.get("TiempoNoProdProgramadoMin") or 0)
             daily[f]["np_cnt"]+= float(r.get("ParosNoProgramadosCont") or 0)
@@ -4026,8 +4822,11 @@ def _generate_hist_pdf_plt(rows_dicts: list) -> list[str]:
     oee_v, real_v, exp_v, np_min_v, p_min_v, np_cnt_v, p_cnt_v = [], [], [], [], [], [], []
     for d in dates:
         dv = daily[d]
-        avail, prod, real, exp = dv["avail"], dv["prod"], dv["real"], dv["exp"]
-        oee = (prod/avail)*(real/exp)*100 if avail>0 and exp>0 else 0
+        avail, prod, real, exp, conf_kg = dv["avail"], dv["prod"], dv["real"], dv["exp"], dv["conf_kg"]
+        disp = prod / avail if avail > 0 else 0
+        desemp = real / exp if exp > 0 else 0
+        qual = conf_kg / real if real > 0 else 1.0
+        oee = disp * desemp * qual * 100
         oee_v.append(oee); real_v.append(real); exp_v.append(exp)
         np_min_v.append(dv["np_min"]); p_min_v.append(dv["p_min"])
         np_cnt_v.append(dv["np_cnt"]); p_cnt_v.append(dv["p_cnt"])
@@ -4420,6 +5219,10 @@ async def chat_report_pdf(payload: dict):
                 pngs.append(tmp_path)
             else:
                 clean_path = i.replace("sandbox:", "")
+                # Normalizar ruta: quitar diagonal inicial y prefijo Bafar si existe
+                clean_path = clean_path.lstrip("/")
+                if clean_path.startswith("Bafar/"):
+                    clean_path = clean_path[6:]
                 png_path = clean_path.replace(".html", ".png")
                 import os
                 if os.path.exists(png_path):
@@ -4449,6 +5252,11 @@ async def chat_report_pdf(payload: dict):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/Bafar/api/agent/report/pdf/")
+async def chat_report_pdf_bafar(payload: dict):
+    return await chat_report_pdf(payload)
 
 
 # Para correr local:
