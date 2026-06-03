@@ -3045,7 +3045,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> Lis
     return plots
 
 @app.get("/api/oee/realtime/")
-async def api_oee_realtime(export_png: bool = False):
+async def api_oee_realtime(export_png: bool = False, skip_ai: bool = False):
     """OEE en tiempo real (último snapshot)."""
     # 1. Ejecución secuencial de SQL (rápido, evita deadlocks)
     sql_recent = _sql_oee_realtime()
@@ -3141,7 +3141,8 @@ ORDER BY Duracion_Min DESC;
     if stop_reasons:
         tasks.append(asyncio.to_thread(plot_pareto_stop_reasons, stop_reasons, f"Hoy ({from_day})", export_png))
     
-    tasks.append(ai_oee_realtime(snap_formatted, stop_reasons))
+    if not skip_ai:
+        tasks.append(ai_oee_realtime(snap_formatted, stop_reasons))
 
     # Ejecutamos todo concurrentemente
     results = await asyncio.gather(*tasks)
@@ -3149,13 +3150,16 @@ ORDER BY Duracion_Min DESC;
     # El primer resultado siempre es de plot_oee_realtime_snapshot
     plots = results[0]
     
+    next_idx = 1
     if stop_reasons:
-        # El segundo es plot_pareto_stop_reasons y el tercero es la IA
+        # El segundo es plot_pareto_stop_reasons
         plots.extend(results[1])
-        ai_res = results[2]
+        next_idx = 2
+    
+    if not skip_ai:
+        ai_res = results[next_idx]
     else:
-        # El segundo es la IA
-        ai_res = results[1]
+        ai_res = ""
 
     return {
         "rows": rows_formatted, 
@@ -3854,7 +3858,11 @@ async def api_control_variables_day(payload: dict):
 
     executive_summary = "\r\n".join(exec_lines)
 
-    ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary)
+    skip_ai = payload.get("skip_ai", False)
+    if not skip_ai:
+        ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary)
+    else:
+        ai_analysis = ""
 
     return {
         "day": f"{start_day} a {end_day}",

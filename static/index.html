@@ -598,6 +598,22 @@
       pointer-events: none;
     }
 
+    .btn.duma {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      border-color: transparent;
+      color: white;
+      box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      border-radius: 9999px;
+      font-weight: 700;
+      padding: 10px 24px;
+    }
+
+    .btn.duma:hover {
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.6);
+      transform: translateY(-2px) scale(1.02);
+    }
+
     /* ==================== CONTENT AREA ==================== */
     .view {
       flex: 1;
@@ -2144,6 +2160,7 @@
               <label class="small muted" for="cvDay">Rango de Días:</label>
               <input id="cvDay" type="text" placeholder="Seleccione Rango de Fechas" />
               <button class="btn primary" id="btnGenCV">Generar Análisis</button>
+              <button class="btn duma" id="btnAiCV" style="display:none; margin-left: 10px;">🤖 Análisis Duma</button>
               <span class="small muted" id="cvInfo"></span>
             </div>
           </div>
@@ -2269,6 +2286,7 @@
               <p class="sub">Snapshot actualizado automáticamente de la línea de producción</p>
               <div class="form-row">
                 <button class="btn primary" id="btnFetchOeeRT">🔄 Actualizar Ahora</button>
+                <button class="btn duma" id="btnAiOeeRT" style="display:none; margin-left: 10px;">🤖 Análisis Duma</button>
                 <span class="small muted" id="oeeRtInfo" style="margin-left: 10px"></span>
               </div>
 
@@ -2338,6 +2356,7 @@
                 </select>
 
                 <button class="btn primary" id="btnFetchOeeDay">Consultar Rango</button>
+                <button class="btn duma" id="btnAiOeeDay" style="display:none; margin-left: 10px;">🤖 Análisis Duma</button>
                 <span class="small muted" id="oeeDayInfo"></span>
               </div>
 
@@ -2643,6 +2662,8 @@
 
       // State for downloads
       let lastCvDay = null;
+      let lastCvStartDay = null;
+      let lastCvEndDay = null;
       let lastOeeFrom = null;
       let lastOeeTo = null;
       let lastOeeShift = null;
@@ -3031,6 +3052,7 @@
         el("cvGrid").innerHTML = "";
         el("cvAICard").style.display = "none";
         el("cvAI").innerHTML = "";
+        el("btnAiCV").style.display = "none";
         clearCVKpis();
 
         el("oeeRtInfo").textContent = "";
@@ -3040,12 +3062,14 @@
         el("oeeRtAI").innerHTML = "";
         el("oeeRtGrid").innerHTML = "";
         el("oeeDayGrid").innerHTML = "";
+        el("btnAiOeeRT").style.display = "none";
 
         el("oeeDayInfo").textContent = "";
         el("oeeDayTableCard").style.display = "none";
         el("oeeDayAICard").style.display = "none";
         el("oeeDayAI").innerHTML = "";
         el("oeeStopReasonsCard").style.display = "none";
+        el("btnAiOeeDay").style.display = "none";
         if (stopReasonsChart) { stopReasonsChart.destroy(); stopReasonsChart = null; }
 
         setStatus("ok", "Listo");
@@ -3315,6 +3339,7 @@
         el("cvGrid").innerHTML = "";
         el("cvAICard").style.display = "none";
         el("cvAI").innerHTML = "";
+        el("btnAiCV").style.display = "none";
         clearCVKpis();
 
         setStatus("busy", "Generando...");
@@ -3324,7 +3349,7 @@
           const res = await fetch("api/cv/day/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ start_day, end_day })
+            body: JSON.stringify({ start_day, end_day, skip_ai: true })
           });
           const data = await res.json();
 
@@ -3332,7 +3357,9 @@
             throw new Error(data.detail || data.error || "Error en /api/control-variables/day");
           }
 
-          lastCvDay = start_day;
+          lastCvDay = rangeVal;
+          lastCvStartDay = start_day;
+          lastCvEndDay = end_day;
           lastCvData = data;
 
           if (data.ai_analysis) {
@@ -3350,6 +3377,9 @@
             renderCVPlots(data.plots);
           }
 
+          el("btnAiCV").style.display = "";
+          setBtnBusy("btnAiCV", false, "🤖 Análisis Duma");
+
           setStatus("ok", "Listo");
         } catch (err) {
           el("cvInfo").textContent = "⚠️ " + (err.message || err);
@@ -3359,7 +3389,37 @@
         }
       }
 
+      async function generateCvAI() {
+        if (!lastCvStartDay || !lastCvEndDay) return;
+        setStatus("busy", "Generando Análisis IA...");
+        setBtnBusy("btnAiCV", true, "Analizando...");
+        try {
+          const res = await fetch("api/cv/day/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ start_day: lastCvStartDay, end_day: lastCvEndDay, skip_ai: false })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Error generando IA");
+          }
+          lastCvData = data;
+          if (data.ai_analysis) {
+            el("cvAI").innerHTML = mdToHtml(String(data.ai_analysis));
+            el("cvAICard").style.display = "";
+            el("cvAICard").scrollIntoView({ behavior: "smooth" });
+          }
+          setStatus("ok", "Listo");
+        } catch (err) {
+          el("cvInfo").textContent = "⚠️ " + (err.message || err);
+          setStatus("err", "Error");
+        } finally {
+          setBtnBusy("btnAiCV", false, "🤖 Análisis Duma");
+        }
+      }
+
       el("btnGenCV").addEventListener("click", generateControlVars);
+      el("btnAiCV").addEventListener("click", generateCvAI);
 
       function renderOeeDayPlots(plots) {
         const grid = el("oeeDayGrid");
@@ -3403,11 +3463,12 @@
         el("oeeRtTableCard").style.display = "none";
         el("oeeRtAICard").style.display = "none";
         el("oeeRtAI").innerHTML = "";
+        el("btnAiOeeRT").style.display = "none";
 
         setStatus("busy", "Consultando...");
         setBtnBusy("btnFetchOeeRT", true, "Consultando...");
         try {
-          const res = await fetch("api/oee/realtime/");
+          const res = await fetch("api/oee/realtime/?skip_ai=true");
           const data = await res.json();
           if (!res.ok) {
             throw new Error(data.detail || data.error || "Error en /api/oee/realtime");
@@ -3456,6 +3517,9 @@
           if (Array.isArray(data.plots)) {
             renderOeeRtPlots(data.plots);
           }
+
+          el("btnAiOeeRT").style.display = "";
+          setBtnBusy("btnAiOeeRT", false, "🤖 Análisis Duma");
 
           setStatus("ok", "Listo");
         } catch (err) {
@@ -3646,11 +3710,12 @@
         el("oeeDayTableCard").style.display = "none";
         el("oeeDayAICard").style.display = "none";
         el("oeeDayAI").innerHTML = "";
+        el("btnAiOeeDay").style.display = "none";
 
         setStatus("busy", "Analizando periodo...");
         setBtnBusy("btnFetchOeeDay", true, "Consultando...");
         try {
-          const body = { from_day: from, to_day: to };
+          const body = { from_day: from, to_day: to, skip_ai: true };
           if (shift) body.shift_name = shift;
 
           const res = await fetch("api/oee/day-turn/", {
@@ -3805,6 +3870,9 @@
             el("oeeStopReasonsCard").style.display = "none";
           }
 
+          el("btnAiOeeDay").style.display = "";
+          setBtnBusy("btnAiOeeDay", false, "🤖 Análisis Duma");
+
           setStatus("ok", "Listo");
         } catch (err) {
           el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
@@ -3814,7 +3882,40 @@
         }
       }
 
+      async function generateOeeDayAI() {
+        if (!lastOeeFrom || !lastOeeTo) return;
+        setStatus("busy", "Generando Análisis IA...");
+        setBtnBusy("btnAiOeeDay", true, "Analizando...");
+        try {
+          const body = { from_day: lastOeeFrom, to_day: lastOeeTo, skip_ai: false };
+          if (lastOeeShift) body.shift_name = lastOeeShift;
+
+          const res = await fetch("api/oee/day-turn/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Error generando IA");
+          }
+          lastOeeDayData = data;
+          if (data.ai_analysis) {
+            el("oeeDayAI").innerHTML = mdToHtml(String(data.ai_analysis));
+            el("oeeDayAICard").style.display = "";
+            el("oeeDayAICard").scrollIntoView({ behavior: "smooth" });
+          }
+          setStatus("ok", "Listo");
+        } catch (err) {
+          el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
+          setStatus("err", "Error");
+        } finally {
+          setBtnBusy("btnAiOeeDay", false, "🤖 Análisis Duma");
+        }
+      }
+
       el("btnFetchOeeDay").addEventListener("click", fetchOeeDay);
+      el("btnAiOeeDay").addEventListener("click", generateOeeDayAI);
 
       // ===========================
       // Download Handlers
