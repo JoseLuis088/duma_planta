@@ -1056,24 +1056,10 @@ SELECT
     wses.Quality                   AS [Producto Conforme],
 
     -- Conteo de eventos y duraciones (AGRUPADOS)
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = wses.ProductionLineId
-              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
-    ) AS ParosNoProgramadosCont,
-    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = wses.ProductionLineId
-              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
-    ) AS ParosProgramadosCont,
-    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+    ISNULL(wses.UnscheduledStopagesCount, 0) AS ParosNoProgramadosCont,
+    wses.UnscheduledStopageMin               AS TiempoNoProdNoProgramadoMin,
+    ISNULL(wses.ScheduledStopagesCount, 0)   AS ParosProgramadosCont,
+    wses.ScheduledStopageMin                 AS TiempoNoProdProgramadoMin,
 
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
@@ -1137,24 +1123,10 @@ SELECT
     wses.Performance                      AS Desempeno,
     wses.Quality                          AS [Producto Conforme],
     -- Conteo de eventos de paros y duraciones (AGRUPADOS)
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = wses.ProductionLineId
-              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE IntervalProductionLineStatus = 'US' AND (PrevStatus <> 'US' OR PrevStatus IS NULL)
-    ) AS ParosNoProgramadosCont,
-    wses.UnscheduledStopageMin     AS TiempoNoProdNoProgramadoMin,
-    (
-        SELECT COUNT(*) FROM (
-            SELECT IntervalProductionLineStatus, LAG(IntervalProductionLineStatus) OVER (ORDER BY IntervalBegin) as PrevStatus
-            FROM dbo.ProductionLineIntervals
-            WHERE ProductionLineId = wses.ProductionLineId
-              AND IntervalBegin >= wse.StartDate AND IntervalBegin < wse.EndDate
-        ) sub WHERE IntervalProductionLineStatus = 'SS' AND (PrevStatus <> 'SS' OR PrevStatus IS NULL)
-    ) AS ParosProgramadosCont,
-    wses.ScheduledStopageMin       AS TiempoNoProdProgramadoMin,
+    ISNULL(wses.UnscheduledStopagesCount, 0) AS ParosNoProgramadosCont,
+    wses.UnscheduledStopageMin               AS TiempoNoProdNoProgramadoMin,
+    ISNULL(wses.ScheduledStopagesCount, 0)   AS ParosProgramadosCont,
+    wses.ScheduledStopageMin                 AS TiempoNoProdProgramadoMin,
 
     wses.WorkshiftDurationMin      AS DuracionTurnoMin,
     wses.AvailableTimeMin          AS TiempoDisponibleMin,
