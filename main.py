@@ -4597,11 +4597,7 @@ async def report_control_variables_day(payload: dict):
             exec_lines.append(f"- Top {i}: {r.get('name','')} — {r.get('device','')}: {r.get('out_pct',0)}% ({r.get('out_points',0)}/{r.get('points',0)} pts)")
     executive_summary = "\r\n".join(exec_lines)
 
-    ai_text = provided_ai if provided_ai is not None else ""
-    if not ai_text:
-        try:
-            ai_text = ai_control_variables_day(day=day, summary=summary_rows, executive_summary=executive_summary)
-        except Exception: ai_text = ""
+    ai_text = provided_ai or ""
 
     png_dir = os.path.join("static", "report_imgs")
     os.makedirs(png_dir, exist_ok=True)
@@ -4972,12 +4968,7 @@ async def report_oee_realtime(payload: dict):
             print(f"Error generando PNGs para tiempo real: {e}")
 
     # IA (Texto)
-    ai_text = provided_ai if provided_ai is not None else ""
-    if not ai_text:
-        try:
-            ai_text = ai_oee_realtime(row, provided_stops)
-        except Exception:
-            ai_text = ""
+    ai_text = provided_ai or ""
 
     title = "Reporte Ejecutivo — OEE Tiempo Real"
     subtitle = f"Snapshot extraído a las {row.get('SnapshotAtLocal') or 'N/A'}"
