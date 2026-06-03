@@ -3947,15 +3947,38 @@
       // ===========================
       el("btnDlCvPdf")?.addEventListener("click", async () => {
         if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
-        setBtnBusy("btnDlCvPdf", true, "Generando PDF...");
+        setBtnBusy("btnDlCvPdf", true, "Capturando...");
         try {
+          let kpiSnapshot = null;
+          let tableSnapshot = null;
+
+          // 1. Captura de tarjetas KPI
+          const kpiGrid = el("cvKpiRow");
+          if (kpiGrid) {
+            try {
+              const canvas = await html2canvas(kpiGrid, { scale: 2, backgroundColor: "#ffffff" });
+              kpiSnapshot = canvas.toDataURL("image/png");
+              console.log("CV KPI Snapshot capturado");
+            } catch(e) { console.error("Error capturando KPIs CV:", e); }
+          }
+
+          // 2. Captura de tabla de resumen
+          const tblCard = el("cvSummaryCard");
+          if (tblCard) {
+            try {
+              const canvas = await html2canvas(tblCard, { scale: 2, backgroundColor: "#ffffff" });
+              tableSnapshot = canvas.toDataURL("image/png");
+              console.log("CV Table Snapshot capturado");
+            } catch(e) { console.error("Error capturando tabla CV:", e); }
+          }
+
           await downloadFrom(`api/report/cv/day/`, `control_vars_${lastCvDay}.pdf`, {
             day: lastCvDay,
             format: "pdf",
             summary: lastCvData.summary,
             ai_analysis: lastCvData.ai_analysis,
-            kpi_snapshot: null,
-            table_snapshot: null
+            kpi_snapshot: kpiSnapshot,
+            table_snapshot: tableSnapshot
           });
         } finally {
           setBtnBusy("btnDlCvPdf", false);
