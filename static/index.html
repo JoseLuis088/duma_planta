@@ -3563,7 +3563,32 @@
         }
       }
 
+      async function generateOeeRtAI() {
+        setStatus("busy", "Generando Análisis IA...");
+        setBtnBusy("btnAiOeeRT", true, "Analizando...");
+        try {
+          const res = await fetch("api/oee/realtime/?skip_ai=false");
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Error generando IA");
+          }
+          lastOeeRtData = data;
+          if (data.ai_analysis) {
+            el("oeeRtAI").innerHTML = mdToHtml(String(data.ai_analysis));
+            el("oeeRtAICard").style.display = "";
+            el("oeeRtAICard").scrollIntoView({ behavior: "smooth" });
+          }
+          setStatus("ok", "Listo");
+        } catch (err) {
+          el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
+          setStatus("err", "Error");
+        } finally {
+          setBtnBusy("btnAiOeeRT", false, "🤖 Análisis Duma");
+        }
+      }
+
       el("btnFetchOeeRT").addEventListener("click", fetchOeeRealtime);
+      el("btnAiOeeRT").addEventListener("click", generateOeeRtAI);
 
       // ===========================
       // OEE DAY/TURN
