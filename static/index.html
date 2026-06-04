@@ -954,6 +954,26 @@
       margin-top: 1px;
       flex-shrink: 0;
     }
+    .ai-ol-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--brand);
+      margin: 1.2rem 0 0.5rem 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ai-ol-num {
+      background: rgba(26,188,156, 0.12);
+      color: var(--brand);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      line-height: 1;
+      display: inline-block;
+      border: 1px solid rgba(26,188,156, 0.25);
+    }
 
     /* =============================================
        CV KPI CARDS — Premium
@@ -1607,7 +1627,7 @@
 
     /* Estilos para markdown dentro del chat */
     .msg.bot strong {
-      color: var(--brand);
+      font-weight: 700;
     }
 
     .msg.bot h3 {
@@ -2943,11 +2963,11 @@
           .replace(/([a-záéíóúñ])\s*\n\s*([a-záéíóúñ])/g, "$1 $2"); // Unir palabras cortadas a mitad (minúsculas)
 
         // SEPARACIÓN INTELIGENTE (Lista solo si viene después de un separador natural o puntuación)
-        // Esto evita romper oraciones a la mitad.
+        // Esto evita romper oraciones a la mitad y NO divide decimales.
         processedMd = processedMd
           .replace(/([^\n])\s*###/g, "$1\n\n###") // Separar headers si vienen pegados a texto
-          .replace(/([.?!:])\s*(\d+\.\s+)/g, "$1\n$2") // Separar lista numerada solo tras punto
-          .replace(/([.?!:])\s*([-*]\s+)/g, "$1\n$2"); // Separar bullets solo tras punto
+          .replace(/(?<!\d)([.?!:])\s+(\d+\.\s+)/g, "$1\n$2") // Separar lista numerada solo tras punto (evita 2.0)
+          .replace(/(?<!\d)([.?!:])\s+([-*]\s+)/g, "$1\n$2"); // Separar bullets solo tras punto (evita 2.0)
 
         // Split headers conocidos que traen contenido en la misma línea
         const COMMON_HEADERS = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
@@ -2970,7 +2990,25 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
 
-        const applyInline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        const applyInline = (s) => {
+          let escaped = esc(s);
+          // Highlight strong tags dynamically based on semantic context
+          escaped = escaped.replace(/\*\*(.+?)\*\*/g, (match, p1) => {
+            const lower = p1.toLowerCase();
+            let style = "";
+            if (lower.includes("fuera de rango") || lower.includes("crítico") || lower.includes("critico") || lower.includes("riesgo") || lower.includes("urgente") || lower.includes("anomalía") || lower.includes("anomalia")) {
+              style = ' style="color: #ef4444; font-weight: 800;"'; // Rojo para fallos/riesgos
+            } else if (lower.includes("advertencia") || lower.includes("desviación") || lower.includes("desviacion") || lower.includes("exceso") || lower.includes("atención") || lower.includes("atencion")) {
+              style = ' style="color: #f97316; font-weight: 800;"'; // Naranja para advertencias
+            } else if (lower.includes("estable") || lower.includes("nominal") || lower.includes("óptimo") || lower.includes("optimo") || lower.includes("correcto") || lower.includes("clase mundial") || lower.includes("satisfactorio")) {
+              style = ' style="color: #10b981; font-weight: 800;"'; // Verde para éxito
+            } else {
+              style = ' style="color: var(--brand); font-weight: 700;"'; // Color de marca por defecto
+            }
+            return `<strong${style}>${p1}</strong>`;
+          });
+          return escaped;
+        };
 
         const lines = processedMd.split(/\n/);
         let html = "";
@@ -3061,8 +3099,8 @@
           // Numbers
           const olMatch = line.match(/^(\d+)\.\s+(.*)/);
           if (olMatch) {
-            if (!inOl) { closeLists(); html += "<ol>"; inOl = true; }
-            html += `<li>${applyInline(olMatch[2])}</li>`;
+            closeLists();
+            html += `<div class="ai-ol-title"><span class="ai-ol-num">${olMatch[1]}</span>${applyInline(olMatch[2])}</div>`;
             continue;
           }
 
