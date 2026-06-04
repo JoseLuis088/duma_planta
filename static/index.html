@@ -942,14 +942,40 @@
       align-items: flex-start;
       gap: 8px;
       padding: 9px 14px;
-      background: rgba(26,188,156, 0.05);
       border-radius: 8px;
-      border-left: 2px solid var(--brand);
       line-height: 1.5;
       font-size: 0.92rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .ai-ul li.ai-li-danger {
+      background: rgba(239, 68, 68, 0.04);
+      border-left: 3px solid #ef4444;
+    }
+    .ai-ul li.ai-li-danger .ai-bullet {
+      color: #ef4444;
+    }
+    .ai-ul li.ai-li-warning {
+      background: rgba(249, 115, 22, 0.04);
+      border-left: 3px solid #f97316;
+    }
+    .ai-ul li.ai-li-warning .ai-bullet {
+      color: #f97316;
+    }
+    .ai-ul li.ai-li-success {
+      background: rgba(16, 185, 129, 0.04);
+      border-left: 3px solid #10b981;
+    }
+    .ai-ul li.ai-li-success .ai-bullet {
+      color: #10b981;
+    }
+    .ai-ul li.ai-li-normal {
+      background: rgba(26, 188, 156, 0.04);
+      border-left: 3px solid var(--brand);
+    }
+    .ai-ul li.ai-li-normal .ai-bullet {
+      color: var(--brand);
     }
     .ai-bullet {
-      color: var(--brand);
       font-weight: 900;
       margin-top: 1px;
       flex-shrink: 0;
@@ -3007,6 +3033,10 @@
             }
             return `<strong${style}>${p1}</strong>`;
           });
+
+          // Prevent range and decimal wrapping by wrapping in nowrap span
+          escaped = escaped.replace(/(-?\d+(?:\.\d+)?\s*(?:a|y)\s*-?\d+(?:\.\d+)?\s*(?:°C|%|minutos|min|s)?)/gi, '<span style="white-space: nowrap;">$1</span>');
+
           return escaped;
         };
 
@@ -3014,37 +3044,91 @@
         let html = "";
         let inUl = false;
         let inOl = false;
+        let inTable = false;
+        let tableHeader = null;
+        let tableRows = [];
+        let olIndex = 0;
 
         function closeLists() {
           if (inUl) { html += "</ul>"; inUl = false; }
           if (inOl) { html += "</ol>"; inOl = false; }
         }
 
+        function closeTable() {
+          if (inTable) {
+            let tableHtml = '<div class="tableWrap" style="margin: 1rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">';
+            tableHtml += '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
+            if (tableHeader) {
+              tableHtml += '<thead style="background: rgba(26,188,156,0.08); border-bottom: 2px solid var(--brand);">';
+              tableHtml += '<tr>';
+              tableHeader.forEach(col => {
+                tableHtml += `<th style="padding: 10px 14px; text-align: left; font-weight: 700; color: var(--brand);">${applyInline(col)}</th>`;
+              });
+              tableHtml += '</tr></thead>';
+            }
+            tableHtml += '<tbody>';
+            tableRows.forEach((row, rIdx) => {
+              let bg = rIdx % 2 === 0 ? 'var(--panel)' : 'rgba(26,188,156,0.02)';
+              tableHtml += `<tr style="background: ${bg}; border-bottom: 1px solid var(--border);">`;
+              row.forEach(col => {
+                tableHtml += `<td style="padding: 9px 14px; color: var(--text);">${applyInline(col)}</td>`;
+              });
+              tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody></table></div>';
+            html += tableHtml;
+            inTable = false;
+            tableHeader = null;
+            tableRows = [];
+          }
+        }
+
         for (let rawLine of lines) {
           let line = rawLine.trim();
           if (!line) {
             closeLists();
+            closeTable();
             continue;
           }
 
+          // Table processing
+          if (line.startsWith("|") && line.endsWith("|")) {
+            closeLists();
+            let cols = line.split("|").map(c => c.trim());
+            if (cols[0] === "") cols.shift();
+            if (cols[cols.length - 1] === "") cols.pop();
+            
+            let isSeparator = cols.every(c => /^[:\s-]+$/.test(c));
+            if (isSeparator) {
+              continue;
+            }
+            
+            if (!inTable) {
+              inTable = true;
+              tableHeader = cols;
+            } else {
+              tableRows.push(cols);
+            }
+            continue;
+          } else {
+            closeTable();
+          }
+
+          // Headers
           if (line.startsWith("#### ")) {
             closeLists();
+            olIndex = 0;
             let raw = line.substring(5).trim();
             html += `<h4>${applyInline(raw)}</h4>`;
             continue;
           }
 
-          // Headers (H3, H2, H1) con lógica de división si vienen pegados
           if (line.startsWith("### ")) {
             closeLists();
+            olIndex = 0;
             let raw = line.substring(4).trim();
-            // Si el texto es largo (> 40 chars) y tiene espacio o punto, probablemente es header + cuerpo
             if (raw.length > 40 && (raw.includes(" ") || raw.includes("."))) {
-              // Intentar detectar el final del título (usualmente los primeros 2-4 palabras)
-              // O simplemente usar una lista de títulos conocidos para ser más precisos
-              const commonHeaders = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
-              let foundHeader = commonHeaders.find(h => raw.toLowerCase().startsWith(h.toLowerCase()));
-
+              let foundHeader = COMMON_HEADERS.find(h => raw.toLowerCase().startsWith(h.toLowerCase()));
               if (foundHeader) {
                 let titleText = raw.substring(0, foundHeader.length).trim();
                 let bodyText = raw.substring(foundHeader.length).trim();
@@ -3052,7 +3136,6 @@
                 html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">${emoji}</span>${applyInline(titleText)}</h3>`;
                 if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
               } else {
-                // Si no es un header conocido, intentamos dividir por el primer punto si es largo
                 let firstDot = raw.indexOf(".");
                 if (firstDot > 0 && firstDot < 40) {
                   let titleText = raw.substring(0, firstDot + 1).trim();
@@ -3072,12 +3155,14 @@
 
           if (line.startsWith("## ")) {
             closeLists();
+            olIndex = 0;
             let title = line.substring(3).trim();
             html += `<h2>${applyInline(title)}</h2>`;
             continue;
           }
           if (line.startsWith("# ")) {
             closeLists();
+            olIndex = 0;
             let title = line.substring(2).trim();
             html += `<h1>${applyInline(title)}</h1>`;
             continue;
@@ -3085,14 +3170,34 @@
 
           if (line === "---" || line === "___" || line === "***") {
             closeLists();
+            olIndex = 0;
             html += "<hr>";
             continue;
+          }
+
+          // Reset olIndex for general paragraphs of text
+          const isListLine = line.startsWith("* ") || line.startsWith("- ") || line.startsWith("+ ") || line.startsWith("-> ") || line.startsWith("> ") || /^\d+\.\s+/.test(line);
+          if (!isListLine) {
+            olIndex = 0;
           }
 
           // Bullets
           if (line.startsWith("* ") || line.startsWith("- ")) {
             if (!inUl) { closeLists(); html += "<ul class='ai-ul'>"; inUl = true; }
-            html += `<li><span class="ai-bullet">→</span><div style="flex:1;">${applyInline(line.substring(2))}</div></li>`;
+            let rawContent = line.substring(2).trim();
+            let inlineHtml = applyInline(rawContent);
+            
+            let liClass = "ai-li-normal";
+            let lowerContent = rawContent.toLowerCase();
+            if (lowerContent.includes("fuera de rango") || lowerContent.includes("crítico") || lowerContent.includes("critico") || lowerContent.includes("riesgo") || lowerContent.includes("urgente") || lowerContent.includes("anomalía") || lowerContent.includes("anomalia")) {
+              liClass = "ai-li-danger";
+            } else if (lowerContent.includes("advertencia") || lowerContent.includes("desviación") || lowerContent.includes("desviacion") || lowerContent.includes("exceso") || lowerContent.includes("atención") || lowerContent.includes("atencion")) {
+              liClass = "ai-li-warning";
+            } else if (lowerContent.includes("estable") || lowerContent.includes("nominal") || lowerContent.includes("óptimo") || lowerContent.includes("optimo") || lowerContent.includes("correcto")) {
+              liClass = "ai-li-success";
+            }
+            
+            html += `<li class="${liClass}"><span class="ai-bullet">→</span><div style="flex:1;">${inlineHtml}</div></li>`;
             continue;
           }
 
@@ -3100,17 +3205,18 @@
           const olMatch = line.match(/^(\d+)\.\s+(.*)/);
           if (olMatch) {
             closeLists();
-            html += `<div class="ai-ol-title"><span class="ai-ol-num">${olMatch[1]}</span>${applyInline(olMatch[2])}</div>`;
+            olIndex++;
+            html += `<div class="ai-ol-title"><span class="ai-ol-num">${olIndex}</span>${applyInline(olMatch[2])}</div>`;
             continue;
           }
 
-          // Paragraph (Ignorar líneas que solo tienen un punto si vienen solas)
           if (line === "." || line === "•") continue;
 
           closeLists();
           html += `<p>${applyInline(line)}</p>`;
         }
         closeLists();
+        closeTable();
         return html;
       }
 
