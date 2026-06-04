@@ -2271,16 +2271,304 @@
 
     /* User bubble in premium blue */
     #viewAgent .msg.user {
-      background: #2563eb !important;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
       color: white !important;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15) !important;
+      border-radius: 18px 18px 4px 18px !important;
+      border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.25) !important;
     }
 
     /* Bot bubble in soft light gray/blue with fine border */
     [data-theme="light"] #viewAgent .msg.bot {
       background: #f8fafc !important;
       border: 1px solid #e2e8f0 !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02) !important;
+      border-radius: 18px 18px 18px 4px !important;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.04) !important;
+    }
+
+    #viewAgent .msg.bot {
+      border-radius: 18px 18px 18px 4px !important;
+    }
+
+    /* =========================================================
+       DUMA PREMIUM UI/UX IMPROVEMENTS (Welcome Dashboard, Glassmorphic & Sleek Styles)
+       ========================================================= */
+    
+    /* Scrollbar minimalista para chat */
+    .chat-messages::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .chat-messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .chat-messages::-webkit-scrollbar-thumb {
+      background: rgba(26, 188, 156, 0.15);
+      border-radius: 4px;
+    }
+    .chat-messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(26, 188, 156, 0.35);
+    }
+
+    /* Glassmorphic Sidebars & Panels scoped under Chat view */
+    body.duma-chat-active .agent-sidebar {
+      background: rgba(248, 250, 252, 0.65) !important;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    [data-theme="dark"] body.duma-chat-active .agent-sidebar {
+      background: rgba(15, 23, 42, 0.6) !important;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    body.duma-chat-active .agent-chat-panel {
+      background: rgba(255, 255, 255, 0.7) !important;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    [data-theme="dark"] body.duma-chat-active .agent-chat-panel {
+      background: rgba(15, 23, 42, 0.45) !important;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    /* Welcome Dashboard CSS */
+    .welcome-dashboard {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      max-width: 800px;
+      margin: auto;
+      padding: 40px 20px;
+      animation: welcomeFadeIn 0.5s ease-out;
+      width: 100%;
+    }
+
+    @keyframes welcomeFadeIn {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .welcome-avatar-wrap {
+      position: relative;
+      width: 76px;
+      height: 76px;
+      margin-bottom: 16px;
+    }
+
+    .welcome-avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #10b981 0%, #0083b0 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 34px;
+      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.25);
+      animation: float 4s ease-in-out infinite;
+      position: relative;
+      z-index: 2;
+    }
+
+    .welcome-avatar-glow {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #10b981;
+      opacity: 0.35;
+      filter: blur(12px);
+      animation: pulseGlow 4s ease-in-out infinite;
+      z-index: 1;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); opacity: 0.35; }
+      50% { transform: scale(1.2); opacity: 0.5; }
+    }
+
+    .welcome-title {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #10b981 0%, #0ea5e9 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .welcome-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      max-width: 480px;
+      margin-bottom: 30px;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    .welcome-categories {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      width: 100%;
+      margin-bottom: 30px;
+    }
+
+    @media (max-width: 768px) {
+      .welcome-categories {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .welcome-card {
+      background: var(--panel-solid);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.02);
+      transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+
+    .welcome-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(26, 188, 156, 0.3);
+    }
+
+    .welcome-card-header {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--text-muted);
+      letter-spacing: 0.8px;
+      margin-bottom: 4px;
+      text-align: left;
+    }
+
+    .welcome-chip {
+      background: var(--bg-solid);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 12.5px;
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+      line-height: 1.35;
+      transition: all 0.2s ease;
+    }
+
+    .welcome-chip:hover {
+      background: rgba(26, 188, 156, 0.08);
+      border-color: var(--brand);
+      color: var(--brand) !important;
+      transform: translateX(3px);
+    }
+
+    .welcome-status-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.05);
+      border: 1px solid rgba(16, 185, 129, 0.15);
+      border-radius: 100px;
+      padding: 8px 16px;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #10b981;
+      margin-top: 10px;
+      transition: all 0.3s ease;
+    }
+
+    .welcome-pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+      display: inline-block;
+      position: relative;
+    }
+
+    .welcome-pulse::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: inherit;
+      animation: pulseRing 1.8s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+    }
+
+    .welcome-pulse.online {
+      background: #10b981;
+    }
+
+    @keyframes pulseRing {
+      from { transform: scale(1); opacity: 0.8; }
+      to { transform: scale(2.4); opacity: 0; }
+    }
+
+    /* Micro-interacciones del Chat */
+    #viewAgent .msg {
+      animation: messageReveal 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes messageReveal {
+      from { opacity: 0; transform: translateY(12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Hover en los chips de sugerencia de la barra inferior */
+    .chat-suggestion-chip {
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    }
+    .chat-suggestion-chip:hover {
+      transform: translateY(-2px) scale(1.01);
+      box-shadow: 0 4px 12px rgba(26, 188, 156, 0.15);
+      border-color: var(--brand) !important;
+    }
+
+    /* Hover y animación del botón de enviar */
+    #viewAgent .chat-send-btn {
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    }
+    #viewAgent .chat-send-btn:hover {
+      transform: scale(1.08) rotate(-10deg) !important;
+      box-shadow: 0 4px 12px rgba(0, 180, 219, 0.35) !important;
+      filter: brightness(1.05);
+    }
+
+    /* Cápsula de entrada estilizada */
+    #viewAgent .chat-input-wrapper {
+      background: var(--bg-solid) !important;
+      border-radius: 26px !important;
+      border: 1px solid var(--border) !important;
+      padding: 3px !important;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.02), 0 2px 10px rgba(0,0,0,0.02) !important;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    }
+    #viewAgent .chat-input-wrapper:focus-within {
+      border-color: var(--brand) !important;
+      box-shadow: 0 0 0 3px var(--brand-glow), inset 0 1px 2px rgba(0,0,0,0.02) !important;
+    }
+    #viewAgent .chat-input {
+      border: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
     }
   </style>
 </head>
@@ -4637,13 +4925,8 @@
         },
 
         async initializeProactiveChat() {
-          const container = el("chatMsgs");
-          container.innerHTML = `
-            <div class="msg bot" id="chatLoadingGreeting">
-              <span style="font-style: italic; color: #a1a1aa;">Estableciendo conexión con Duma...</span>
-            </div>
-          `;
-          if (el("chatSuggestions")) el("chatSuggestions").style.display = "flex";
+          this.renderWelcomeDashboard();
+          if (el("chatSuggestions")) el("chatSuggestions").style.display = "none";
           
           const chatHeaderTitle = document.getElementById("chatHeaderTitle");
           if (chatHeaderTitle && !this.threadId) {
@@ -4660,8 +4943,6 @@
               }
             }
             
-            this.loadDynamicChips(oeeVal);
-
             const initRes = await fetch("chat/", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4676,7 +4957,12 @@
               this.isChatInitialized = true;
 
               const loadingEl = el("chatLoadingGreeting");
-              if (loadingEl) loadingEl.remove();
+              if (loadingEl) {
+                loadingEl.innerHTML = `<span class="welcome-pulse online"></span> Conectado en línea`;
+                setTimeout(() => {
+                  if (loadingEl) loadingEl.remove();
+                }, 1500);
+              }
 
               if (data.thread_id) {
                 this.threadId = data.thread_id;
@@ -4692,9 +4978,66 @@
             console.error("Error initializing proactive chat:", e);
             const loadingEl = el("chatLoadingGreeting");
             if (loadingEl) {
-              loadingEl.innerHTML = `¡Hola! Soy <strong>Duma</strong>, tu analista de piso. ¿En qué puedo ayudarte hoy?`;
+              loadingEl.innerHTML = `<span class="welcome-pulse online" style="background-color: #ef4444; box-shadow: none;"></span> Conexión inestable (Offline)`;
             }
-            this.loadDynamicChips(100);
+          }
+        },
+
+        renderWelcomeDashboard() {
+          const container = el("chatMsgs");
+          if (!container) return;
+          container.innerHTML = `
+            <div id="chatWelcomeDashboard" class="welcome-dashboard">
+              <div class="welcome-avatar-wrap">
+                <div class="welcome-avatar">🤖</div>
+                <div class="welcome-avatar-glow"></div>
+              </div>
+              <h2 class="welcome-title">Duma AI Agent</h2>
+              <p class="welcome-subtitle">Tu analista de piso con Inteligencia Artificial. Monitorea OEE, paros y variables críticas en tiempo real.</p>
+              
+              <div class="welcome-categories">
+                <div class="welcome-card">
+                  <div class="welcome-card-header">📊 OEE & RENDIMIENTO</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Dame el estado actual de la planta: OEE, disponibilidad y producción.')">
+                    ¿Cuál es el estado actual de la planta?
+                  </div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Dame el OEE de ayer desglosado por turnos.')">
+                    OEE de ayer por turnos
+                  </div>
+                </div>
+                <div class="welcome-card">
+                  <div class="welcome-card-header">🚨 PAROS & PARETO</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Genera un análisis Pareto (80/20) de las fallas de ayer.')">
+                    Pareto 80/20 de los paros de ayer
+                  </div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('¿Cuál fue la pérdida de producción estimada hoy por paros no programados?')">
+                    Pérdida de producción hoy
+                  </div>
+                </div>
+                <div class="welcome-card">
+                  <div class="welcome-card-header">⚙️ SENSORES & VARIABLES</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Analiza qué variables de control o sensores estuvieron fuera de rango hoy.')">
+                    Sensores fuera de rango hoy
+                  </div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('¿Existe alguna correlación entre la temperatura del Chiller y los paros registrados hoy?')">
+                    Correlación Chiller vs paros
+                  </div>
+                </div>
+              </div>
+              
+              <div class="welcome-status-bar" id="chatLoadingGreeting">
+                <span class="welcome-pulse"></span> Estableciendo conexión segura con el Agente...
+              </div>
+            </div>
+          `;
+          container.scrollTop = 0;
+        },
+
+        handleSuggestionText(text) {
+          const inputEl = el("chatInput");
+          if (inputEl) {
+            inputEl.value = text;
+            this.handleSend();
           }
         },
 
@@ -4767,6 +5110,9 @@
           this.isChatInitialized = true;
           const loadingEl = el("chatLoadingGreeting");
           if (loadingEl) loadingEl.remove();
+
+          const welcomeDashboard = el("chatWelcomeDashboard");
+          if (welcomeDashboard) welcomeDashboard.remove();
 
           el("chatInput").value = "";
           this.addMessage("user", input);
