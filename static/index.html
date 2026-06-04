@@ -56,6 +56,7 @@
   <!-- Flatpickr para rangos de fecha -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
@@ -1215,21 +1216,54 @@
       color: var(--brand);
     }
 
-    .md strong {
+    .md strong, .msg.bot strong {
       font-weight: 700;
-      color: var(--brand);
-      background: rgba(0, 150, 136, 0.05);
+      color: var(--brand) !important;
+      background: rgba(26, 188, 156, 0.06);
       padding: 0 4px;
       border-radius: 4px;
     }
 
-    .md blockquote {
+    .md blockquote, .msg.bot blockquote {
       border-left: 4px solid var(--brand);
       padding: 12px 20px;
       margin: 20px 0;
-      background: rgba(0, 150, 136, 0.03);
+      background: rgba(26, 188, 156, 0.03);
       border-radius: 0 8px 8px 0;
       font-style: italic;
+    }
+
+    /* AI & Chat Table Styling */
+    .md table, .msg.bot table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 16px 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .md th, .msg.bot th {
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      color: white;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .md td, .msg.bot td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      background: var(--panel-solid);
+      color: var(--text);
+    }
+    .md tr:last-child td, .msg.bot tr:last-child td {
+      border-bottom: none;
+    }
+    .md tr:nth-child(even) td, .msg.bot tr:nth-child(even) td {
+      background: rgba(26, 188, 156, 0.03);
     }
 
     /* Utilities */
@@ -3085,248 +3119,40 @@
 
       function mdToHtml(md) {
         if (!md) return "";
-
-        // Normalizar saltos de línea y limpiar sintaxis de imagen markdown (fail-safe)
         let processedMd = String(md)
           .replace(/!\[.*?\]\(.*?\)/g, "")
           .replace(/\r\n/g, "\n")
           .replace(/\r/g, "\n");
+        
+        let html = "";
+        try {
+          html = marked.parse(processedMd);
+        } catch (e) {
+          console.error("Marked parse error:", e);
+          html = processedMd;
+        }
 
-        // Pre-procesamiento: Unir líneas fragmentadas (especialmente tiempos como 15:\n30.)
-        processedMd = processedMd
-          .replace(/:\s*\n\s*(\d+)/g, ": $1") // Unir si hay colon seguido de números
-          .replace(/(\d+)\s*\n\s*(\d+)/g, "$1$2") // Unir números cortados
-          .replace(/([a-záéíóúñ])\s*\n\s*([a-záéíóúñ])/g, "$1 $2"); // Unir palabras cortadas a mitad (minúsculas)
-
-        // SEPARACIÓN INTELIGENTE (Lista solo si viene después de un separador natural o puntuación)
-        // Esto evita romper oraciones a la mitad y NO divide decimales.
-        processedMd = processedMd
-          .replace(/([^\n])\s*###/g, "$1\n\n###") // Separar headers si vienen pegados a texto
-          .replace(/(?<!\d)([.?!:])\s+(\d+\.\s+)/g, "$1\n$2") // Separar lista numerada solo tras punto (evita 2.0)
-          .replace(/(?<!\d)([.?!:])\s+([-*]\s+)/g, "$1\n$2"); // Separar bullets solo tras punto (evita 2.0)
-
-        // Split headers conocidos que traen contenido en la misma línea
-        const COMMON_HEADERS = ["Resumen ejecutivo", "Hallazgos clave", "Interpretación operacional", "Acciones recomendadas", "Próximos pasos", "KPI limitante", "Riesgo si no se actúa"];
-        const HEADER_EMOJI = {
-          "resumen ejecutivo":          "📋",
-          "hallazgos clave":            "🔍",
-          "interpretación operacional": "⚙️",
-          "acciones recomendadas":      "✅",
-          "próximos pasos":             "🗓️",
-          "kpi limitante":              "📉",
-          "riesgo si no se actúa":      "⚠️",
-        };
-        COMMON_HEADERS.forEach(h => {
-          const re = new RegExp(`(###\\s+${h})\\.?(\\s+[^\\n])`, 'gi');
-          processedMd = processedMd.replace(re, "$1\n\n$2");
+        // Aplicar el mismo resaltado semántico dinámico a los tags strong generados
+        html = html.replace(/<strong>(.*?)<\/strong>/gi, (match, p1) => {
+          const lower = p1.toLowerCase();
+          let color = "var(--brand)"; // Teal por defecto
+          let weight = "700";
+          if (lower.includes("fuera de rango") || lower.includes("crítico") || lower.includes("critico") || lower.includes("riesgo") || lower.includes("urgente") || lower.includes("anomalía") || lower.includes("anomalia")) {
+            color = "#ef4444"; // Rojo
+            weight = "800";
+          } else if (lower.includes("advertencia") || lower.includes("desviación") || lower.includes("desviacion") || lower.includes("exceso") || lower.includes("atención") || lower.includes("atencion")) {
+            color = "#f97316"; // Naranja
+            weight = "800";
+          } else if (lower.includes("estable") || lower.includes("nominal") || lower.includes("óptimo") || lower.includes("optimo") || lower.includes("correcto") || lower.includes("clase mundial") || lower.includes("satisfactorio")) {
+            color = "#10b981"; // Verde
+            weight = "800";
+          }
+          return `<strong style="color: ${color} !important; font-weight: ${weight};">${p1}</strong>`;
         });
 
-        const esc = (s) => String(s)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
+        // Prevent range and decimal wrapping by wrapping in nowrap span
+        html = html.replace(/(-?\d+(?:\.\d+)?\s*(?:a|y)\s*-?\d+(?:\.\d+)?\s*(?:°C|%|minutos|min|s)?)/gi, '<span style="white-space: nowrap;">$1</span>');
 
-        const applyInline = (s) => {
-          let escaped = esc(s);
-          // Highlight strong tags dynamically based on semantic context
-          escaped = escaped.replace(/\*\*(.+?)\*\*/g, (match, p1) => {
-            const lower = p1.toLowerCase();
-            let style = "";
-            if (lower.includes("fuera de rango") || lower.includes("crítico") || lower.includes("critico") || lower.includes("riesgo") || lower.includes("urgente") || lower.includes("anomalía") || lower.includes("anomalia")) {
-              style = ' style="color: #ef4444; font-weight: 800;"'; // Rojo para fallos/riesgos
-            } else if (lower.includes("advertencia") || lower.includes("desviación") || lower.includes("desviacion") || lower.includes("exceso") || lower.includes("atención") || lower.includes("atencion")) {
-              style = ' style="color: #f97316; font-weight: 800;"'; // Naranja para advertencias
-            } else if (lower.includes("estable") || lower.includes("nominal") || lower.includes("óptimo") || lower.includes("optimo") || lower.includes("correcto") || lower.includes("clase mundial") || lower.includes("satisfactorio")) {
-              style = ' style="color: #10b981; font-weight: 800;"'; // Verde para éxito
-            } else {
-              style = ' style="color: #10b981; font-weight: 700;"'; // Verde vibrante por defecto (mismo color de plantilla)
-            }
-            return `<strong${style}>${p1}</strong>`;
-          });
-
-          // Prevent range and decimal wrapping by wrapping in nowrap span
-          escaped = escaped.replace(/(-?\d+(?:\.\d+)?\s*(?:a|y)\s*-?\d+(?:\.\d+)?\s*(?:°C|%|minutos|min|s)?)/gi, '<span style="white-space: nowrap;">$1</span>');
-
-          return escaped;
-        };
-
-        const lines = processedMd.split(/\n/);
-        let html = "";
-        let inUl = false;
-        let inOl = false;
-        let inTable = false;
-        let tableHeader = null;
-        let tableRows = [];
-        let olIndex = 0;
-
-        function closeLists() {
-          if (inUl) { html += "</ul>"; inUl = false; }
-          if (inOl) { html += "</ol>"; inOl = false; }
-        }
-
-        function closeTable() {
-          if (inTable) {
-            let tableHtml = '<div class="tableWrap" style="margin: 1.2rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid var(--border);">';
-            tableHtml += '<table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; text-align: left;">';
-            if (tableHeader) {
-              tableHtml += '<thead style="background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%); border-bottom: none;">';
-              tableHtml += '<tr>';
-              tableHeader.forEach(col => {
-                tableHtml += `<th style="padding: 12px 16px; text-align: left; font-weight: 700; color: #ffffff; font-size: 0.82rem; letter-spacing: 0.5px; text-transform: uppercase;">${applyInline(col)}</th>`;
-              });
-              tableHtml += '</tr></thead>';
-            }
-            tableHtml += '<tbody>';
-            tableRows.forEach((row, rIdx) => {
-              let bg = rIdx % 2 === 0 ? 'var(--panel-solid)' : 'rgba(26,188,156,0.02)';
-              tableHtml += `<tr style="background: ${bg}; border-bottom: 1px solid var(--border); transition: background-color 0.2s ease;">`;
-              row.forEach(col => {
-                tableHtml += `<td style="padding: 10px 16px; color: var(--text); font-weight: 500;">${applyInline(col)}</td>`;
-              });
-              tableHtml += '</tr>';
-            });
-            tableHtml += '</tbody></table></div>';
-            html += tableHtml;
-            inTable = false;
-            tableHeader = null;
-            tableRows = [];
-          }
-        }
-
-        for (let rawLine of lines) {
-          let line = rawLine.trim();
-          if (!line) {
-            closeLists();
-            closeTable();
-            continue;
-          }
-
-          // Table processing
-          if (line.startsWith("|") && line.endsWith("|")) {
-            closeLists();
-            let cols = line.split("|").map(c => c.trim());
-            if (cols[0] === "") cols.shift();
-            if (cols[cols.length - 1] === "") cols.pop();
-            
-            let isSeparator = cols.every(c => /^[:\s-]+$/.test(c));
-            if (isSeparator) {
-              continue;
-            }
-            
-            if (!inTable) {
-              inTable = true;
-              tableHeader = cols;
-            } else {
-              tableRows.push(cols);
-            }
-            continue;
-          } else {
-            closeTable();
-          }
-
-          // Headers
-          if (line.startsWith("#### ")) {
-            closeLists();
-            olIndex = 0;
-            let raw = line.substring(5).trim();
-            html += `<h4>${applyInline(raw)}</h4>`;
-            continue;
-          }
-
-          if (line.startsWith("### ")) {
-            closeLists();
-            olIndex = 0;
-            let raw = line.substring(4).trim();
-            if (raw.length > 40 && (raw.includes(" ") || raw.includes("."))) {
-              let foundHeader = COMMON_HEADERS.find(h => raw.toLowerCase().startsWith(h.toLowerCase()));
-              if (foundHeader) {
-                let titleText = raw.substring(0, foundHeader.length).trim();
-                let bodyText = raw.substring(foundHeader.length).trim();
-                const emoji = HEADER_EMOJI[titleText.toLowerCase()] || "◆";
-                html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">${emoji}</span>${applyInline(titleText)}</h3>`;
-                if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
-              } else {
-                let firstDot = raw.indexOf(".");
-                if (firstDot > 0 && firstDot < 40) {
-                  let titleText = raw.substring(0, firstDot + 1).trim();
-                  let bodyText = raw.substring(firstDot + 1).trim();
-                  html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">◆</span>${applyInline(titleText)}</h3>`;
-                  if (bodyText) html += `<p>${applyInline(bodyText)}</p>`;
-                } else {
-                  html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">◆</span>${applyInline(raw)}</h3>`;
-                }
-              }
-            } else {
-              const emojiPlain = HEADER_EMOJI[raw.toLowerCase()] || "◆";
-              html += `<h3 class="ai-section-header"><span class="ai-h3-emoji">${emojiPlain}</span>${applyInline(raw)}</h3>`;
-            }
-            continue;
-          }
-
-          if (line.startsWith("## ")) {
-            closeLists();
-            olIndex = 0;
-            let title = line.substring(3).trim();
-            html += `<h2>${applyInline(title)}</h2>`;
-            continue;
-          }
-          if (line.startsWith("# ")) {
-            closeLists();
-            olIndex = 0;
-            let title = line.substring(2).trim();
-            html += `<h1>${applyInline(title)}</h1>`;
-            continue;
-          }
-
-          if (line === "---" || line === "___" || line === "***") {
-            closeLists();
-            olIndex = 0;
-            html += "<hr>";
-            continue;
-          }
-
-          // Reset olIndex for general paragraphs of text
-          const isListLine = line.startsWith("* ") || line.startsWith("- ") || line.startsWith("+ ") || line.startsWith("-> ") || line.startsWith("> ") || /^\d+\.\s+/.test(line);
-          if (!isListLine) {
-            olIndex = 0;
-          }
-
-          // Bullets
-          if (line.startsWith("* ") || line.startsWith("- ")) {
-            if (!inUl) { closeLists(); html += "<ul class='ai-ul'>"; inUl = true; }
-            let rawContent = line.substring(2).trim();
-            let inlineHtml = applyInline(rawContent);
-            
-            let liClass = "ai-li-normal";
-            let lowerContent = rawContent.toLowerCase();
-            if (lowerContent.includes("fuera de rango") || lowerContent.includes("crítico") || lowerContent.includes("critico") || lowerContent.includes("riesgo") || lowerContent.includes("urgente") || lowerContent.includes("anomalía") || lowerContent.includes("anomalia")) {
-              liClass = "ai-li-danger";
-            } else if (lowerContent.includes("advertencia") || lowerContent.includes("desviación") || lowerContent.includes("desviacion") || lowerContent.includes("exceso") || lowerContent.includes("atención") || lowerContent.includes("atencion")) {
-              liClass = "ai-li-warning";
-            } else if (lowerContent.includes("estable") || lowerContent.includes("nominal") || lowerContent.includes("óptimo") || lowerContent.includes("optimo") || lowerContent.includes("correcto")) {
-              liClass = "ai-li-success";
-            }
-            
-            html += `<li class="${liClass}"><span class="ai-bullet">→</span><div style="flex:1;">${inlineHtml}</div></li>`;
-            continue;
-          }
-
-          // Numbers
-          const olMatch = line.match(/^(\d+)\.\s+(.*)/);
-          if (olMatch) {
-            closeLists();
-            olIndex++;
-            html += `<div class="ai-ol-title"><span class="ai-ol-num">${olIndex}</span>${applyInline(olMatch[2])}</div>`;
-            continue;
-          }
-
-          if (line === "." || line === "•") continue;
-
-          closeLists();
-          html += `<p>${applyInline(line)}</p>`;
-        }
-        closeLists();
-        closeTable();
         return html;
       }
 
@@ -5108,10 +4934,14 @@
             const wrapper = document.createElement("div");
             wrapper.className = "typing-wrapper";
             wrapper.innerHTML = `
-            <div class="msg bot typing">
-              <div class="typing-dot"></div>
-              <div class="typing-dot"></div>
-              <div class="typing-dot"></div>
+            <div class="msg bot typing" style="display: flex; align-items: center; gap: 8px; padding: 10px 16px;">
+              <span style="font-size: 14px;">⏳</span>
+              <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Analizando datos, un momento...</span>
+              <div style="display: flex; gap: 3px; align-items: center; margin-left: 4px; height: 10px;">
+                <div class="typing-dot" style="width: 5px; height: 5px; margin: 0;"></div>
+                <div class="typing-dot" style="width: 5px; height: 5px; margin: 0;"></div>
+                <div class="typing-dot" style="width: 5px; height: 5px; margin: 0;"></div>
+              </div>
             </div>
           `;
             el("chatMsgs").appendChild(wrapper);

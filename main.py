@@ -873,7 +873,7 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
     last_text = ""
 
     # Parámetros de control del ciclo
-    MAX_WAIT_SECONDS = 45
+    MAX_WAIT_SECONDS = 90
     POLL_INTERVAL_SEC = 0.5
     TOOL_SUBMIT_RETRIES = 2
 
