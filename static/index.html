@@ -2287,24 +2287,69 @@
                 <span class="small muted" id="oeeRtInfo" style="margin-left: 10px"></span>
               </div>
 
-              <div class="kpi-grid" id="oeeRtKpis" style="display:none">
-                <div class="kpi">
-                  <div class="kpi-label">OEE</div>
-                  <div class="kpi-value" id="kpiOee"></div>
-                  <div class="kpi-hint" id="kpiOeeHint"></div>
+              <!-- KPI Cards Premium para OEE en Tiempo Real -->
+              <div class="cv-kpi-row" id="oeeRtKpis" style="display:none; margin-top:20px;">
+
+                <!-- 1. OEE -->
+                <div class="cv-kpi-card" id="oeeRtKpiOeeCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeRtKpiOeeIcon">🏭</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">OEE</div>
+                    <div class="cv-kpi-value" id="kpiOee">—</div>
+                    <div class="cv-kpi-sub" id="oeeRtKpiOeeSub">Línea de producción</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeRtKpiOeeBar"></div>
+                  </div>
                 </div>
-                <div class="kpi">
-                  <div class="kpi-label">Disponibilidad</div>
-                  <div class="kpi-value" id="kpiAvail"></div>
+
+                <!-- 2. Disponibilidad -->
+                <div class="cv-kpi-card" id="oeeRtKpiAvailCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeRtKpiAvailIcon">⏱️</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">Disponibilidad</div>
+                    <div class="cv-kpi-value" id="kpiAvail">—</div>
+                    <div class="cv-kpi-sub" id="oeeRtKpiAvailSub">Uso del tiempo</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeRtKpiAvailBar"></div>
+                  </div>
                 </div>
-                <div class="kpi">
-                  <div class="kpi-label">Desempeño</div>
-                  <div class="kpi-value" id="kpiPerf"></div>
+
+                <!-- 3. Desempeño -->
+                <div class="cv-kpi-card" id="oeeRtKpiPerfCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeRtKpiPerfIcon">⚡</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">Desempeño</div>
+                    <div class="cv-kpi-value" id="kpiPerf">—</div>
+                    <div class="cv-kpi-sub" id="oeeRtKpiPerfSub">Ritmo de producción</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeRtKpiPerfBar"></div>
+                  </div>
                 </div>
-                <div class="kpi">
-                  <div class="kpi-label">Producto Conforme</div>
-                  <div class="kpi-value" id="kpiQual"></div>
+
+                <!-- 4. Producto Conforme -->
+                <div class="cv-kpi-card" id="oeeRtKpiQualCard">
+                  <div class="cv-kpi-icon-wrap">
+                    <span class="cv-kpi-icon" id="oeeRtKpiQualIcon">✅</span>
+                  </div>
+                  <div class="cv-kpi-body">
+                    <div class="cv-kpi-label">Producto Conforme</div>
+                    <div class="cv-kpi-value" id="kpiQual">—</div>
+                    <div class="cv-kpi-sub" id="oeeRtKpiQualSub">Porcentaje de calidad</div>
+                  </div>
+                  <div class="cv-kpi-bar-track">
+                    <div class="cv-kpi-bar-fill" id="oeeRtKpiQualBar"></div>
+                  </div>
                 </div>
+
               </div>
 
               <div class="card" style="margin-top:20px; display:none" id="oeeRtTableCard">
@@ -2640,6 +2685,23 @@
         return (Math.round(n * 100) / 100).toString() + "%";
       }
 
+      function paintOeeKpi(cardId, iconId, barId, subId, value, thresholds, icons, subs) {
+        const pct = parseFloat(value) || 0;
+        const card = el(cardId);
+        const bar  = el(barId);
+        if (!card) return;
+        card.classList.remove("state-ok","state-warn","state-high","state-crit");
+        let state, icon, sub;
+        if (pct >= thresholds[0]) { state="state-ok";   icon=icons[0]; sub=subs[0]; }
+        else if (pct >= thresholds[1]) { state="state-warn";  icon=icons[1]; sub=subs[1]; }
+        else if (pct >= thresholds[2]) { state="state-high";  icon=icons[2]; sub=subs[2]; }
+        else                           { state="state-crit";  icon=icons[3]; sub=subs[3]; }
+        card.classList.add(state);
+        if (el(iconId)) el(iconId).textContent = icon;
+        if (el(subId))  el(subId).textContent  = sub;
+        if (bar) { bar.style.width = Math.min(pct,100)+"%" ; bar.style.background = state==="state-ok"?"#10b981":state==="state-warn"?"#eab308":state==="state-high"?"#f97316":"#ef4444"; }
+      }
+
       function todayISO() {
         const t = new Date();
         const yyyy = t.getFullYear();
@@ -2823,7 +2885,42 @@
           const tr = document.createElement("tr");
           (columns || []).forEach((c, idx) => {
             const td = document.createElement("td");
-            td.textContent = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
+            let val = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
+            
+            // Format column dynamically if it's a metric or status
+            const normCol = String(c).toLowerCase().trim();
+            if (normCol === "oee" || normCol === "availability" || normCol === "disponibilidad" || normCol === "performance" || normCol === "desempeno" || normCol === "producto conforme" || normCol === "calidad") {
+              let pct = parseFloat(val);
+              if (!isNaN(pct)) {
+                let color = "#10b981"; // default ok
+                if (normCol === "oee") {
+                  color = pct >= 65 ? "#10b981" : pct >= 50 ? "#eab308" : pct >= 35 ? "#f97316" : "#ef4444";
+                } else if (normCol === "availability" || normCol === "disponibilidad") {
+                  color = pct >= 90 ? "#10b981" : pct >= 75 ? "#eab308" : pct >= 60 ? "#f97316" : "#ef4444";
+                } else if (normCol === "performance" || normCol === "desempeno") {
+                  color = pct >= 95 ? "#10b981" : pct >= 80 ? "#eab308" : pct >= 65 ? "#f97316" : "#ef4444";
+                } else if (normCol === "producto conforme" || normCol === "calidad") {
+                  color = pct >= 99 ? "#10b981" : pct >= 95 ? "#eab308" : pct >= 90 ? "#f97316" : "#ef4444";
+                }
+                td.innerHTML = `<span style="color: ${color}; font-weight: 800; font-size: 1.05em;">${pct.toFixed(2)}%</span>`;
+              } else {
+                td.textContent = val;
+              }
+            } else if (normCol === "statuscode" || normCol === "estatus") {
+              let icon = "⚙️";
+              let color = "var(--text)";
+              if (val.includes("Disponible") || val === "AV") { icon = "🟢"; color = "#10b981"; }
+              else if (val.includes("No Programado") || val === "US") { icon = "🔴"; color = "#ef4444"; }
+              else if (val.includes("Programado") || val === "SS") { icon = "🟡"; color = "#eab308"; }
+              else if (val.includes("Baja") || val === "LP") { icon = "⚠️"; color = "#f97316"; }
+              td.innerHTML = `<span style="font-weight: 700; color: ${color};">${icon} ${val}</span>`;
+            } else if (normCol === "linename" || normCol === "línea") {
+              td.innerHTML = `<span style="font-weight: 600;">🏭 ${val}</span>`;
+            } else if (normCol === "snapshotatlocal" || normCol === "fecha") {
+              td.innerHTML = `<span style="color: var(--muted); font-family: monospace;">${val}</span>`;
+            } else {
+              td.textContent = val;
+            }
             tr.appendChild(td);
           });
           bodyEl.appendChild(tr);
@@ -3487,6 +3584,11 @@
           const iLine = idx("LineName");
           const iSnap = idx("SnapshotAtLocal");
 
+          const oeeVal  = (iOee >= 0) ? parseFloat(first[iOee]) : 0;
+          const availVal = (iAv >= 0) ? parseFloat(first[iAv]) : 0;
+          const perfVal  = (iPe >= 0) ? parseFloat(first[iPe]) : 0;
+          const qualVal  = (iQu >= 0) ? parseFloat(first[iQu]) : 0;
+
           el("kpiOee").textContent = (iOee >= 0) ? toPct(first[iOee]) : "—";
           el("kpiAvail").textContent = (iAv >= 0) ? toPct(first[iAv]) : "—";
           el("kpiPerf").textContent = (iPe >= 0) ? toPct(first[iPe]) : "—";
@@ -3494,7 +3596,31 @@
 
           const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
           const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
-          el("kpiOeeHint").textContent = (line || snap) ? `${line} ${snap ? "— " + snap : ""}` : "";
+
+          // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
+          paintOeeKpi("oeeRtKpiOeeCard", "oeeRtKpiOeeIcon", "oeeRtKpiOeeBar", "oeeRtKpiOeeSub", oeeVal,
+            [65, 50, 35],
+            ["🏆", "🏭", "⚠️", "🚨"],
+            [(`${line} ${snap ? "— " + snap : ""}` || "Clase Mundial ✓"), "Aceptable — mejora posible", "Por debajo del estándar", "Crítico — intervención urgente"]
+          );
+          // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
+          paintOeeKpi("oeeRtKpiAvailCard", "oeeRtKpiAvailIcon", "oeeRtKpiAvailBar", "oeeRtKpiAvailSub", availVal,
+            [90, 75, 60],
+            ["✅", "⏱️", "⚠️", "🔴"],
+            ["Disponibilidad óptima", "Pérdida leve por paros", "Paros frecuentes detectados", "Disponibilidad crítica"]
+          );
+          // Desempeño: ≥95 ok, ≥80 warn, ≥65 high, <65 crit
+          paintOeeKpi("oeeRtKpiPerfCard", "oeeRtKpiPerfIcon", "oeeRtKpiPerfBar", "oeeRtKpiPerfSub", perfVal,
+            [95, 80, 65],
+            ["⚡", "📈", "⚠️", "🐢"],
+            ["Ritmo nominal alcanzado", "Micro-paros presentes", "Velocidad reducida", "Bajo rendimiento operativo"]
+          );
+          // Calidad: ≥99 ok, ≥95 warn, ≥90 high, <90 crit
+          paintOeeKpi("oeeRtKpiQualCard", "oeeRtKpiQualIcon", "oeeRtKpiQualBar", "oeeRtKpiQualSub", qualVal,
+            [99, 95, 90],
+            ["✅", "🎯", "⚠️", "❌"],
+            ["Calidad excelente", "Descarte mínimo tolerable", "Revisión de proceso necesaria", "Alta tasa de rechazo"]
+          );
 
           el("oeeRtKpis").style.display = "";
 
@@ -3759,23 +3885,7 @@
           const summary = data.summary;
 
           if (summary) {
-            // Helper para pintar una tarjeta OEE con color semáforo
-            function paintOeeKpi(cardId, iconId, barId, subId, value, thresholds, icons, subs) {
-              const pct = parseFloat(value) || 0;
-              const card = el(cardId);
-              const bar  = el(barId);
-              if (!card) return;
-              card.classList.remove("state-ok","state-warn","state-high","state-crit");
-              let state, icon, sub;
-              if (pct >= thresholds[0]) { state="state-ok";   icon=icons[0]; sub=subs[0]; }
-              else if (pct >= thresholds[1]) { state="state-warn";  icon=icons[1]; sub=subs[1]; }
-              else if (pct >= thresholds[2]) { state="state-high";  icon=icons[2]; sub=subs[2]; }
-              else                           { state="state-crit";  icon=icons[3]; sub=subs[3]; }
-              card.classList.add(state);
-              if (el(iconId)) el(iconId).textContent = icon;
-              if (el(subId))  el(subId).textContent  = sub;
-              if (bar) { bar.style.width = Math.min(pct,100)+"%" ; bar.style.background = state==="state-ok"?"#10b981":state==="state-warn"?"#eab308":state==="state-high"?"#f97316":"#ef4444"; }
-            }
+            // Utiliza paintOeeKpi global
 
             const oeeVal  = parseFloat(summary.OEE)          || 0;
             const availVal = parseFloat(summary.Availability) || 0;
