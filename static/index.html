@@ -2570,6 +2570,26 @@
       background: transparent !important;
       box-shadow: none !important;
     }
+
+    /* Reloj de arena animado de abajo hacia arriba (flotado vertical) */
+    .animated-hourglass {
+      display: inline-block;
+      animation: hourglassFloatUp 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    @keyframes hourglassFloatUp {
+      0% {
+        transform: translateY(4px) scale(0.9);
+        opacity: 0.7;
+      }
+      50% {
+        transform: translateY(-6px) scale(1.1) rotate(15deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(4px) scale(0.9);
+        opacity: 0.7;
+      }
+    }
   </style>
 </head>
 
@@ -5281,13 +5301,8 @@
             wrapper.className = "typing-wrapper";
             wrapper.innerHTML = `
             <div class="msg bot typing" style="display: flex; align-items: center; gap: 8px; padding: 10px 16px;">
-              <span style="font-size: 14px;">⏳</span>
+              <span class="animated-hourglass" style="font-size: 14px;">⏳</span>
               <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Analizando datos, un momento...</span>
-              <div style="display: flex; gap: 3px; align-items: center; margin-left: 4px; height: 10px;">
-                <div class="typing-dot" style="width: 5px; height: 5px; margin: 0;"></div>
-                <div class="typing-dot" style="width: 5px; height: 5px; margin: 0;"></div>
-                <div class="typing-dot" style="width: 5px; height: 5px; margin: 0;"></div>
-              </div>
             </div>
           `;
             el("chatMsgs").appendChild(wrapper);
