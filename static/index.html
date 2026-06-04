@@ -2138,6 +2138,115 @@
       background: var(--brand-hover);
       transform: scale(1.05);
     }
+
+    /* =============================================
+       DUMA AGENT VIEW STYLE ALIGNMENT (PREMIUM CHAT UI)
+       ============================================= */
+    /* View Agent Shell - float container */
+    #viewAgent.shell {
+      padding: 24px !important;
+      box-sizing: border-box !important;
+      height: calc(100vh - 70px) !important;
+      max-height: calc(100vh - 70px) !important;
+      background: var(--bg);
+      display: flex !important;
+      flex-direction: column;
+    }
+
+    #viewAgent .agent-container {
+      background: var(--panel-solid);
+      border-radius: 24px;
+      box-shadow: 0 10px 40px var(--shadow-lg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      height: 100%;
+      width: 100%;
+    }
+
+    /* Sidebar Alignment */
+    [data-theme="light"] #viewAgent .agent-sidebar {
+      background: #f8fafc;
+      border-right: 1px solid #e2e8f0;
+    }
+
+    /* Active Conversation Item in Sidebar */
+    [data-theme="light"] #viewAgent .agent-conversation-item.active {
+      background: #e2e8f0 !important;
+      color: #0f172a !important;
+      border-color: transparent !important;
+      font-weight: 600;
+    }
+
+    [data-theme="light"] #viewAgent .agent-conversation-item:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    /* Cyan-Teal brand gradient button & avatar */
+    #btnNewChat {
+      background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%) !important;
+      box-shadow: 0 4px 12px rgba(0, 180, 219, 0.2) !important;
+      transition: all 0.2s ease !important;
+    }
+
+    #btnNewChat:hover {
+      background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%) !important;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(0, 180, 219, 0.35) !important;
+    }
+
+    #profileAvatar {
+      background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%) !important;
+      box-shadow: 0 4px 10px rgba(0, 180, 219, 0.25) !important;
+    }
+
+    /* Chat Panel & Header Backgrounds */
+    [data-theme="light"] #viewAgent .agent-chat-panel,
+    [data-theme="light"] #viewAgent .agent-chat-header,
+    [data-theme="light"] #viewAgent .chat-messages {
+      background: #ffffff;
+    }
+
+    /* Input area with pure white background & cyan button */
+    #viewAgent .chat-input-area {
+      background: var(--panel-solid) !important;
+      border-top: 1px solid var(--border);
+      box-shadow: none !important;
+    }
+
+    [data-theme="light"] #viewAgent .chat-input {
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1 !important;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.03) !important;
+    }
+
+    [data-theme="light"] #viewAgent .chat-input:focus {
+      border-color: #00b4db !important;
+      box-shadow: 0 0 0 3px rgba(0, 180, 219, 0.15) !important;
+    }
+
+    #viewAgent .chat-send-btn {
+      background: #00b4db !important;
+    }
+
+    #viewAgent .chat-send-btn:hover {
+      background: #0083b0 !important;
+    }
+
+    /* User bubble in premium blue */
+    #viewAgent .msg.user {
+      background: #2563eb !important;
+      color: white !important;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15) !important;
+    }
+
+    /* Bot bubble in soft light gray/blue with fine border */
+    [data-theme="light"] #viewAgent .msg.bot {
+      background: #f8fafc !important;
+      border: 1px solid #e2e8f0 !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02) !important;
+    }
   </style>
 </head>
 
@@ -2547,7 +2656,7 @@
         <!-- ===================== -->
         <!-- VIEW: DUMA AI AGENT -->
         <!-- ===================== -->
-        <section id="viewAgent" class="shell" style="display:none; padding: 0; margin: 0; height: calc(100vh - 70px); max-height: calc(100vh - 70px); width: 100%;">
+        <section id="viewAgent" class="shell" style="display:none;">
           <div class="agent-container">
             <!-- Panel Izquierdo: Conversaciones -->
             <div class="agent-sidebar">
@@ -2557,7 +2666,7 @@
                 </div>
               </div>
               
-              <button class="btn primary" id="btnNewChat" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 500; height: 42px; border-radius: 12px; margin-bottom: 24px; background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%); border: none;">
+              <button class="btn primary" id="btnNewChat" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 500; height: 42px; border-radius: 12px; margin-bottom: 24px; border: none;">
                 <span>+</span> Nueva Conversación
               </button>
               
@@ -2596,7 +2705,7 @@
                 <div style="display: flex; align-items: center; gap: 12px;">
                   <div style="width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></div>
                   <div>
-                    <div style="font-weight: 600; font-size: 14px;">Duma Agent</div>
+                    <div id="chatHeaderTitle" style="font-weight: 600; font-size: 14px;">Duma Agent</div>
                     <div style="font-size: 11px; color: #a1a1aa;">Online</div>
                   </div>
                 </div>
@@ -3056,22 +3165,22 @@
 
         function closeTable() {
           if (inTable) {
-            let tableHtml = '<div class="tableWrap" style="margin: 1rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">';
-            tableHtml += '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
+            let tableHtml = '<div class="tableWrap" style="margin: 1.2rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid var(--border);">';
+            tableHtml += '<table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; text-align: left;">';
             if (tableHeader) {
-              tableHtml += '<thead style="background: rgba(26,188,156,0.08); border-bottom: 2px solid var(--brand);">';
+              tableHtml += '<thead style="background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%); border-bottom: none;">';
               tableHtml += '<tr>';
               tableHeader.forEach(col => {
-                tableHtml += `<th style="padding: 10px 14px; text-align: left; font-weight: 700; color: var(--brand);">${applyInline(col)}</th>`;
+                tableHtml += `<th style="padding: 12px 16px; text-align: left; font-weight: 700; color: #ffffff; font-size: 0.82rem; letter-spacing: 0.5px; text-transform: uppercase;">${applyInline(col)}</th>`;
               });
               tableHtml += '</tr></thead>';
             }
             tableHtml += '<tbody>';
             tableRows.forEach((row, rIdx) => {
-              let bg = rIdx % 2 === 0 ? 'var(--panel)' : 'rgba(26,188,156,0.02)';
-              tableHtml += `<tr style="background: ${bg}; border-bottom: 1px solid var(--border);">`;
+              let bg = rIdx % 2 === 0 ? 'var(--panel-solid)' : 'rgba(26,188,156,0.02)';
+              tableHtml += `<tr style="background: ${bg}; border-bottom: 1px solid var(--border); transition: background-color 0.2s ease;">`;
               row.forEach(col => {
-                tableHtml += `<td style="padding: 9px 14px; color: var(--text);">${applyInline(col)}</td>`;
+                tableHtml += `<td style="padding: 10px 16px; color: var(--text); font-weight: 500;">${applyInline(col)}</td>`;
               });
               tableHtml += '</tr>';
             });
@@ -3233,11 +3342,16 @@
         el("btnMenuOEE").classList.toggle("active", name === "OEE");
         el("btnMenuAgent").classList.toggle("active", name === "Agent");
 
-        // Ocultar topbar general si estamos en el Agente
+        // Mantener la barra superior visible siempre
         const topbar = document.querySelector(".topbar");
         if (topbar) {
-          topbar.style.display = (name === "Agent") ? "none" : "";
+          topbar.style.display = "";
         }
+
+        // Ocultar botones de control innecesarios para el Agente
+        const isAgent = name === "Agent";
+        if (el("statusPill")) el("statusPill").style.display = isAgent ? "none" : "";
+        if (el("btnClear")) el("btnClear").style.display = isAgent ? "none" : "";
 
         if (name === "CV") {
           el("topTitle").textContent = "Variables de Control";
@@ -3245,6 +3359,9 @@
         } else if (name === "OEE") {
           el("topTitle").textContent = "OEE (Eficiencia)";
           el("topSubtitle").textContent = "Desempeño global y por turno";
+        } else if (name === "Agent") {
+          el("topTitle").textContent = "Duma AI Agent";
+          el("topSubtitle").textContent = "Asistente Operativo con Inteligencia Artificial";
         }
       }
 
@@ -4408,6 +4525,18 @@
           if (el("profileAvatar")) el("profileAvatar").textContent = initials;
         },
 
+        getEmojiForTitle(title) {
+          const t = String(title || "").toLowerCase();
+          if (t.includes("oee") || t.includes("eficiencia")) return "📊";
+          if (t.includes("paro") || t.includes("falla") || t.includes("stoppage")) return "🚨";
+          if (t.includes("velocidad") || t.includes("sensor")) return "⚡";
+          if (t.includes("calidad") || t.includes("desecho")) return "🎯";
+          if (t.includes("turno") || t.includes("horario")) return "🕒";
+          if (t.includes("reporte") || t.includes("pdf") || t.includes("resumen")) return "📄";
+          if (t.includes("temperatura") || t.includes("presión") || t.includes("variable")) return "📈";
+          return "💬";
+        },
+
         clearChat() {
           if (!confirm("¿Deseas iniciar una nueva conversación?")) return;
           this.threadId = null;
@@ -4417,6 +4546,9 @@
           // Deseleccionar elementos activos del sidebar
           const items = document.querySelectorAll(".agent-conversation-item");
           items.forEach(item => item.classList.remove("active"));
+
+          const chatHeaderTitle = document.getElementById("chatHeaderTitle");
+          if (chatHeaderTitle) chatHeaderTitle.textContent = "Nueva Conversación";
           
           this.initializeProactiveChat();
         },
@@ -4521,12 +4653,18 @@
                 item.className = "agent-conversation-item";
                 if (this.threadId === t.thread_id) {
                   item.classList.add("active");
+                  // Sincronizar título en la cabecera del chat
+                  const chatHeaderTitle = document.getElementById("chatHeaderTitle");
+                  if (chatHeaderTitle) {
+                    chatHeaderTitle.textContent = t.title;
+                  }
                 }
                 item.setAttribute("data-id", t.thread_id);
                 
-                // Formatear título e incluir botones de renombrar y borrar
+                const emoji = this.getEmojiForTitle(t.title);
+                // Formatear título e incluir botones de renombrar y borrar con emoji representativo
                 item.innerHTML = `
-                  <span class="chat-icon">💬</span>
+                  <span class="chat-icon">${emoji}</span>
                   <span class="chat-title" title="${t.title}">${t.title}</span>
                   <div class="chat-actions">
                     <button class="action-btn rename-btn" title="Renombrar">✏️</button>
@@ -4567,10 +4705,18 @@
           this.threadId = threadId;
           localStorage.setItem("duma_thread_id", threadId);
           
-          // Actualizar clases activas en sidebar
+          // Actualizar clases activas en sidebar y actualizar título del encabezado
           const items = document.querySelectorAll(".agent-conversation-item");
           items.forEach(item => {
-            item.classList.toggle("active", item.getAttribute("data-id") === threadId);
+            const isTarget = item.getAttribute("data-id") === threadId;
+            item.classList.toggle("active", isTarget);
+            if (isTarget) {
+              const chatTitleSpan = item.querySelector(".chat-title");
+              const chatHeaderTitle = document.getElementById("chatHeaderTitle");
+              if (chatTitleSpan && chatHeaderTitle) {
+                chatHeaderTitle.textContent = chatTitleSpan.textContent;
+              }
+            }
           });
 
           // Cargar el historial del hilo
@@ -4630,6 +4776,18 @@
 
         async loadHistory() {
           try {
+            // Sincronizar título en la cabecera del chat si existe en el sidebar
+            const activeItem = document.querySelector(`.agent-conversation-item[data-id="${this.threadId}"]`);
+            const chatHeaderTitle = document.getElementById("chatHeaderTitle");
+            if (activeItem && chatHeaderTitle) {
+              const chatTitleSpan = activeItem.querySelector(".chat-title");
+              if (chatTitleSpan) {
+                chatHeaderTitle.textContent = chatTitleSpan.textContent;
+              }
+            } else if (chatHeaderTitle) {
+              chatHeaderTitle.textContent = "Duma Agent";
+            }
+
             const res = await fetch(`chat/history/${this.threadId}`);
             if (res.ok) {
               const data = await res.json();
@@ -4659,6 +4817,11 @@
             </div>
           `;
           if (el("chatSuggestions")) el("chatSuggestions").style.display = "flex";
+          
+          const chatHeaderTitle = document.getElementById("chatHeaderTitle");
+          if (chatHeaderTitle && !this.threadId) {
+            chatHeaderTitle.textContent = "Nueva Conversación";
+          }
           
           try {
             const rtRes = await fetch("api/oee/realtime/");
