@@ -2183,22 +2183,22 @@
       color: #0f172a;
     }
 
-    /* Cyan-Teal brand gradient button & avatar */
+    /* Green-Teal brand gradient button & avatar */
     #btnNewChat {
-      background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%) !important;
-      box-shadow: 0 4px 12px rgba(0, 180, 219, 0.2) !important;
+      background: linear-gradient(135deg, #10b981 0%, #0083b0 100%) !important;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2) !important;
       transition: all 0.2s ease !important;
     }
 
     #btnNewChat:hover {
-      background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%) !important;
+      background: linear-gradient(135deg, #059669 0%, #0072ff 100%) !important;
       transform: translateY(-1px);
-      box-shadow: 0 6px 18px rgba(0, 180, 219, 0.35) !important;
+      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35) !important;
     }
 
     #profileAvatar {
-      background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%) !important;
-      box-shadow: 0 4px 10px rgba(0, 180, 219, 0.25) !important;
+      background: linear-gradient(135deg, #10b981 0%, #0083b0 100%) !important;
+      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.25) !important;
     }
 
     /* Chat Panel & Header Backgrounds */
@@ -3138,7 +3138,7 @@
             } else if (lower.includes("estable") || lower.includes("nominal") || lower.includes("óptimo") || lower.includes("optimo") || lower.includes("correcto") || lower.includes("clase mundial") || lower.includes("satisfactorio")) {
               style = ' style="color: #10b981; font-weight: 800;"'; // Verde para éxito
             } else {
-              style = ' style="color: var(--brand); font-weight: 700;"'; // Color de marca por defecto
+              style = ' style="color: #10b981; font-weight: 700;"'; // Verde vibrante por defecto (mismo color de plantilla)
             }
             return `<strong${style}>${p1}</strong>`;
           });
