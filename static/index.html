@@ -2179,11 +2179,14 @@
        ============================================= */
     /* View Agent Shell - float container */
     #viewAgent.shell {
-      padding: 24px !important;
+      padding: 0 !important;
+      margin: 0 auto !important;
       box-sizing: border-box !important;
-      height: calc(100vh - 70px) !important;
-      max-height: calc(100vh - 70px) !important;
-      background: var(--bg);
+      width: 100% !important;
+      max-width: 1400px !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      background: transparent !important;
       display: flex;
       flex-direction: column;
     }
@@ -2887,7 +2890,7 @@
         padding: 16px 12px;
       }
       #viewAgent.shell {
-        padding: 12px !important;
+        padding: 0 !important;
       }
       .agent-conversation-item {
         font-size: 12px;
@@ -3812,6 +3815,7 @@
         el("btnMenuCV").classList.toggle("active", name === "CV");
         el("btnMenuOEE").classList.toggle("active", name === "OEE");
         el("btnMenuAgent").classList.toggle("active", name === "Agent");
+        document.body.classList.toggle("duma-chat-active", name === "Agent");
 
         // Mantener la barra superior visible siempre
         const topbar = document.querySelector(".topbar");
