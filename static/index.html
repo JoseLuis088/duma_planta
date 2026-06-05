@@ -2291,6 +2291,156 @@
     }
 
     /* =========================================================
+       H3: Bot message text — larger, more readable
+       ========================================================= */
+    #viewAgent .msg.bot {
+      font-size: 15px !important;
+      line-height: 1.75 !important;
+    }
+
+    /* =========================================================
+       H5 + H8: Lists and paragraphs inside bot bubbles
+       ========================================================= */
+    .msg.bot p {
+      margin-bottom: 10px;
+      line-height: 1.75;
+    }
+    .msg.bot p:last-child { margin-bottom: 0; }
+
+    .msg.bot ul {
+      padding-left: 22px;
+      list-style: disc;
+      margin: 8px 0 12px 0;
+    }
+    .msg.bot ol {
+      padding-left: 22px;
+      list-style: decimal;
+      margin: 8px 0 12px 0;
+    }
+    .msg.bot li {
+      margin-bottom: 7px;
+      line-height: 1.65;
+    }
+    .msg.bot ul li::marker {
+      color: var(--brand);
+      font-size: 0.85em;
+    }
+    .msg.bot ol li::marker {
+      color: var(--brand);
+      font-weight: 700;
+    }
+
+    /* =========================================================
+       H6: Headings inside bot bubbles — contained and proportional
+       ========================================================= */
+    .msg.bot h1 {
+      font-size: 17px !important;
+      font-weight: 800;
+      color: var(--text);
+      margin: 14px 0 8px 0;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--border);
+    }
+    .msg.bot h2 {
+      font-size: 15px !important;
+      font-weight: 700;
+      color: var(--text);
+      margin: 12px 0 6px 0;
+    }
+    .msg.bot h3 {
+      font-size: 14px !important;
+      font-weight: 600;
+      color: var(--brand);
+      margin: 10px 0 5px 0;
+    }
+    .msg.bot h4, .msg.bot h5, .msg.bot h6 {
+      font-size: 13px !important;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin: 8px 0 4px 0;
+    }
+
+    /* =========================================================
+       H7: Code blocks and inline code inside bot bubbles
+       ========================================================= */
+    .msg.bot code {
+      background: rgba(26, 188, 156, 0.08);
+      border: 1px solid rgba(26, 188, 156, 0.18);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 12.5px;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+      color: var(--brand);
+      white-space: nowrap;
+    }
+    .msg.bot pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px 18px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-size: 12.5px;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+      margin: 12px 0;
+      border: 1px solid rgba(255,255,255,0.06);
+      line-height: 1.6;
+    }
+    .msg.bot pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #e2e8f0;
+      font-size: inherit;
+      white-space: pre;
+    }
+
+    /* =========================================================
+       H4: Tables with horizontal scroll and contained width
+       ========================================================= */
+    .msg.bot .table-wrapper {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 12px;
+      margin: 14px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .msg.bot table {
+      min-width: 480px;
+    }
+
+    /* =========================================================
+       H2: Bold semantic highlights — pill badge with subtle bg
+       ========================================================= */
+    .msg.bot strong[style*="#ef4444"] {
+      background: rgba(239, 68, 68, 0.08) !important;
+      padding: 1px 6px;
+      border-radius: 5px;
+    }
+    .msg.bot strong[style*="#f97316"] {
+      background: rgba(249, 115, 22, 0.08) !important;
+      padding: 1px 6px;
+      border-radius: 5px;
+    }
+    .msg.bot strong[style*="#10b981"] {
+      background: rgba(16, 185, 129, 0.08) !important;
+      padding: 1px 6px;
+      border-radius: 5px;
+    }
+
+    /* =========================================================
+       H1: Spacing between top-level sections in bot content
+       ========================================================= */
+    .msg.bot > * + * {
+      margin-top: 4px;
+    }
+    .msg.bot hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 14px 0;
+    }
+
+    /* =========================================================
        DUMA PREMIUM UI/UX IMPROVEMENTS (Welcome Dashboard, Glassmorphic & Sleek Styles)
        ========================================================= */
     
@@ -2589,6 +2739,189 @@
         transform: translateY(4px) scale(0.9);
         opacity: 0.7;
       }
+    }
+
+    /* =========================================================
+       H9: Scroll-to-bottom floating button
+       ========================================================= */
+    #scrollToBottomBtn {
+      position: absolute;
+      bottom: 100px;
+      right: 24px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      box-shadow: 0 4px 14px var(--brand-glow);
+      z-index: 50;
+      transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+      animation: fadeInUp 0.25s ease;
+    }
+    #scrollToBottomBtn.visible {
+      display: flex;
+    }
+    #scrollToBottomBtn:hover {
+      transform: scale(1.1);
+      background: var(--brand-2);
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* =========================================================
+       H13: Toast notification system
+       ========================================================= */
+    .duma-toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #0f172a;
+      color: #f0fdfa;
+      padding: 12px 20px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+      z-index: 9999;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    .duma-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    [data-theme="dark"] .duma-toast {
+      background: #1e293b;
+      border: 1px solid rgba(45,212,191,0.2);
+    }
+
+    /* =========================================================
+       H12: Character counter for chat input
+       ========================================================= */
+    .chat-char-counter {
+      position: absolute;
+      right: 56px;
+      bottom: 50%;
+      transform: translateY(50%);
+      font-size: 10px;
+      color: var(--text-muted);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      font-variant-numeric: tabular-nums;
+    }
+    .chat-char-counter.visible {
+      opacity: 1;
+    }
+    .chat-char-counter.warn {
+      color: #f97316;
+    }
+    .chat-char-counter.danger {
+      color: #ef4444;
+      font-weight: 700;
+    }
+
+    /* =========================================================
+       Bot avatar badge in chat bubble
+       ========================================================= */
+    .msg-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .msg-row.bot-row {
+      justify-content: flex-start;
+    }
+    .msg-row.user-row {
+      justify-content: flex-end;
+    }
+    .bot-avatar-badge {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #10b981 0%, #0083b0 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(16,185,129,0.25);
+    }
+
+    /* =========================================================
+       H11: Contrast fix — muted text
+       ========================================================= */
+    .agent-chat-header div[style*="#a1a1aa"],
+    #viewAgent [style*="color: #a1a1aa"] {
+      color: #6b7280 !important;
+    }
+    [data-theme="dark"] .agent-chat-header div[style*="#a1a1aa"],
+    [data-theme="dark"] #viewAgent [style*="color: #a1a1aa"] {
+      color: #9ca3af !important;
+    }
+    /* Sidebar RECIENTES label contrast */
+    #viewAgent [style*="color: #a1a1aa"] {
+      color: #6b7280 !important;
+    }
+
+    /* =========================================================
+       H14: Responsive layout for screens < 900px
+       ========================================================= */
+    @media (max-width: 900px) {
+      .agent-sidebar {
+        width: 220px;
+        min-width: 220px;
+        padding: 16px 12px;
+      }
+      #viewAgent.shell {
+        padding: 12px !important;
+      }
+      .agent-conversation-item {
+        font-size: 12px;
+        padding: 10px 10px;
+      }
+    }
+    @media (max-width: 680px) {
+      .agent-sidebar {
+        display: none;
+      }
+      .agent-container {
+        border-radius: 16px;
+      }
+      #viewAgent .chat-messages {
+        padding: 16px;
+      }
+      #viewAgent .chat-input-area {
+        padding: 12px 16px 20px 16px;
+      }
+    }
+
+    /* =========================================================
+       H16: Spinner in welcome status bar (replaces amber dot)
+       ========================================================= */
+    .welcome-pulse.connecting {
+      background: transparent !important;
+      border: 2px solid #f59e0b;
+      border-top-color: transparent;
+      animation: spinnerSpin 0.8s linear infinite;
+      width: 8px;
+      height: 8px;
+    }
+    @keyframes spinnerSpin {
+      to { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -3009,7 +3342,7 @@
                 </div>
               </div>
               
-              <button class="btn primary" id="btnNewChat" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 500; height: 42px; border-radius: 12px; margin-bottom: 24px; border: none;">
+              <button class="btn primary" id="btnNewChat" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 500; height: 42px; border-radius: 12px; margin-bottom: 24px; border: none;" aria-label="Iniciar nueva conversación">
                 <span>+</span> Nueva Conversación
               </button>
               
@@ -3052,16 +3385,19 @@
                   </div>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                  <button class="chat-export-btn btn" id="chatExportPdfBtn" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-radius: 8px; background: transparent; border: 1px solid var(--border); color: var(--text);">
+                  <button class="chat-export-btn btn" id="chatExportPdfBtn" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-radius: 8px; background: transparent; border: 1px solid var(--border); color: var(--text);" aria-label="Descargar conversación como PDF">
                     📄 Descargar PDF
                   </button>
-                  <button class="btn danger" id="chatClearBtn" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;">
+                  <button class="btn danger" id="chatClearBtn" style="padding: 6px 12px; font-size: 12px; border-radius: 8px;" aria-label="Limpiar chat y comenzar nueva conversación">
                     Limpiar Chat
                   </button>
                 </div>
               </div>
               
               <!-- Chat Message History -->
+              <!-- H9: Scroll-to-bottom floating button -->
+              <button id="scrollToBottomBtn" aria-label="Ir al final del chat">↓</button>
+
               <div class="chat-messages" id="chatMsgs">
                 <!-- Mensajes -->
               </div>
@@ -3074,8 +3410,9 @@
               <!-- Input Area -->
               <div class="chat-input-area">
                 <div class="chat-input-wrapper">
-                  <input type="text" class="chat-input" id="chatInput" placeholder="Escribe tu pregunta..." autocomplete="off">
-                  <button class="chat-send-btn" id="chatSendBtn">➤</button>
+                  <input type="text" class="chat-input" id="chatInput" placeholder="Escribe tu pregunta..." autocomplete="off" maxlength="2000" aria-label="Escribe tu pregunta a Duma">
+                  <span class="chat-char-counter" id="chatCharCounter">0/2000</span>
+                  <button class="chat-send-btn" id="chatSendBtn" aria-label="Enviar mensaje">➤</button>
                 </div>
               </div>
             </div>
@@ -4636,6 +4973,7 @@
                 localStorage.setItem("duma_user_name", cleanName);
                 this.setUserName(cleanName);
                 this.loadConversations(); // Recargar historial del nuevo usuario
+                showToast("✅ Nombre actualizado correctamente");
               }
             }
           };
@@ -5045,7 +5383,7 @@
               </div>
               
               <div class="welcome-status-bar" id="chatLoadingGreeting">
-                <span class="welcome-pulse"></span> Estableciendo conexión segura con el Agente...
+                <span class="welcome-pulse connecting"></span> Estableciendo conexión segura con el Agente...
               </div>
             </div>
           `;
@@ -5311,6 +5649,76 @@
       };
 
       chatWidget.init();
+
+      // ── Toast notification system (H13) ─────────────────────────
+      function showToast(message, duration = 3000) {
+        let toast = document.getElementById('dumaToast');
+        if (!toast) {
+          toast = document.createElement('div');
+          toast.id = 'dumaToast';
+          toast.className = 'duma-toast';
+          document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => {
+          toast.classList.remove('show');
+        }, duration);
+      }
+
+      // ── Scroll-to-bottom button logic (H9) ──────────────────────
+      (function() {
+        const chatMsgs = el('chatMsgs');
+        const scrollBtn = el('scrollToBottomBtn');
+        if (!chatMsgs || !scrollBtn) return;
+
+        chatMsgs.addEventListener('scroll', () => {
+          const distFromBottom = chatMsgs.scrollHeight - chatMsgs.scrollTop - chatMsgs.clientHeight;
+          if (distFromBottom > 120) {
+            scrollBtn.classList.add('visible');
+          } else {
+            scrollBtn.classList.remove('visible');
+          }
+        });
+
+        scrollBtn.addEventListener('click', () => {
+          chatMsgs.scrollTo({ top: chatMsgs.scrollHeight, behavior: 'smooth' });
+        });
+      })();
+
+      // ── Character counter for chat input (H12) ──────────────────
+      (function() {
+        const input = el('chatInput');
+        const counter = el('chatCharCounter');
+        if (!input || !counter) return;
+        const MAX = 2000;
+
+        input.addEventListener('input', () => {
+          const len = input.value.length;
+          counter.textContent = `${len}/${MAX}`;
+          counter.classList.remove('warn', 'danger');
+          if (len > 0) counter.classList.add('visible'); else counter.classList.remove('visible');
+          if (len > MAX * 0.85) counter.classList.add('warn');
+          if (len > MAX * 0.95) counter.classList.add('danger');
+        });
+      })();
+
+      // ── Wrap bot message tables in scroll container (H4) ────────
+      function wrapBotTables() {
+        document.querySelectorAll('.msg.bot table').forEach(table => {
+          if (table.parentElement && table.parentElement.classList.contains('table-wrapper')) return;
+          const wrapper = document.createElement('div');
+          wrapper.className = 'table-wrapper';
+          table.parentNode.insertBefore(wrapper, table);
+          wrapper.appendChild(table);
+        });
+      }
+
+      // Observe DOM changes to wrap tables on new messages
+      const tableObserver = new MutationObserver(() => wrapBotTables());
+      const chatMsgsEl = el('chatMsgs');
+      if (chatMsgsEl) tableObserver.observe(chatMsgsEl, { childList: true, subtree: true });
 
       // ── Chat Window Resize (drag top-left handle) ────────────────
       (function() {
