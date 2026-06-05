@@ -4282,13 +4282,13 @@ def _build_pdf_bytes(
     }
 
     def md2fl(md):
-        """Convierte markdown a flowables de ReportLab con soporte mejorado de formato."""
+        """Convierte markdown a flowables de ReportLab con soporte completo de tablas Markdown."""
         out = []
         if not md: return out
-        
-        # Normalizar saltos de línea a \n
+
+        # Normalizar saltos de línea
         md = md.replace("\r\n", "\n").replace("\r", "\n")
-        
+
         # Insertar saltos de línea inteligentes si no existen antes de headings o listas
         md = re.sub(r'([^\n])\s*(#{1,3} )', r'\1\n\n\2', md)
         md = re.sub(r'([.?!:])\s*([-*\u2022\u2192][ \t])', r'\1\n\2', md)
@@ -4296,6 +4296,11 @@ def _build_pdf_bytes(
 
         lines = [l.rstrip() for l in md.split("\n")]
         buf = []
+
+        th_st = sty("MDT_H", "Normal", fontName="Helvetica-Bold", fontSize=8.5,
+                    leading=11, alignment=1, textColor=C_WHITE)
+        tb_st = sty("MDT_B", "Normal", fontName="Helvetica", fontSize=8.5,
+                    leading=11, alignment=1, textColor=C_TEXT)
 
         def _text(raw):
             t = raw.strip()
@@ -4318,35 +4323,132 @@ def _build_pdf_bytes(
                     out.append(Spacer(1, 5))
                 buf.clear()
 
-        for ln in lines:
+        def _is_table_row(l):
+            return l.startswith("|") and l.endswith("|") and len(l) > 2
+
+        def _is_separator_row(l):
+            # Fila de separación como |---|---|
+            inner = l.strip("|")
+            return all(c in "-: |" for c in inner) and "-" in inner
+
+        def _parse_cells(l):
+            return [c.strip() for c in l.strip("|").split("|")]
+
+        def _render_md_table(table_lines):
+            """Convierte un bloque de tabla Markdown en un flowable ReportLab Table."""
+            if not table_lines:
+                return
+            header_cells = _parse_cells(table_lines[0])
+            data_rows = []
+            for row_line in table_lines[1:]:
+                if _is_separator_row(row_line):
+                    continue
+                data_rows.append(_parse_cells(row_line))
+
+            if not header_cells:
+                return
+
+            ncols = len(header_cells)
+            avail_w = PW - 1.0 * inch
+            col_w = avail_w / ncols
+
+            hrow = [Paragraph(_safe(c.upper()), th_st) for c in header_cells]
+            drows = [
+                [Paragraph(_text(str(c)), tb_st) for c in row[:ncols]]
+                for row in data_rows
+            ]
+            # Pad rows with fewer cells
+            for row in drows:
+                while len(row) < ncols:
+                    row.append(Paragraph("", tb_st))
+
+            all_rows = [hrow] + drows
+            tbl = Table(all_rows, colWidths=[col_w] * ncols, repeatRows=1)
+            ts = [
+                ("BACKGROUND",    (0, 0), (-1,  0), C_HDR),
+                ("TEXTCOLOR",     (0, 0), (-1,  0), C_WHITE),
+                ("FONTNAME",      (0, 0), (-1,  0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 8.5),
+                ("LEADING",       (0, 0), (-1, -1), 11),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                ("GRID",          (0, 0), (-1, -1), 0.5, C_DIV),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_LIGHT]),
+                ("ROUNDEDCORNERS", (0, 0), (-1, -1), [6, 6, 6, 6]),
+            ]
+            tbl.setStyle(TableStyle(ts))
+
+            # Wrap in a card-like container
+            card = Table([[tbl]], colWidths=[avail_w])
+            card.setStyle(TableStyle([
+                ("BOX",           (0, 0), (-1, -1), 1, C_DIV),
+                ("ROUNDEDCORNERS",(0, 0), (-1, -1), [8, 8, 8, 8]),
+                ("TOPPADDING",    (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ]))
+            out.append(card)
+            out.append(Spacer(1, 14))
+
+        # --- Main parsing loop ---
+        i = 0
+        while i < len(lines):
+            ln = lines[i]
             l = ln.strip()
+
+            # Detect start of a Markdown table block
+            if _is_table_row(l):
+                flush()
+                table_block = [l]
+                i += 1
+                while i < len(lines):
+                    next_l = lines[i].strip()
+                    if _is_table_row(next_l) or _is_separator_row(next_l):
+                        table_block.append(next_l)
+                        i += 1
+                    else:
+                        break
+                _render_md_table(table_block)
+                continue
+
             if not l:
                 flush()
+                i += 1
                 continue
             if l.startswith("### "):
-                flush(); out.append(Paragraph(_safe(_strip_md(l[4:])), ST["H3"])); out.append(Spacer(1, 4)); continue
-            if l.startswith("## "):
-                flush(); out.append(Paragraph(_safe(_strip_md(l[3:])), ST["H2"])); out.append(Spacer(1, 6)); continue
-            if l.startswith("# "):
-                flush(); out.append(Paragraph(_safe(_strip_md(l[2:])), ST["H1"])); out.append(Spacer(1, 8)); continue
-            if l.startswith("\u2192 ") or l.startswith("-> ") or l.startswith("\u2192"):
+                flush(); out.append(Paragraph(_safe(_strip_md(l[4:])), ST["H3"])); out.append(Spacer(1, 4))
+            elif l.startswith("## "):
+                flush(); out.append(Paragraph(_safe(_strip_md(l[3:])), ST["H2"])); out.append(Spacer(1, 6))
+            elif l.startswith("# "):
+                flush(); out.append(Paragraph(_safe(_strip_md(l[2:])), ST["H1"])); out.append(Spacer(1, 8))
+            elif l.startswith(("\u2192 ", "-> ", "\u2192")):
                 flush()
                 content = l.lstrip("\u2192->").strip()
-                out.append(Paragraph("\u2192  " + _text(content), ST["Blt"])); continue
-            if l.startswith(("- ", "* ", "\u2022 ")):
+                out.append(Paragraph("\u2192  " + _text(content), ST["Blt"]))
+            elif l.startswith(("- ", "* ", "\u2022 ")):
                 flush()
-                out.append(Paragraph("\u2022  " + _text(l[2:]), ST["Blt"])); continue
-            m = re.match(r"^(\d+[.):]?)\s+(.*)", l)
-            if m and re.match(r"^\d", l):
-                flush()
-                out.append(Paragraph(m.group(1) + "  " + _text(m.group(2)), ST["Blt"])); continue
-            if re.match(r'^[-_]{3,}$', l):
-                flush(); out.append(Spacer(1, 6)); continue
-            if l == ".": continue
-            buf.append(l)
+                out.append(Paragraph("\u2022  " + _text(l[2:]), ST["Blt"]))
+            else:
+                m = re.match(r"^(\d+[.):]?)\s+(.*)", l)
+                if m and re.match(r"^\d", l):
+                    flush()
+                    out.append(Paragraph(m.group(1) + "  " + _text(m.group(2)), ST["Blt"]))
+                elif re.match(r'^[-_]{3,}$', l):
+                    flush(); out.append(Spacer(1, 6))
+                elif l == ".":
+                    pass
+                else:
+                    buf.append(l)
+            i += 1
 
         flush()
         return out
+
 
     use_ls = bool(table_rows and len(table_rows[0].keys()) > 5)
     psize  = landscape(letter) if use_ls else letter
