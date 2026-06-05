@@ -2917,13 +2917,18 @@
        ========================================================= */
     .welcome-pulse.connecting {
       background: transparent !important;
-      border: 2px solid #f59e0b;
-      border-top-color: transparent;
-      animation: spinnerSpin 0.8s linear infinite;
-      width: 8px;
-      height: 8px;
+      border: 1.5px solid rgba(245, 158, 11, 0.2) !important;
+      border-top-color: #f59e0b !important;
+      border-radius: 50% !important;
+      animation: spinnerSpin 1s linear infinite !important;
+      width: 12px !important;
+      height: 12px !important;
+      display: inline-block !important;
+      vertical-align: middle;
+      margin-right: 4px;
     }
     @keyframes spinnerSpin {
+      from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
   </style>
