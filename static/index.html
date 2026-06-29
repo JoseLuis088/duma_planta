@@ -6654,7 +6654,7 @@
 
           try {
             // Llamar a nuestro endpoint local de Azure TTS usando POST para evitar 404 por longitud de URL
-            const res = await fetch(`${window.API_BASE || ''}/api/chat/tts`, {
+            const res = await fetch("api/chat/tts", {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ text: cleanText })
