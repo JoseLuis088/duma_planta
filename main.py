@@ -26,9 +26,10 @@ import plotly.io as pio
 pio.kaleido.scope.mathjax = None
 # Semáforo de Hilo para asegurar que el engine de Kaleido Chromium no reciba deadlocks
 kaleido_lock = threading.Lock()
+_cv_lang_ctx = threading.local()
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -51,6 +52,9 @@ load_dotenv()
 AZURE_OPENAI_ENDPOINT = os.environ["AZURE_OPENAI_ENDPOINT"]
 AZURE_OPENAI_API_KEY = os.environ["AZURE_OPENAI_API_KEY"]
 AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+AZURE_OPENAI_WHISPER_DEPLOYMENT = os.environ.get("AZURE_OPENAI_WHISPER_DEPLOYMENT", "Duma_Planta_Whisper")
+AZURE_OPENAI_WHISPER_ENDPOINT = os.environ.get("AZURE_OPENAI_WHISPER_ENDPOINT", "")
+AZURE_OPENAI_WHISPER_KEY = os.environ.get("AZURE_OPENAI_WHISPER_KEY", "")
 ASSISTANT_ID = os.environ["ASSISTANT_ID"]
 
 SQL_SERVER   = os.getenv("SQL_SERVER")
@@ -109,6 +113,15 @@ client = AzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY,
     api_version=AZURE_OPENAI_API_VERSION,
 )
+
+if AZURE_OPENAI_WHISPER_ENDPOINT and AZURE_OPENAI_WHISPER_KEY:
+    whisper_client = AzureOpenAI(
+        azure_endpoint=AZURE_OPENAI_WHISPER_ENDPOINT,
+        api_key=AZURE_OPENAI_WHISPER_KEY,
+        api_version=AZURE_OPENAI_API_VERSION,
+    )
+else:
+    whisper_client = client
 
 async_client = AsyncAzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
@@ -318,10 +331,10 @@ Eres Duma, un asistente experto para analítica de piso de producción. Tu tarea
 8. **Regla de Ceros**: Si detectas valores en 0 (producción, velocidad, OEE) exactamente en estos horarios de inicio, interprétalos como un REINICIO (o "borrón y cuenta nueva") del contador acumulado para el nuevo turno, NO como una falla operacional ni parada de línea.
 """
 
-def format_duration_es(minutes: float) -> str:
-    """Convierte minutos a formato 'X días, Y horas y Z minutos' (español)."""
+def format_duration_es(minutes: float, lang: str = "es") -> str:
+    """Convierte minutos a formato 'X días, Y horas y Z minutos' (español o inglés)."""
     if minutes is None or minutes <= 0:
-        return "0 minutos"
+        return "0 minutes" if lang == "en" else "0 minutos"
     mins = int(round(float(minutes)))
     
     d = mins // (24 * 60)
@@ -330,21 +343,32 @@ def format_duration_es(minutes: float) -> str:
     m = remain % 60
     
     parts = []
-    if d > 0:
-        parts.append(f"{d} {'día' if d == 1 else 'días'}")
-    if h > 0:
-        parts.append(f"{h} {'hora' if h == 1 else 'horas'}")
-    if m > 0:
-        parts.append(f"{m} {'minuto' if m == 1 else 'minutos'}")
-    
-    if not parts:
-        return "0 minutos"
-    if len(parts) == 1:
-        return parts[0]
-    
-    return ", ".join(parts[:-1]) + " y " + parts[-1]
+    if lang == "en":
+        if d > 0:
+            parts.append(f"{d} {'day' if d == 1 else 'days'}")
+        if h > 0:
+            parts.append(f"{h} {'hour' if h == 1 else 'hours'}")
+        if m > 0:
+            parts.append(f"{m} {'minute' if m == 1 else 'minutes'}")
+        if not parts:
+            return "0 minutes"
+        if len(parts) == 1:
+            return parts[0]
+        return ", ".join(parts[:-1]) + " and " + parts[-1]
+    else:
+        if d > 0:
+            parts.append(f"{d} {'día' if d == 1 else 'días'}")
+        if h > 0:
+            parts.append(f"{h} {'hora' if h == 1 else 'horas'}")
+        if m > 0:
+            parts.append(f"{m} {'minuto' if m == 1 else 'minutos'}")
+        if not parts:
+            return "0 minutos"
+        if len(parts) == 1:
+            return parts[0]
+        return ", ".join(parts[:-1]) + " y " + parts[-1]
 
-def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str) -> str:
+def ai_control_variables_day(day: str, summary: list[dict], executive_summary: str, lang: str = "es") -> str:
     payload = {
         "day": day,
         "executive_summary_backend": executive_summary,
@@ -359,7 +383,8 @@ def ai_control_variables_day(day: str, summary: list[dict], executive_summary: s
         "Genera el análisis ejecutivo y recomendaciones.\r\n\r\n"
         f"JSON:\r\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
-    return aoai_text(CONTROL_VARS_AI_SYSTEM, user_prompt, temperature=0.25, max_tokens=1100)
+    system = CONTROL_VARS_AI_SYSTEM + "\n\n" + lang_instruction(lang)
+    return aoai_text(system, user_prompt, temperature=0.25, max_tokens=1100)
 
 
 # -----------------------------------------------------------------------------
@@ -402,12 +427,26 @@ Eres **Duma**, el Agente de Inteligencia Operacional de nivel ejecutivo (Directo
 2. **Formato de Tiempo**: SIEMPRE usa el formato humano: **"X días, Y horas y Z minutos"**. NUNCA reportes solo minutos si el valor es mayor a 60. Convierte 1440 min a 1 día, etc.
 3. **Escala**: OEE >65% (Excelente), 50-65% (En Riesgo), <50% (Crítico).
 4. **Terminología**: Usa siempre "Producto conforme" en lugar de "Calidad".
+5. **Paros Programados (SS/P)**: Los paros programados (ej. comidas, juntas, lavado programado, deshiele programado) se restan de la duración total del turno para obtener el Tiempo Disponible. Por lo tanto, **NO penalizan el OEE ni la Disponibilidad** (son neutrales). **NUNCA culpes a los paros programados por la baja disponibilidad o bajo OEE.**
+6. **Paros No Programados (US/NP)**: Solo los paros no programados (ej. fallas mecánicas, atascos, drenaje tapado, etc.) restan tiempo productivo y **SÍ penalizan el OEE y la Disponibilidad**. Enfoca tu análisis de causa raíz y tus explicaciones de baja disponibilidad exclusivamente en los paros no programados.
 """.strip()
 
 
-async def ai_oee_realtime(snapshot: dict, stop_reasons: List[dict] = None) -> str:
+def lang_instruction(lang: str) -> str:
+    """Retorna la instrucción de idioma para inyectar en el user_prompt de IA."""
+    if (lang or "es").strip().lower() == "en":
+        return (
+            "IMPORTANT: Respond entirely in English. "
+            "All section titles, analysis text, recommendations, and labels must be written in English. "
+            "Keep the same markdown structure but translate all content to English."
+        )
+    return "Responde completamente en español."
+
+
+async def ai_oee_realtime(snapshot: dict, stop_reasons: List[dict] = None, lang: str = "es") -> str:
     """Genera análisis ejecutivo para OEE en tiempo real con diagnóstico de paros."""
     user_prompt = (
+        f"{lang_instruction(lang)}\r\n\r\n"
         "Analiza el siguiente SNAPSHOT de OEE en tiempo real y los MOTIVOS DE PARO acumulados hoy.\r\n\r\n"
         "SNAPSHOT ACTUAL:\r\n"
         f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}\r\n\r\n"
@@ -422,7 +461,7 @@ async def ai_oee_realtime(snapshot: dict, stop_reasons: List[dict] = None) -> st
     return await aoai_text_async(OEE_AI_SYSTEM, user_prompt, temperature=0.15, max_tokens=1000)
 
 
-def ai_oee_range_analysis(range_data: dict) -> str:
+def ai_oee_range_analysis(range_data: dict, lang: str = "es") -> str:
     """Genera análisis ejecutivo de alto nivel para OEE en un rango de fechas."""
     summary = range_data.get("summary", {})
     worst = range_data.get("worst_days", {})
@@ -445,6 +484,7 @@ def ai_oee_range_analysis(range_data: dict) -> str:
     }
 
     user_prompt = (
+        f"{lang_instruction(lang)}\r\n\r\n"
         f"Genera el informe ejecutivo de OEE para el periodo.\r\n\r\n"
         f"KPIs CONSOLIDADOS:\r\n{json.dumps(enriched, ensure_ascii=False, indent=2)}\r\n\r\n"
         f"PRINCIPALES MOTIVOS DE PARO (PARETO):\r\n{json.dumps(stops, ensure_ascii=False, indent=2)}\r\n\r\n"
@@ -854,7 +894,7 @@ WHERE wse.Status='closed' AND wse.Active = 1 AND wses.Active = 1
 
 
 # ---------- Core assistant step ----------
-def run_assistant_cycle(user_text: str, thread_id: Optional[str]) -> dict:
+def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "es") -> dict:
     """
     Crea/usa un thread, envía el mensaje y resuelve tool calls (sql_query y viz_render),
     devolviendo el último texto + recursos. Incluye:
@@ -1616,15 +1656,27 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
             # Cancelar cualquier run activo previo en este thread para evitar bloqueos
             try:
                 runs = client.beta.threads.runs.list(thread_id=t_id)
-                for run in runs.data:
-                    if run.status in ("queued", "in_progress", "requires_action", "cancelling"):
-                        logging.info(f"Cancelando run previo activo {run.id} en thread {t_id}")
+                for prev_run in runs.data:
+                    if prev_run.status in ("queued", "in_progress", "requires_action", "cancelling"):
+                        logging.info(f"Cancelando run previo activo {prev_run.id} en thread {t_id}")
                         try:
-                            client.beta.threads.runs.cancel(thread_id=t_id, run_id=run.id)
-                            # Pequeña espera para permitir la cancelación en OpenAI
-                            time.sleep(0.8)
+                            client.beta.threads.runs.cancel(thread_id=t_id, run_id=prev_run.id)
                         except Exception as ce:
-                            logging.warning(f"Error cancelando run {run.id}: {ce}")
+                            logging.warning(f"Error al solicitar cancelación de run {prev_run.id}: {ce}")
+                        # Esperar activamente hasta que el run quede cancelado (máx 15s)
+                        cancel_wait = 0
+                        while cancel_wait < 15:
+                            time.sleep(1)
+                            cancel_wait += 1
+                            try:
+                                check = client.beta.threads.runs.retrieve(thread_id=t_id, run_id=prev_run.id)
+                                if check.status in ("cancelled", "completed", "failed", "expired"):
+                                    logging.info(f"Run {prev_run.id} terminó con status={check.status} tras {cancel_wait}s")
+                                    break
+                            except Exception:
+                                break
+                        else:
+                            logging.warning(f"Run {prev_run.id} no se canceló en 15s, continuando de todas formas")
             except Exception as re:
                 logging.warning(f"Error listando runs en thread {t_id}: {re}")
         else:
@@ -1673,7 +1725,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
             "CATÁLOGO DE SENSORES (VARIABLES DE CONTROL):\r\n"
             f"{json.dumps(CRITICAL_VARS, indent=2, ensure_ascii=False)}\r\n\r\n"
             "INSTRUCCIONES ADICIONALES DE SESIÓN:\r\n"
-            "Responde en español. "
+            f"{'Respond in English.' if (lang or 'es').strip().lower() == 'en' else 'Responde en español.'} "
             "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
             "NO muestres consultas SQL en la respuesta final. "
             "HERRAMIENTAS DISPONIBLES Y CUÁNDO USARLAS:\r\n"
@@ -2103,7 +2155,8 @@ def plot_variable_polars(
                 fill="toself",
                 fillcolor="rgba(34,197,94,0.08)",
                 line=dict(color="rgba(34,197,94,0.4)", width=1.5),
-                name="Rango operativo", mode="lines", hoverinfo="skip"
+                name="Operating range" if getattr(_cv_lang_ctx, 'lang', 'es') == 'en' else "Rango operativo",
+                mode="lines", hoverinfo="skip"
             ))
 
         # Lecturas normales
@@ -2111,7 +2164,7 @@ def plot_variable_polars(
             fig.add_trace(go.Scatter(
                 x=times_ok, y=vals_ok,
                 mode="lines+markers",
-                name="Valor",
+                name="Value" if getattr(_cv_lang_ctx, 'lang', 'es') == 'en' else "Valor",
                 line=dict(color="#1abc9c", width=1.8),
                 marker=dict(size=4, color="#1abc9c"),
             ))
@@ -2121,7 +2174,7 @@ def plot_variable_polars(
             fig.add_trace(go.Scatter(
                 x=times_out, y=vals_out,
                 mode="markers",
-                name="Lecturas fuera de rango",
+                name="Out-of-range readings" if getattr(_cv_lang_ctx, 'lang', 'es') == 'en' else "Lecturas fuera de rango",
                 marker=dict(size=7, color="#c084fc", symbol="circle",
                             line=dict(width=1, color="#a855f7")),
             ))
@@ -2134,7 +2187,10 @@ def plot_variable_polars(
             font=dict(color="#e2e8f0", size=12),
             legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#cbd5e1")),
             xaxis=dict(gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.1)"),
-            yaxis=dict(title="Valor", gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.1)"),
+            yaxis=dict(
+                title="Value" if getattr(_cv_lang_ctx, 'lang', 'es') == 'en' else "Valor",
+                gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.1)"
+            ),
             margin=dict(l=50, r=30, t=60, b=50),
             hovermode="x unified",
             annotations=[dict(
@@ -2444,6 +2500,8 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
 
     fig = go.Figure()
 
+    is_en = getattr(_cv_lang_ctx, 'lang', 'es') == 'en'
+
     # Banda crítica
     fig.add_trace(go.Scatter(
         x=d["LocalTime"], y=[crit_max]*len(d),
@@ -2453,14 +2511,14 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         x=d["LocalTime"], y=[crit_min]*len(d),
         mode="lines", line=dict(width=0),
         fill="tonexty", fillcolor="rgba(52, 152, 219, 0.2)",
-        name="Rango operativo", hoverinfo="skip"
+        name="Operating range" if is_en else "Rango operativo", hoverinfo="skip"
     ))
 
     # Serie principal
     fig.add_trace(go.Scatter(
         x=d["LocalTime"], y=d["Value"],
         mode="lines",
-        name="Valor"
+        name="Value" if is_en else "Valor"
     ))
 
     out = d[d["IsCriticalOut"]]
@@ -2468,12 +2526,12 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
         fig.add_trace(go.Scatter(
             x=out["LocalTime"], y=out["Value"],
             mode="markers",
-            name="Lecturas fuera de rango",
+            name="Out-of-range readings" if is_en else "Lecturas fuera de rango",
             marker=dict(size=6)
         ))
 
     fig.update_layout(
-        yaxis_title="Valor",
+        yaxis_title="Value" if is_en else "Valor",
         template="plotly_dark",
         hovermode="x unified",
         margin=dict(l=55, r=25, t=40, b=50),
@@ -2603,27 +2661,33 @@ def plot_critical_timeseries_day_png(
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(10, 3.8), dpi=160)
 
+    is_en = getattr(_cv_lang_ctx, 'lang', 'es') == 'en'
+
     # Línea principal
-    ax.plot(d["LocalTime"], d["Value"], color=COLOR_LINE, linewidth=1.0, alpha=0.7, label="Tendencia")
+    ax.plot(d["LocalTime"], d["Value"], color=COLOR_LINE, linewidth=1.0, alpha=0.7,
+            label="Trend" if is_en else "Tendencia")
 
     # Banda crítica
-    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.1, color=COLOR_BAND, label="Rango operativo")
+    ax.fill_between(d["LocalTime"], crit_min, crit_max, alpha=0.1, color=COLOR_BAND,
+                    label="Operating range" if is_en else "Rango operativo")
     ax.axhline(crit_min, color=COLOR_BAND, linestyle="--", linewidth=0.8, alpha=0.5)
     ax.axhline(crit_max, color=COLOR_BAND, linestyle="--", linewidth=0.8, alpha=0.5)
 
     # Puntos dentro del rango (Verde)
     in_range = d[~d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
     if not in_range.empty:
-        ax.scatter(in_range["LocalTime"], in_range["Value"], s=10, color=COLOR_IN, alpha=0.8, label="En rango", zorder=3)
+        ax.scatter(in_range["LocalTime"], in_range["Value"], s=10, color=COLOR_IN, alpha=0.8,
+                   label="In range" if is_en else "En rango", zorder=3)
 
     # Puntos fuera de rango (Rojo)
     out_range = d[d["IsOut"] & d["LocalTime"].notna() & d["Value"].notna()]
     if not out_range.empty:
-        ax.scatter(out_range["LocalTime"], out_range["Value"], s=12, color=COLOR_OUT, alpha=0.9, label="Fuera de rango", zorder=4)
+        ax.scatter(out_range["LocalTime"], out_range["Value"], s=12, color=COLOR_OUT, alpha=0.9,
+                   label="Out of range" if is_en else "Fuera de rango", zorder=4)
 
     ax.set_title(title, fontsize=12, fontweight='bold', pad=45)
-    ax.set_xlabel("Hora local", fontsize=9)
-    ax.set_ylabel("Valor", fontsize=9)
+    ax.set_xlabel("Local time" if is_en else "Hora local", fontsize=9)
+    ax.set_ylabel("Value" if is_en else "Valor", fontsize=9)
     ax.grid(True, alpha=0.15)
     ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02), fontsize=8, ncol=3, frameon=True, framealpha=0.9)
 
@@ -2891,7 +2955,7 @@ ORDER BY
 """
 
 
-def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> List[dict]:
+def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False, lang: str = "es") -> List[dict]:
     """Genera gráficas Plotly para el snapshot de tiempo real (Turno Actual)."""
     import plotly.graph_objects as go
     
@@ -2911,13 +2975,36 @@ def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> Lis
     plots = []
     # Usaremos una marca de tiempo para evitar caché
     ts = int(time.time() * 1000)
+
+    is_en = (lang == "en")
+    
+    # Trace names
+    oee_label = 'OEE (%)'
+    real_label = 'Actual' if is_en else 'Real'
+    exp_label = 'Expected' if is_en else 'Esperada'
+    un_label = 'Unscheduled' if is_en else 'No Programado'
+    sc_label = 'Scheduled' if is_en else 'Programado'
+    
+    # X-axis categories
+    x_oee = ["Current Shift"] if is_en else ["Turno Actual"]
+    x_prod = ["Production"] if is_en else ["Producción"]
+    x_vel = ["Speed"] if is_en else ["Velocidad"]
+    x_stops = ["Stoppages"] if is_en else ["Paros"]
+    x_events = ["Events"] if is_en else ["Eventos"]
+    
+    # Titles
+    title_oee = "Overall Efficiency (OEE %) - Snapshot" if is_en else "Eficiencia Global (OEE %) - Snapshot"
+    title_prod = "Shift Production (kg) - Snapshot" if is_en else "Producción del Turno (Kg) - Snapshot"
+    title_vel = "Average Speed (kg/h) - Snapshot" if is_en else "Velocidad Promedio (Kg/h) - Snapshot"
+    title_stops = "Stoppage Distribution (Minutes) - Snapshot" if is_en else "Distribución de Paros (Minutos) - Snapshot"
+    title_events = "Stoppage Frequency (Events) - Snapshot" if is_en else "Frecuencia de Paros (Eventos) - Snapshot"
     
     # --- 1. Eficiencia (OEE %) ---
     oee_val = to_f(snap_dict.get("OEE"))
     fig_oee = go.Figure(data=[
         go.Bar(
-            name='OEE (%)', 
-            x=["Turno Actual"], 
+            name=oee_label, 
+            x=x_oee, 
             y=[oee_val], 
             marker_color='#1abc9c', 
             text=[f"{oee_val:.1f}%"], 
@@ -2926,7 +3013,7 @@ def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> Lis
         )
     ])
     fig_oee.update_layout(
-        title="Eficiencia Global (OEE %) - Snapshot", 
+        title=title_oee, 
         template="plotly_dark", 
         margin=dict(l=40, r=40, t=60, b=40), 
         yaxis=dict(range=[0, max(110, oee_val + 10)], ticksuffix="%")
@@ -2939,38 +3026,70 @@ def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> Lis
     prod_real = to_f(snap_dict.get("CurrentShiftProduction"))
     prod_expected = to_f(snap_dict.get("ExpectedShiftProduction"))
     fig_prod = go.Figure(data=[
-        go.Bar(name='Real', x=["Producción"], y=[prod_real], marker_color='#1abc9c'),
-        go.Bar(name='Esperada', x=["Producción"], y=[prod_expected], marker_color='#6366f1')
+        go.Bar(name=real_label, x=x_prod, y=[prod_real], marker_color='#1abc9c'),
+        go.Bar(name=exp_label, x=x_prod, y=[prod_expected], marker_color='#6366f1')
     ])
     fig_prod.update_layout(
-        title="Producción del Turno (Kg) - Snapshot", 
+        title=title_prod, 
         template="plotly_dark", barmode='group',
         margin=dict(l=40, r=40, t=60, b=40)
     )
     prod_fname = f"oee_rt_prod_{ts}.html"
     with open(os.path.join(out_dir, prod_fname), "w", encoding="utf-8") as _f: _f.write(fig_prod.to_html())
-    plots.append({"title": "Producción (Kg)", "url": f"static/plots/{prod_fname}"})
+    plots.append({"title": "Production" if is_en else "Producción (Kg)", "url": f"static/plots/{prod_fname}"})
 
     # --- 3. Velocidad (Kg/h) ---
     vel_real = to_f(snap_dict.get("CurrentRate"))
     vel_expected = to_f(snap_dict.get("ExpectedRate"))
     fig_vel = go.Figure(data=[
-        go.Bar(name='Real', x=["Velocidad"], y=[vel_real], marker_color='#1abc9c'),
-        go.Bar(name='Esperada', x=["Velocidad"], y=[vel_expected], marker_color='#6366f1')
+        go.Bar(name=real_label, x=x_vel, y=[vel_real], marker_color='#1abc9c'),
+        go.Bar(name=exp_label, x=x_vel, y=[vel_expected], marker_color='#6366f1')
     ])
     fig_vel.update_layout(
-        title="Velocidad Promedio (Kg/h) - Snapshot", 
+        title=title_vel, 
         template="plotly_dark", barmode='group',
         margin=dict(l=40, r=40, t=60, b=40)
     )
     vel_fname = f"oee_rt_vel_{ts}.html"
     with open(os.path.join(out_dir, vel_fname), "w", encoding="utf-8") as _f: _f.write(fig_vel.to_html())
-    plots.append({"title": "Velocidad (Kg/h)", "url": f"static/plots/{vel_fname}"})
+    plots.append({"title": "Speed" if is_en else "Velocidad (Kg/h)", "url": f"static/plots/{vel_fname}"})
+
+    # --- 4. Paros (Duración min) ---
+    dur_unsched = to_f(snap_dict.get("UnscheduledStopageMin"))
+    dur_sched = to_f(snap_dict.get("ScheduledStopageMin"))
+    fig_stops = go.Figure(data=[
+        go.Bar(name=un_label, x=x_stops, y=[dur_unsched], marker_color='#ef4444'),
+        go.Bar(name=sc_label, x=x_stops, y=[dur_sched], marker_color='#f59e0b')
+    ])
+    fig_stops.update_layout(
+        title=title_stops, 
+        template="plotly_dark", barmode='group',
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    stops_fname = f"oee_rt_stops_{ts}.html"
+    with open(os.path.join(out_dir, stops_fname), "w", encoding="utf-8") as _f: _f.write(fig_stops.to_html())
+    plots.append({"title": "Stoppage Duration" if is_en else "Tiempos de Paro (Min)", "url": f"static/plots/{stops_fname}"})
+
+    # --- 5. Frecuencia de Paros (Eventos) ---
+    cnt_unsched = to_f(snap_dict.get("ParosNoProgramadosCont"))
+    cnt_sched = to_f(snap_dict.get("ParosProgramadosCont"))
+    fig_freq = go.Figure(data=[
+        go.Bar(name=un_label, x=x_events, y=[cnt_unsched], marker_color='#ef4444'),
+        go.Bar(name=sc_label, x=x_events, y=[cnt_sched], marker_color='#f59e0b')
+    ])
+    fig_freq.update_layout(
+        title=title_events, 
+        template="plotly_dark", barmode='group',
+        margin=dict(l=40, r=40, t=60, b=40)
+    )
+    freq_fname = f"oee_rt_freq_{ts}.html"
+    with open(os.path.join(out_dir, freq_fname), "w", encoding="utf-8") as _f: _f.write(fig_freq.to_html())
+    plots.append({"title": "Stoppage Frequency" if is_en else "Frecuencia de Paros", "url": f"static/plots/{freq_fname}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido)
     if export_png:
         try:
-            for fn, fg in [(oee_fname, fig_oee), (prod_fname, fig_prod), (vel_fname, fig_vel)]:
+            for fn, fg in [(oee_fname, fig_oee), (prod_fname, fig_prod), (vel_fname, fig_vel), (stops_fname, fig_stops), (freq_fname, fig_freq)]:
                 png_name = fn.replace(".html", ".png")
                 png_path = os.path.join(out_dir, png_name)
                 with kaleido_lock:
@@ -2980,44 +3099,12 @@ def plot_oee_realtime_snapshot(snap_dict: dict, export_png: bool = False) -> Lis
                         p["path"] = png_path
         except Exception as ex:
             print(f"Error exportando PNG rt: {ex}")
-
-    # --- 4. Paros (Duración min) ---
-    dur_unsched = to_f(snap_dict.get("UnscheduledStopageMin"))
-    dur_sched = to_f(snap_dict.get("ScheduledStopageMin"))
-    fig_stops = go.Figure(data=[
-        go.Bar(name='No Programado', x=["Paros"], y=[dur_unsched], marker_color='#ef4444'),
-        go.Bar(name='Programado', x=["Paros"], y=[dur_sched], marker_color='#f59e0b')
-    ])
-    fig_stops.update_layout(
-        title="Distribución de Paros (Minutos) - Snapshot", 
-        template="plotly_dark", barmode='group',
-        margin=dict(l=40, r=40, t=60, b=40)
-    )
-    stops_fname = f"oee_rt_stops_{ts}.html"
-    with open(os.path.join(out_dir, stops_fname), "w", encoding="utf-8") as _f: _f.write(fig_stops.to_html())
-    plots.append({"title": "Tiempos de Paro (Min)", "url": f"static/plots/{stops_fname}"})
-
-    # --- 5. Frecuencia de Paros (Eventos) ---
-    cnt_unsched = to_f(snap_dict.get("ParosNoProgramadosCont"))
-    cnt_sched = to_f(snap_dict.get("ParosProgramadosCont"))
-    fig_freq = go.Figure(data=[
-        go.Bar(name='No Programado', x=["Eventos"], y=[cnt_unsched], marker_color='#ef4444'),
-        go.Bar(name='Programado', x=["Eventos"], y=[cnt_sched], marker_color='#f59e0b')
-    ])
-    fig_freq.update_layout(
-        title="Frecuencia de Paros (Eventos) - Snapshot", 
-        template="plotly_dark", barmode='group',
-        margin=dict(l=40, r=40, t=60, b=40)
-    )
-
-    freq_fname = f"oee_rt_freq_{ts}.html"
-    with open(os.path.join(out_dir, freq_fname), "w", encoding="utf-8") as _f: _f.write(fig_freq.to_html())
-    plots.append({"title": "Frecuencia de Paros", "url": f"static/plots/{freq_fname}"})
-    
+            
     return plots
 
+
 @app.get("/api/oee/realtime/")
-async def api_oee_realtime(export_png: bool = False, skip_ai: bool = False):
+async def api_oee_realtime(export_png: bool = False, skip_ai: bool = False, lang: str = "es"):
     """OEE en tiempo real (último snapshot)."""
     # 1. Ejecución secuencial de SQL (rápido, evita deadlocks)
     sql_recent = _sql_oee_realtime()
@@ -3067,7 +3154,7 @@ ORDER BY Duracion_Min DESC;
         r_dict = dict(zip(cols, r))
         for col in duration_cols:
             if col in r_dict:
-                r_dict[col] = format_duration_es(r_dict[col])
+                r_dict[col] = format_duration_es(r_dict[col], lang=lang)
         rows_formatted.append([r_dict.get(c) for c in cols])
 
     # Motivos de paro
@@ -3084,9 +3171,9 @@ ORDER BY Duracion_Min DESC;
     
     # Inyectar totales sincronizados en snap_formatted para KPIs e IA
     snap_formatted["ParosNoProgramadosCont"] = total_np_cnt
-    snap_formatted["UnscheduledStopageMin"] = format_duration_es(total_np_min)
+    snap_formatted["UnscheduledStopageMin"] = format_duration_es(total_np_min, lang=lang)
     snap_formatted["ParosProgramadosCont"] = total_p_cnt
-    snap_formatted["ScheduledStopageMin"] = format_duration_es(total_p_min)
+    snap_formatted["ScheduledStopageMin"] = format_duration_es(total_p_min, lang=lang)
 
     # Actualizar también la fila en la tabla para coherencia visual absoluta
     idx_un_cnt = cols.index("ParosNoProgramadosCont") if "ParosNoProgramadosCont" in cols else -1
@@ -3095,9 +3182,9 @@ ORDER BY Duracion_Min DESC;
     idx_sc_min = cols.index("ScheduledStopageMin") if "ScheduledStopageMin" in cols else -1
 
     if idx_un_cnt >= 0: rows_formatted[0][idx_un_cnt] = total_np_cnt
-    if idx_un_min >= 0: rows_formatted[0][idx_un_min] = format_duration_es(total_np_min)
+    if idx_un_min >= 0: rows_formatted[0][idx_un_min] = format_duration_es(total_np_min, lang=lang)
     if idx_sc_cnt >= 0: rows_formatted[0][idx_sc_cnt] = total_p_cnt
-    if idx_sc_min >= 0: rows_formatted[0][idx_sc_min] = format_duration_es(total_p_min)
+    if idx_sc_min >= 0: rows_formatted[0][idx_sc_min] = format_duration_es(total_p_min, lang=lang)
 
     # Inyectar también en raw_snap para que las gráficas de barras usen el acumulado real
     raw_snap["ParosNoProgramadosCont"] = total_np_cnt
@@ -3107,14 +3194,15 @@ ORDER BY Duracion_Min DESC;
 
     # 3. Ejecución Paralela: Gráficas e IA
     tasks = [
-        asyncio.to_thread(plot_oee_realtime_snapshot, raw_snap, export_png)
+        asyncio.to_thread(plot_oee_realtime_snapshot, raw_snap, export_png, lang=lang)
     ]
     
     if stop_reasons:
-        tasks.append(asyncio.to_thread(plot_pareto_stop_reasons, stop_reasons, f"Hoy ({from_day})", export_png))
+        period_lbl = f"Today ({from_day})" if lang == "en" else f"Hoy ({from_day})"
+        tasks.append(asyncio.to_thread(plot_pareto_stop_reasons, stop_reasons, period_lbl, export_png, lang=lang))
     
     if not skip_ai:
-        tasks.append(ai_oee_realtime(snap_formatted, stop_reasons))
+        tasks.append(ai_oee_realtime(snap_formatted, stop_reasons, lang=lang))
 
     # Ejecutamos todo concurrentemente
     results = await asyncio.gather(*tasks)
@@ -3142,7 +3230,7 @@ ORDER BY Duracion_Min DESC;
         "plots": plots
     }
 
-def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export_png: bool = False) -> List[dict]:
+def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export_png: bool = False, lang: str = "es") -> List[dict]:
     """Genera gráficas de serie de tiempo por día: OEE, Producción y Paros."""
     import plotly.graph_objects as go
     from collections import defaultdict
@@ -3154,6 +3242,43 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
     os.makedirs(out_dir, exist_ok=True)
     plots = []
     ts = int(time.time() * 1000)
+
+    is_en = (lang == "en")
+    
+    # Trace names
+    oee_label = "OEE"
+    disp_label = "Availability" if is_en else "Disponibilidad"
+    desemp_label = "Performance" if is_en else "Desempeño"
+    
+    exp_label = "Expected (kg)" if is_en else "Esperada (Kg)"
+    real_label = "Actual (kg)" if is_en else "Real (Kg)"
+    
+    np_label = "Unscheduled (min)" if is_en else "No Programados (min)"
+    p_label = "Scheduled (min)" if is_en else "Programados (min)"
+    
+    np_cnt_label = "Unscheduled Events" if is_en else "Eventos No Programados"
+    p_cnt_label = "Scheduled Events" if is_en else "Eventos Programados"
+    
+    # Titles
+    title1 = "Global OEE History by Day" if is_en else "Histórico OEE global por día"
+    title2 = "Actual vs Expected Production by Day" if is_en else "Producción Real vs Esperada por Día"
+    title3 = "Stoppage Duration by Day (minutes)" if is_en else "Tiempos de Paro por Día (minutos)"
+    title4 = "Stoppage Events by Day" if is_en else "Frecuencia de Paros por Día (Eventos)"
+    
+    # Axis labels
+    x_axis_title = "Date" if is_en else "Fecha"
+    y_axis_title1 = "% KPI"
+    y_axis_title2 = "kg" if is_en else "Kg"
+    y_axis_title3 = "Minutes" if is_en else "Minutos"
+    y_axis_title4 = "Events" if is_en else "Número de Eventos"
+
+    # Hover templates
+    hover_exp = "Expected: %{y:,.0f} kg<extra></extra>" if is_en else "Esperada: %{y:,.0f} Kg<extra></extra>"
+    hover_real = "Actual: %{y:,.0f} kg<extra></extra>" if is_en else "Real: %{y:,.0f} Kg<extra></extra>"
+    hover_np = "NP: %{y:.1f} min<extra></extra>"
+    hover_p = "P: %{y:.1f} min<extra></extra>"
+    hover_np_cnt = "NP: %{y} events<extra></extra>" if is_en else "NP: %{y} eventos<extra></extra>"
+    hover_p_cnt = "P: %{y} events<extra></extra>" if is_en else "P: %{y} eventos<extra></extra>"
 
     def to_f(v):
         try: return float(v) if v is not None else 0.0
@@ -3205,9 +3330,9 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
     COLORS = {"OEE": "#ef4444", "Disponibilidad": "#34d399", "Desempeño": "#60a5fa"}
     fig1 = go.Figure()
     for label, vals, color in [
-        ("OEE",           oee_v,   COLORS["OEE"]),
-        ("Disponibilidad", disp_v, COLORS["Disponibilidad"]),
-        ("Desempeño",     desemp_v, COLORS["Desempeño"]),
+        (oee_label,  oee_v,   COLORS["OEE"]),
+        (disp_label, disp_v, COLORS["Disponibilidad"]),
+        (desemp_label, desemp_v, COLORS["Desempeño"]),
     ]:
         fig1.add_trace(go.Scatter(
             x=dates, y=vals, name=label,
@@ -3220,73 +3345,73 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
             hovertemplate=f"<b>{label}</b><br>%{{x}}<br>%{{y:.1f}}%<extra></extra>"
         ))
     fig1.update_layout(
-        title="Histórico OEE global por día",
+        title=title1,
         template="plotly_dark", height=420,
         margin=dict(l=40, r=40, t=60, b=60),
         legend=dict(orientation="h", y=1.12, x=0),
-        xaxis=dict(title="Fecha", tickangle=-30),
-        yaxis=dict(title="% KPI", ticksuffix="%"),
+        xaxis=dict(title=x_axis_title, tickangle=-30),
+        yaxis=dict(title=y_axis_title1, ticksuffix="%"),
         hovermode="x unified",
     )
     fname1 = f"oee_ts_kpi_{ts}.html"
     with open(os.path.join(out_dir, fname1), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig1, fname1))
-    plots.append({"title": "📈 Histórico OEE por Día", "url": f"static/plots/{fname1}"})
+    plots.append({"title": "📈 " + ( "OEE History by Day" if is_en else "Histórico OEE por Día" ), "url": f"static/plots/{fname1}"})
 
     # ── GRÁFICA 2: Producción Real vs Esperada por día ───────────────
     fig2 = go.Figure()
     fig2.add_trace(go.Bar(
-        x=dates, y=exp_v, name="Esperada (Kg)",
+        x=dates, y=exp_v, name=exp_label,
         marker_color="#6366f1", opacity=0.8,
-        hovertemplate="Esperada: %{y:,.0f} Kg<extra></extra>"
+        hovertemplate=hover_exp
     ))
     fig2.add_trace(go.Bar(
-        x=dates, y=real_v, name="Real (Kg)",
+        x=dates, y=real_v, name=real_label,
         marker_color="#1abc9c",
         text=[f"{v:,.0f}" for v in real_v], textposition="outside",
-        hovertemplate="Real: %{y:,.0f} Kg<extra></extra>"
+        hovertemplate=hover_real
     ))
     fig2.update_layout(
-        title="Producción Real vs Esperada por Día",
+        title=title2,
         template="plotly_dark", barmode="group",
         height=380, margin=dict(l=40, r=40, t=60, b=60),
-        xaxis=dict(title="Fecha", tickangle=-30),
-        yaxis=dict(title="Kg"),
+        xaxis=dict(title=x_axis_title, tickangle=-30),
+        yaxis=dict(title=y_axis_title2),
     )
     fname2 = f"oee_ts_prod_{ts}.html"
     with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig2, fname2))
-    plots.append({"title": "📦 Producción Real vs Esperada", "url": f"static/plots/{fname2}"})
+    plots.append({"title": "📦 " + ( "Actual vs Expected Production" if is_en else "Producción Real vs Esperada" ), "url": f"static/plots/{fname2}"})
 
     # ── GRÁFICA 3: Paros No Prog + Prog por día (barras agrupadas min) ─
     fig3 = go.Figure()
     fig3.add_trace(go.Bar(
-        x=dates, y=np_v, name="No Programados (min)",
+        x=dates, y=np_v, name=np_label,
         marker_color="#ef4444",
         text=[f"{v:.1f}" if v > 0 else "" for v in np_v], 
         textposition="outside",
         textfont=dict(color="white", size=10, family="Arial Black"),
-        hovertemplate="NP: %{y:.1f} min<extra></extra>"
+        hovertemplate=hover_np
     ))
     fig3.add_trace(go.Bar(
-        x=dates, y=p_v, name="Programados (min)",
+        x=dates, y=p_v, name=p_label,
         marker_color="#f59e0b",
         text=[f"{v:.1f}" if v > 0 else "" for v in p_v], 
         textposition="outside",
         textfont=dict(color="white", size=10, family="Arial Black"),
-        hovertemplate="P: %{y:.1f} min<extra></extra>"
+        hovertemplate=hover_p
     ))
     fig3.update_layout(
-        title="Tiempos de Paro por Día (minutos)",
+        title=title3,
         template="plotly_dark", barmode="group",
         height=400, margin=dict(l=50, r=50, t=80, b=80),
-        xaxis=dict(title="Fecha", tickangle=-30, showgrid=False),
-        yaxis=dict(title="Minutos", showgrid=True, gridcolor="#333"),
+        xaxis=dict(title=x_axis_title, tickangle=-30, showgrid=False),
+        yaxis=dict(title=y_axis_title3, showgrid=True, gridcolor="#333"),
         legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
         bargap=0.2,
         bargroupgap=0.05
     )
     fname3 = f"oee_ts_stops_{ts}.html"
     with open(os.path.join(out_dir, fname3), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig3, fname3))
-    plots.append({"title": "⏱️ Tiempos de Paro por Día", "url": f"static/plots/{fname3}"})
+    plots.append({"title": "⏱️ " + ( "Stoppage Duration by Day" if is_en else "Tiempos de Paro por Día" ), "url": f"static/plots/{fname3}"})
 
     # ── GRÁFICA 4: Eventos de Paro por Día (conteos) ──────────────────
     np_cnt_v = [to_f(daily[d]["np_cnt"]) for d in dates]
@@ -3294,34 +3419,34 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
     
     fig4 = go.Figure()
     fig4.add_trace(go.Bar(
-        x=dates, y=np_cnt_v, name="Eventos No Programados",
+        x=dates, y=np_cnt_v, name=np_cnt_label,
         marker_color="#ef4444", 
         text=[f"{int(v)}" if v > 0 else "" for v in np_cnt_v], 
         textposition="outside",
         textfont=dict(color="white", size=11, family="Arial Black"),
-        hovertemplate="NP: %{y} eventos<extra></extra>"
+        hovertemplate=hover_np_cnt
     ))
     fig4.add_trace(go.Bar(
-        x=dates, y=p_cnt_v, name="Eventos Programados",
+        x=dates, y=p_cnt_v, name=p_cnt_label,
         marker_color="#f59e0b", 
         text=[f"{int(v)}" if v > 0 else "" for v in p_cnt_v], 
         textposition="outside",
         textfont=dict(color="white", size=11, family="Arial Black"),
-        hovertemplate="P: %{y} eventos<extra></extra>"
+        hovertemplate=hover_p_cnt
     ))
     fig4.update_layout(
-        title="Frecuencia de Paros por Día (Eventos)",
+        title=title4,
         template="plotly_dark", barmode="group",
         height=400, margin=dict(l=50, r=50, t=80, b=80),
-        xaxis=dict(title="Fecha", tickangle=-30, showgrid=False),
-        yaxis=dict(title="Número de Eventos", showgrid=True, gridcolor="#333"),
+        xaxis=dict(title=x_axis_title, tickangle=-30, showgrid=False),
+        yaxis=dict(title=y_axis_title4, showgrid=True, gridcolor="#333"),
         legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
         bargap=0.2,
         bargroupgap=0.05
     )
     fname4 = f"oee_ts_events_{ts}.html"
     with open(os.path.join(out_dir, fname4), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig4, fname4))
-    plots.append({"title": "🚨 Frecuencia de Paros (Eventos)", "url": f"static/plots/{fname4}"})
+    plots.append({"title": "🚨 " + ( "Stoppage Frequency (Events)" if is_en else "Frecuencia de Paros (Eventos)" ), "url": f"static/plots/{fname4}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
     if export_png:
@@ -3344,7 +3469,7 @@ def plot_oee_historical_comparison(from_day: str, rows_dicts: List[dict], export
 
 
 
-def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: bool = False) -> List[dict]:
+def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: bool = False, lang: str = "es") -> List[dict]:
     """Genera gráficas Plotly: Pareto 80/20 horizontal + Treemap jerárquico de motivos de paro."""
     try:
         from plotly.subplots import make_subplots
@@ -3358,6 +3483,26 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
     os.makedirs(out_dir, exist_ok=True)
     plots = []
     ts = int(time.time() * 1000)
+
+    is_en = (lang == "en")
+    
+    # Pareto horizontal labels
+    pareto_bar_label = "Duration (min)" if is_en else "Duración (min)"
+    pareto_line_label = "% Cumulative" if is_en else "% Acumulado"
+    pareto_hline_label = "80% (Pareto Rule)" if is_en else "80% (Regla de Pareto)"
+    
+    pareto_title = f"🚨 Pareto 80/20 — Unscheduled Stops | {period_label}" if is_en else f"🚨 Pareto 80/20 — Paros No Programados | {period_label}"
+    
+    pareto_y_axis_left = "Duration (min)" if is_en else "Duración (min)"
+    pareto_y_axis_right = "% Cumulative" if is_en else "% Acumulado"
+    
+    # Treemap labels
+    treemap_title = f"🗺️ Stoppage Hierarchical Map | {period_label}" if is_en else f"🗺️ Mapa Jerárquico de Paros | {period_label}"
+    treemap_colorbar_title = "Min"
+    
+    # Hover templates
+    hover_pareto = "<b>%{x}</b><br>Duration: %{y:.1f} min<br>Category: %{customdata}<extra></extra>" if is_en else "<b>%{x}</b><br>Duración: %{y:.1f} min<br>Categoría: %{customdata}<extra></extra>"
+    hover_pareto_scatter = "% Cumulative: %{y:.1f}%<extra></extra>" if is_en else "% Acumulado: %{y:.1f}%<extra></extra>"
 
     # --- 1. PARETO HORIZONTAL: Top motivos NP con línea acumulada ---
     np_reasons = [r for r in stop_reasons if str(r.get("Clasificacion", "")).upper() == "NP"]
@@ -3382,36 +3527,36 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(go.Bar(
             x=labels, y=durations,
-            name="Duración (min)", marker_color=bar_colors,
+            name=pareto_bar_label, marker_color=bar_colors,
             customdata=tipos,
             text=[f"{d:.1f} min | {e} ev." for d, e in zip(durations, eventos)],
             textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Duración: %{y:.1f} min<br>Categoría: %{customdata}<extra></extra>"
+            hovertemplate=hover_pareto
         ), secondary_y=False)
         fig.add_trace(go.Scatter(
-            x=labels, y=cum_pct, name="% Acumulado",
+            x=labels, y=cum_pct, name=pareto_line_label,
             mode="lines+markers",
             line=dict(color="#a78bfa", width=3), marker=dict(size=8, color="#a78bfa"),
-            hovertemplate="% Acumulado: %{y:.1f}%<extra></extra>"
+            hovertemplate=hover_pareto_scatter
         ), secondary_y=True)
         fig.add_hline(y=80, line_dash="dash", line_color="#fbbf24",
-                      annotation_text="80% (Regla de Pareto)",
+                      annotation_text=pareto_hline_label,
                       annotation_position="top right", secondary_y=True)
 
         fig.update_layout(
-            title=f"🚨 Pareto 80/20 — Paros No Programados | {period_label}",
+            title=pareto_title,
             template="plotly_dark", height=480,
             margin=dict(l=40, r=60, t=70, b=130),
             showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.35, x=0),
             bargap=0.15,
         )
         fig.update_xaxes(tickangle=-38, tickfont=dict(size=10))
-        fig.update_yaxes(title_text="Duración (min)", secondary_y=False)
-        fig.update_yaxes(title_text="% Acumulado", secondary_y=True, range=[0, 108], ticksuffix="%")
+        fig.update_yaxes(title_text=pareto_y_axis_left, secondary_y=False)
+        fig.update_yaxes(title_text=pareto_y_axis_right, secondary_y=True, range=[0, 108], ticksuffix="%")
 
         fname = f"pareto_np_{ts}.html"
         with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig, fname))
-        plots.append({"title": "🚨 Pareto 80/20 — Paros No Programados", "url": f"static/plots/{fname}"})
+        plots.append({"title": "🚨 " + ( "Pareto 80/20 — Unscheduled Stops" if is_en else "Pareto 80/20 — Paros No Programados" ), "url": f"static/plots/{fname}"})
 
     # --- 2. TREEMAP: Jerarquía MotivesType → Motivo ---
     all_sorted = sorted(stop_reasons, key=lambda x: float(x.get("Duracion_Min") or 0), reverse=True)[:20]
@@ -3424,7 +3569,7 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
         for tipo, td in tipos_agg.items():
             ids.append(f"T_{tipo}"); labels_tm.append(tipo); parents_tm.append("")
             values_tm.append(round(td, 1)); colors_tm.append(round(td, 1))
-            hover_tm.append(f"<b>{tipo}</b><br>Total: {td:.1f} min")
+            hover_tm.append(f"<b>{tipo}</b><br>Total: {td:.1f} min" if is_en else f"<b>{tipo}</b><br>Total: {td:.1f} min")
         for r in all_sorted:
             tipo   = str(r.get("Tipo_General", "Otro"))
             motivo = str(r.get("Motivo_Particular", "?"))[:45]
@@ -3434,7 +3579,7 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
             icon   = "🔴" if cls == "NP" else "🟡"
             ids.append(f"M_{tipo}_{motivo}"); labels_tm.append(f"{icon} {motivo}")
             parents_tm.append(f"T_{tipo}"); values_tm.append(dur); colors_tm.append(dur)
-            hover_tm.append(f"<b>{motivo}</b><br>Duración: {dur} min<br>Eventos: {evt}<br>Tipo: {cls}")
+            hover_tm.append(f"<b>{motivo}</b><br>Duration: {dur} min<br>Events: {evt}<br>Type: {cls}" if is_en else f"<b>{motivo}</b><br>Duración: {dur} min<br>Eventos: {evt}<br>Tipo: {cls}")
 
         fig2 = go.Figure(go.Treemap(
             ids=ids, labels=labels_tm, parents=parents_tm, values=values_tm,
@@ -3442,15 +3587,15 @@ def plot_pareto_stop_reasons(stop_reasons: list, period_label: str, export_png: 
             texttemplate="%{label}<br>%{value:.1f} min",
             hovertemplate="%{customdata}<extra></extra>",
             marker=dict(colorscale="RdYlGn_r", colors=colors_tm, showscale=True,
-                        colorbar=dict(title="Min")),
+                        colorbar=dict(title=treemap_colorbar_title)),
         ))
         fig2.update_layout(
-            title=f"🗺️ Mapa Jerárquico de Paros | {period_label}",
+            title=treemap_title,
             template="plotly_dark", height=460, margin=dict(l=20, r=20, t=60, b=20),
         )
         fname2 = f"pareto_treemap_{ts}.html"
         with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f: _f.write(wrap_plotly_fig_for_pdf_capture(fig2, fname2))
-        plots.append({"title": "🗺️ Mapa de Categorías de Paro", "url": f"static/plots/{fname2}"})
+        plots.append({"title": "🗺️ " + ( "Stoppage Category Map" if is_en else "Mapa de Categorías de Paro" ), "url": f"static/plots/{fname2}"})
 
     # ── EXPORTACIÓN PNG PARA PDF (requiere kaleido) ──────────────────
     if export_png:
@@ -3488,6 +3633,7 @@ async def api_oee_day_turn(payload: dict):
     shift_name = payload.get("shift_name")
     export_png = payload.get("export_png", False)
     skip_ai = payload.get("skip_ai", False)
+    lang = (payload.get("lang") or "es").strip().lower()
 
     if not from_day:
          raise HTTPException(status_code=400, detail="Falta 'from_day' (YYYY-MM-DD).")
@@ -3584,11 +3730,12 @@ ORDER BY Fecha DESC, Turno;
     rows_dicts_raw = [dict(zip(cols_d, r)) for r in rows_d]
 
     # Gráficas históricas (OEE, Producción, Velocidad, Paros)
-    plots = plot_oee_historical_comparison(from_day, rows_dicts_raw, export_png)
+    plots = plot_oee_historical_comparison(from_day, rows_dicts_raw, export_png, lang=lang)
     # Gráficas de Pareto 80/20 + Treemap de motivos de paro
     if stop_reasons:
-        period_label = from_day if from_day == to_day else f"{from_day} \u2013 {to_day}"
-        plots.extend(plot_pareto_stop_reasons(stop_reasons, period_label, export_png))
+        sep = " to " if lang == "en" else " – "
+        period_label = from_day if from_day == to_day else f"{from_day}{sep}{to_day}"
+        plots.extend(plot_pareto_stop_reasons(stop_reasons, period_label, export_png, lang=lang))
 
     # IA (Duma AI Range Analysis)
     if not skip_ai:
@@ -3599,7 +3746,7 @@ ORDER BY Fecha DESC, Turno;
                 "details": rows_dicts_raw,
                 "stop_reasons": stop_reasons
             }
-            ai = ai_oee_range_analysis(full_data)
+            ai = ai_oee_range_analysis(full_data, lang=lang)
         except Exception as ex:
             ai = f"⚠️ Error en diagnóstico de IA: {ex}"
     else:
@@ -3634,7 +3781,7 @@ ORDER BY Fecha DESC, Turno;
 
     table_by_turn = []
     # Ordenar por el orden estándar de turnos
-    range_label = f"{from_day} a {to_day}" if from_day != to_day else from_day
+    range_label = (f"{from_day} to {to_day}" if lang == "en" else f"{from_day} a {to_day}") if from_day != to_day else from_day
     for s_name in ["Primer Turno", "Segundo Turno", "Tercer Turno"]:
         if s_name in agg:
             v = agg[s_name]
@@ -3645,23 +3792,25 @@ ORDER BY Fecha DESC, Turno;
             
             oee_c = (v["prod"]/avail_safe) * (v["real"]/exp_safe) * (avg_q/100.0) * 100
             disp_c = (v["prod"]/avail_safe) * 100
+            perf_c = (v["real"]/exp_safe) * 100
             
             table_by_turn.append({
                 "Fecha": range_label,
                 "Turno": s_name,
-                "OEE (%)": f"{oee_c:.1f}%",
-                "Disponibilidad (%)": f"{disp_c:.1f}%",
-                "Producto conforme (%)": f"{avg_q:.1f}%",
+                "OEE": f"{oee_c:.1f}%",
+                "Disponibilidad": f"{disp_c:.1f}%",
+                "Desempeno": f"{perf_c:.1f}%",
+                "Producto Conforme": f"{avg_q:.1f}%",
                 "Producción Real (Kg)": f"{v['real']:,.0f}",
                 "Producción Esperada (Kg)": f"{v['exp']:,.0f}",
-                "Paros no programados (Duración)": format_duration_es(v["np_min"]),
-                "Paros No Prog (Eventos)": f"{int(v['np_cnt'])} ev.",
-                "Paros programados (Duración)": format_duration_es(v["p_min"]),
-                "Paros Prog (Eventos)": f"{int(v['p_cnt'])} ev."
+                 "Paros no programados (Duración)": format_duration_es(v["np_min"], lang=lang),
+                 "Paros No Prog (Eventos)": f"{int(v['np_cnt'])} ev." if lang == "es" else f"{int(v['np_cnt'])} ev.",
+                 "Paros programados (Duración)": format_duration_es(v["p_min"], lang=lang),
+                 "Paros Prog (Eventos)": f"{int(v['p_cnt'])} ev." if lang == "es" else f"{int(v['p_cnt'])} ev."
             })
     
     turn_cols = [
-        "Fecha", "Turno", "OEE (%)", "Disponibilidad (%)", "Producto conforme (%)", 
+        "Fecha", "Turno", "OEE", "Disponibilidad", "Desempeno", "Producto Conforme", 
         "Producción Real (Kg)", "Producción Esperada (Kg)", 
         "Paros no programados (Duración)", "Paros No Prog (Eventos)", 
         "Paros programados (Duración)", "Paros Prog (Eventos)"
@@ -3831,8 +3980,11 @@ async def api_control_variables_day(payload: dict):
     executive_summary = "\r\n".join(exec_lines)
 
     skip_ai = payload.get("skip_ai", False)
+    lang = (payload.get("lang") or "es").strip().lower()
+    # Set context for chart generation
+    _cv_lang_ctx.lang = lang
     if not skip_ai:
-        ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary)
+        ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary, lang=lang)
     else:
         ai_analysis = ""
 
@@ -3869,6 +4021,7 @@ async def chat(request: Request):
         user_text = (body.get("input") or "").strip()
         thread_id = body.get("thread_id")
         username = (body.get("username") or "").strip() or "Anónimo"
+        lang = (body.get("lang") or "es").strip().lower()
 
         if not user_text:
             return JSONResponse({"error": "input vacío"}, status_code=400)
@@ -3910,7 +4063,7 @@ async def chat(request: Request):
                     "[system: Preséntate como Duma, saluda cordialmente y pregunta en qué puedes ayudar al usuario hoy.]"
                 )
 
-        out = run_assistant_cycle(user_text, thread_id)
+        out = await asyncio.to_thread(run_assistant_cycle, user_text, thread_id, lang)
         resolved_thread_id = out.get("thread_id")
         
         # Registrar y guardar en base de datos local si no es llamada de inicialización proactiva [init]
@@ -3955,6 +4108,155 @@ async def chat(request: Request):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# TTS: Convierte texto a voz usando Azure OpenAI Speech
+# ---------------------------------------------------------------------------
+@app.post("/chat/speak/")
+@app.post("/chat/speak")
+async def chat_speak(request: Request):
+    """
+    Recibe { "text": string, "voice": string? } y retorna audio MP3 generado por TTS.
+    Voces disponibles: alloy, echo, fable, onyx, nova, shimmer
+    """
+    try:
+        body = await request.json()
+        text = (body.get("text") or "").strip()
+        voice = body.get("voice", "nova")
+
+        if not text:
+            return JSONResponse({"error": "text vacío"}, status_code=400)
+
+        # Limitar longitud para evitar respuestas excesivamente largas por voz
+        if len(text) > 4000:
+            text = text[:4000] + "..."
+
+        # Eliminar emojis y markdown para una voz más limpia
+        import re as _re
+        text_clean = _re.sub(r'[\*\_\`\#\>\|\[\]\(\)\!]', '', text)
+        text_clean = _re.sub(r'\s+', ' ', text_clean).strip()
+
+        def generate_speech():
+            tts_model = os.environ.get("AZURE_OPENAI_TTS_DEPLOYMENT", "tts-1")
+            resp = whisper_client.audio.speech.create(
+                model=tts_model,
+                voice=voice,
+                input=text_clean,
+                response_format="mp3"
+            )
+            return resp.content
+
+        audio_bytes = await asyncio.to_thread(generate_speech)
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "inline; filename=duma_response.mp3"}
+        )
+
+    except Exception as e:
+        logging.error(f"Error en TTS /chat/speak/: {e}")
+        return JSONResponse({"error": f"Error TTS: {str(e)}"}, status_code=500)
+
+
+@app.post("/chat/audio/")
+@app.post("/chat/audio")
+async def chat_audio(
+    file: UploadFile = File(...),
+    thread_id: str = Form(None),
+    username: str = Form("Anónimo")
+):
+    """
+    Recibe un archivo de audio asíncronamente, lo transcribe usando Azure OpenAI Whisper
+    y procesa el texto a través del ciclo del asistente Duma.
+    """
+    try:
+        # 1. Determinar la extensión del archivo y guardar localmente de forma temporal
+        filename = file.filename or "audio.webm"
+        extension = filename.split(".")[-1]
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}") as temp_audio:
+            content = await file.read()
+            temp_audio.write(content)
+            temp_audio_path = temp_audio.name
+
+        # 2. Transcribir el audio usando el despliegue de Azure OpenAI Whisper
+        try:
+            # Función interna síncrona para ejecutar en un hilo separado
+            def call_whisper_sync():
+                with open(temp_audio_path, "rb") as audio_file:
+                    return whisper_client.audio.transcriptions.create(
+                        model=AZURE_OPENAI_WHISPER_DEPLOYMENT,
+                        file=audio_file,
+                        language="es"
+                    )
+
+            # Llamada asíncrona sin bloquear el event loop principal
+            transcription = await asyncio.to_thread(call_whisper_sync)
+            user_text = transcription.text.strip()
+        except Exception as api_err:
+            logging.error(f"Error en llamada a Azure OpenAI Whisper API: {api_err}")
+            return JSONResponse({"error": f"Error al transcribir el audio en Azure OpenAI: {str(api_err)}"}, status_code=500)
+        finally:
+            # Asegurar la eliminación del archivo temporal
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+
+        if not user_text:
+            return JSONResponse({"error": "No se detectó voz o texto en el archivo de audio proporcionado."}, status_code=400)
+
+        # 3. Procesar el texto transcrito como si fuera un input de texto tradicional en Duma
+        out = await asyncio.to_thread(run_assistant_cycle, user_text, thread_id)
+        resolved_thread_id = out.get("thread_id")
+        
+        # Registrar y guardar en base de datos local (historial de chat)
+        if resolved_thread_id:
+            try:
+                with pyodbc.connect(HISTORY_CONN_STR) as conn:
+                    cursor = conn.cursor()
+                    
+                    # Verificar si la conversación ya existe en la base de datos
+                    cursor.execute("SELECT 1 FROM dbo.duma_conversations WHERE thread_id = ?", (resolved_thread_id,))
+                    exists = bool(cursor.fetchone())
+                    
+                    if not exists:
+                        clean_title = user_text.replace("\n", " ").replace("\r", " ").strip()
+                        title = clean_title[:47] + "..." if len(clean_title) > 47 else clean_title
+                        cursor.execute(
+                            "INSERT INTO dbo.duma_conversations (thread_id, user_name, title) VALUES (?, ?, ?)",
+                            (resolved_thread_id, username, title)
+                        )
+                    
+                    # Guardar mensaje de usuario (transcripción de voz)
+                    cursor.execute(
+                        "INSERT INTO dbo.duma_messages (thread_id, role, text, images) VALUES (?, ?, ?, ?)",
+                        (resolved_thread_id, "user", f"🎙️ [Mensaje de voz]: {user_text}", None)
+                    )
+                    
+                    # Guardar respuesta de Duma
+                    if out.get("message"):
+                        images_json = None
+                        if out.get("images"):
+                            images_json = json.dumps(out.get("images"))
+                        cursor.execute(
+                            "INSERT INTO dbo.duma_messages (thread_id, role, text, images) VALUES (?, ?, ?, ?)",
+                            (resolved_thread_id, "assistant", out.get("message"), images_json)
+                        )
+                    conn.commit()
+            except Exception as dbe:
+                logging.error(f"Error al guardar historial de audio en la base de datos local: {dbe}")
+
+        # Retornar respuesta enriquecida incluyendo la transcripción
+        res = dict(out)
+        res["transcription"] = user_text
+        return JSONResponse(res)
+
+    except Exception as e:
+        logging.error(f"Error procesando endpoint de audio: {e}")
+        return JSONResponse({"error": f"Error interno del servidor: {str(e)}"}, status_code=500)
+
+
+
 
 
 @app.get("/chat/threads/{username}")
@@ -4084,6 +4386,17 @@ async def get_chat_history(thread_id: str):
 @app.post("/Bafar/chat")
 async def chat_bafar(request: Request):
     return await chat(request)
+
+
+@app.post("/Bafar/chat/audio/")
+@app.post("/Bafar/chat/audio")
+async def chat_audio_bafar(
+    file: UploadFile = File(...),
+    thread_id: str = Form(None),
+    username: str = Form("Anónimo")
+):
+    return await chat_audio(file, thread_id, username)
+
 
 
 @app.get("/Bafar/chat/threads/{username}")

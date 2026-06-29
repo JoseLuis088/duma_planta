@@ -539,6 +539,47 @@
       z-index: 1;
     }
 
+    .lang-toggle {
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .lang-toggle::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .lang-toggle:hover {
+      border-color: var(--brand);
+      box-shadow: 0 4px 16px var(--brand-glow);
+      transform: scale(1.05);
+    }
+
+    .lang-toggle:hover::before {
+      opacity: 0.12;
+    }
+
+    .lang-toggle span {
+      position: relative;
+      z-index: 1;
+    }
+
     /* Buttons */
     .btn {
       padding: 10px 20px;
@@ -1769,6 +1810,123 @@
       cursor: not-allowed;
     }
 
+    .chat-mic-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #4A5568;
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s;
+      margin-right: 6px;
+    }
+
+    .chat-mic-btn:hover {
+      background: #2D3748;
+      transform: scale(1.05);
+    }
+
+    .chat-mic-btn.recording {
+      background: #E53E3E;
+      animation: pulse-recording 1.5s infinite;
+    }
+
+    @keyframes pulse-recording {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.7); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(229, 62, 62, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(229, 62, 62, 0); }
+    }
+
+    /* ── TTS Speak button on bot messages ─────────────────────── */
+    .msg-speak-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.55);
+      font-size: 11.5px;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .msg-speak-btn:hover {
+      background: rgba(99,179,237,0.18);
+      color: #63B3ED;
+      border-color: rgba(99,179,237,0.4);
+    }
+    .msg-speak-btn.speaking {
+      background: rgba(72,187,120,0.18);
+      color: #48BB78;
+      border-color: rgba(72,187,120,0.4);
+      animation: speak-pulse 1.2s ease-in-out infinite;
+    }
+    .msg-speak-btn.speak-error {
+      color: #FC8181;
+      border-color: rgba(252,129,129,0.3);
+      background: rgba(252,129,129,0.08);
+    }
+    @keyframes speak-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.65; }
+    }
+
+    /* ── Voice-mode toggle button ──────────────────────────────── */
+    .chat-tts-toggle {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #4A5568;
+      color: rgba(255,255,255,0.6);
+      border: none;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s;
+      margin-right: 6px;
+      font-size: 18px;
+    }
+    .chat-tts-toggle:hover {
+      background: #2D3748;
+      transform: scale(1.05);
+    }
+    .chat-tts-toggle.active {
+      background: linear-gradient(135deg, #48BB78, #38A169);
+      color: white;
+      box-shadow: 0 0 12px rgba(72,187,120,0.5);
+    }
+    /* Audio wave bars animation (shows when TTS is playing) */
+    .audio-wave {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      height: 16px;
+    }
+    .audio-wave.active { display: flex; }
+    .audio-wave span {
+      display: block;
+      width: 3px;
+      border-radius: 3px;
+      background: #48BB78;
+      animation: wave-bar 0.9s ease-in-out infinite;
+    }
+    .audio-wave span:nth-child(1) { height: 6px;  animation-delay: 0s; }
+    .audio-wave span:nth-child(2) { height: 12px; animation-delay: 0.15s; }
+    .audio-wave span:nth-child(3) { height: 8px;  animation-delay: 0.3s; }
+    .audio-wave span:nth-child(4) { height: 14px; animation-delay: 0.1s; }
+    .audio-wave span:nth-child(5) { height: 6px;  animation-delay: 0.25s; }
+    @keyframes wave-bar {
+      0%, 100% { transform: scaleY(0.4); opacity: 0.6; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+
+
     /* Typing indicator */
     .typing {
       display: flex;
@@ -2137,7 +2295,7 @@
       width: 100%;
       height: 52px;
       border-radius: 26px;
-      padding: 0 60px 0 24px;
+      padding: 0 152px 0 24px;
       border: 1px solid var(--border);
       background: var(--bg);
       color: var(--text);
@@ -2173,6 +2331,64 @@
       background: var(--brand-hover);
       transform: scale(1.05);
     }
+
+    #viewAgent .chat-mic-btn {
+      position: absolute;
+      right: 96px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #4A5568;
+      color: white;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s ease;
+    }
+
+    #viewAgent .chat-mic-btn:hover {
+      background: #2D3748;
+      transform: scale(1.05);
+    }
+
+    #viewAgent .chat-mic-btn.recording {
+      background: #E53E3E;
+      animation: pulse-recording 1.5s infinite;
+    }
+
+    /* TTS toggle button — posicionado entre mic y send */
+    #viewAgent .chat-tts-toggle {
+      position: absolute;
+      right: 52px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #4A5568;
+      color: rgba(255,255,255,0.7);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 15px;
+      transition: all 0.2s ease;
+      margin-right: 0;
+    }
+
+    #viewAgent .chat-tts-toggle:hover {
+      background: #2D3748;
+      transform: scale(1.05);
+    }
+
+    #viewAgent .chat-tts-toggle.active {
+      background: linear-gradient(135deg, #48BB78, #38A169);
+      color: white;
+      box-shadow: 0 0 10px rgba(72,187,120,0.45);
+    }
+
 
     /* =============================================
        DUMA AGENT VIEW STYLE ALIGNMENT (PREMIUM CHAT UI)
@@ -2949,18 +3165,18 @@
       <div class="menu">
         <button class="menu-item active" id="btnMenuCV">
           <span class="menu-icon">📈</span>
-          <span>Variables de Control</span>
+          <span id="menuLabelCV">Variables de Control</span>
         </button>
         <button class="menu-item" id="btnMenuOEE">
           <span class="menu-icon">📊</span>
-          <span>OEE (Eficiencia)</span>
+          <span id="menuLabelOEE">OEE (Eficiencia)</span>
         </button>
         <button class="menu-item" id="btnMenuAgent">
           <span class="menu-icon">💬</span>
-          <span>Duma AI Agent</span>
+          <span id="menuLabelAgent">Duma AI Agent</span>
         </button>
 
-        <div class="menu-hint">
+        <div class="menu-hint" id="menuHint">
           Análisis completo de variables críticas con IA y visualizaciones avanzadas
         </div>
       </div>
@@ -2981,6 +3197,9 @@
           <button class="theme-toggle" id="themeToggle" title="Cambiar tema">
             <span>🌙</span>
           </button>
+          <button class="lang-toggle" id="langToggle" title="Switch language">
+            <span id="langLabel">🌐 Eng</span>
+          </button>
           <span class="pill ok" id="statusPill">Listo</span>
           <button class="btn" id="btnClear">Limpiar Vista</button>
         </div>
@@ -2992,11 +3211,11 @@
         <!-- ===================== -->
         <section id="viewCV" class="shell">
           <div class="card">
-            <h2>Variables de Control (Día Completo)</h2>
-            <p class="sub">Selecciona una fecha para generar gráficas de variables críticas con análisis de IA</p>
+            <h2 id="cvCardTitle">Variables de Control (Día Completo)</h2>
+            <p class="sub" id="cvCardSub">Selecciona una fecha para generar gráficas de variables críticas con análisis de IA</p>
 
             <div class="form-row">
-              <label class="small muted" for="cvDay">Rango de Días:</label>
+              <label class="small muted" for="cvDay" id="cvLabelRange">Rango de Días:</label>
               <input id="cvDay" type="text" placeholder="Seleccione Rango de Fechas" />
               <button class="btn primary" id="btnGenCV">Generar Análisis</button>
               <button class="btn" id="btnDlCvPdf" style="display:none; margin-left: 10px;">📄 Descargar PDF</button>
@@ -3014,7 +3233,7 @@
                 <span class="cv-kpi-icon" id="cvKpiHealthIcon">🛡️</span>
               </div>
               <div class="cv-kpi-body">
-                <div class="cv-kpi-label">Salud Global del Proceso</div>
+                <div class="cv-kpi-label" id="lblCvKpiHealth">Salud Global del Proceso</div>
                 <div class="cv-kpi-value" id="cvKpiHealthVal">—</div>
                 <div class="cv-kpi-sub" id="cvKpiHealthSub">promedio ponderado</div>
               </div>
@@ -3029,7 +3248,7 @@
                 <span class="cv-kpi-icon">🚨</span>
               </div>
               <div class="cv-kpi-body">
-                <div class="cv-kpi-label">Variables Críticas</div>
+                <div class="cv-kpi-label" id="lblCvKpiCrit">Variables Críticas</div>
                 <div class="cv-kpi-value" id="cvKpiCritVal">—</div>
                 <div class="cv-kpi-sub" id="cvKpiCritSub">con ≥75% fuera de rango</div>
               </div>
@@ -3042,7 +3261,7 @@
                 <span class="cv-kpi-icon" id="cvKpiWorstIcon">⚙️</span>
               </div>
               <div class="cv-kpi-body">
-                <div class="cv-kpi-label">Equipo Más Problemático</div>
+                <div class="cv-kpi-label" id="lblCvKpiWorst">Equipo Más Problemático</div>
                 <div class="cv-kpi-value cv-kpi-value--sm" id="cvKpiWorstVal">—</div>
                 <div class="cv-kpi-sub" id="cvKpiWorstSub">mayor desviación promedio</div>
               </div>
@@ -3054,7 +3273,7 @@
                 <span class="cv-kpi-icon">📊</span>
               </div>
               <div class="cv-kpi-body">
-                <div class="cv-kpi-label">Promedio % Fuera de Rango</div>
+                <div class="cv-kpi-label" id="lblCvKpiAvg">Promedio % Fuera de Rango</div>
                 <div class="cv-kpi-value" id="cvKpiAvgVal">—</div>
                 <div class="cv-kpi-sub" id="cvKpiAvgSub">entre todas las variables</div>
               </div>
@@ -3069,7 +3288,7 @@
                 <span class="cv-kpi-icon" id="cvKpiOkIcon">✅</span>
               </div>
               <div class="cv-kpi-body">
-                <div class="cv-kpi-label">Variables en Rango</div>
+                <div class="cv-kpi-label" id="lblCvKpiOk">Variables en Rango</div>
                 <div class="cv-kpi-value" id="cvKpiOkVal">—</div>
                 <div class="cv-kpi-sub" id="cvKpiOkSub">0% fuera de rango hoy</div>
               </div>
@@ -3078,18 +3297,18 @@
           </div>
 
           <div class="card" id="cvSummaryCard" style="display:none">
-            <h2>Métricas por Variable</h2>
+            <h2 id="cvSummaryTitle">Métricas por Variable</h2>
             <div class="table-wrap">
               <table id="cvTable">
                 <thead>
                   <tr>
-                    <th>Variable</th>
-                    <th>Equipo</th>
-                    <th>Lecturas</th>
-                    <th>Lecturas fuera de rango</th>
-                    <th>% Fuera de rango</th>
-                    <th>Lectura mínima</th>
-                    <th>Lectura máxima</th>
+                    <th id="thCvVar">Variable</th>
+                    <th id="thCvDevice">Equipo</th>
+                    <th id="thCvReads">Lecturas</th>
+                    <th id="thCvOut">Lecturas fuera de rango</th>
+                    <th id="thCvPct">% Fuera de rango</th>
+                    <th id="thCvMin">Lectura mínima</th>
+                    <th id="thCvMax">Lectura máxima</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -3100,7 +3319,7 @@
           <div class="grid" id="cvGrid"></div>
 
           <div class="card" id="cvAICard" style="display:none">
-            <h2>Análisis y Recomendaciones (IA)</h2>
+            <h2 id="cvAiTitle">Análisis y Recomendaciones (IA)</h2>
             <div id="cvAI" class="md"></div>
           </div>
         </section>
@@ -3117,8 +3336,8 @@
           <!-- Tab Content: Realtime -->
           <div id="tabContentOeeRT">
             <div class="card">
-              <h2>OEE en Tiempo Real</h2>
-              <p class="sub">Snapshot actualizado automáticamente de la línea de producción</p>
+              <h2 id="oeeRtTitle">OEE en Tiempo Real</h2>
+              <p class="sub" id="oeeRtSub">Snapshot actualizado automáticamente de la línea de producción</p>
               <div class="form-row">
                 <button class="btn primary" id="btnFetchOeeRT">🔄 Actualizar Ahora</button>
                 <button class="btn" id="btnDlOeeRtPdf" style="display:none; margin-left: 10px;">📄 Descargar PDF</button>
@@ -3135,7 +3354,7 @@
                     <span class="cv-kpi-icon" id="oeeRtKpiOeeIcon">🏭</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">OEE</div>
+                    <div class="cv-kpi-label" id="lblOeeRtKpiOee">OEE</div>
                     <div class="cv-kpi-value" id="kpiOee">—</div>
                     <div class="cv-kpi-sub" id="oeeRtKpiOeeSub">Línea de producción</div>
                   </div>
@@ -3150,7 +3369,7 @@
                     <span class="cv-kpi-icon" id="oeeRtKpiAvailIcon">⏱️</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">Disponibilidad</div>
+                    <div class="cv-kpi-label" id="lblOeeRtKpiAvail">Disponibilidad</div>
                     <div class="cv-kpi-value" id="kpiAvail">—</div>
                     <div class="cv-kpi-sub" id="oeeRtKpiAvailSub">Uso del tiempo</div>
                   </div>
@@ -3165,7 +3384,7 @@
                     <span class="cv-kpi-icon" id="oeeRtKpiPerfIcon">⚡</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">Desempeño</div>
+                    <div class="cv-kpi-label" id="lblOeeRtKpiPerf">Desempeño</div>
                     <div class="cv-kpi-value" id="kpiPerf">—</div>
                     <div class="cv-kpi-sub" id="oeeRtKpiPerfSub">Ritmo de producción</div>
                   </div>
@@ -3180,7 +3399,7 @@
                     <span class="cv-kpi-icon" id="oeeRtKpiQualIcon">✅</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">Producto Conforme</div>
+                    <div class="cv-kpi-label" id="lblOeeRtKpiQual">Producto Conforme</div>
                     <div class="cv-kpi-value" id="kpiQual">—</div>
                     <div class="cv-kpi-sub" id="oeeRtKpiQualSub">Porcentaje de calidad</div>
                   </div>
@@ -3192,7 +3411,7 @@
               </div>
 
               <div class="card" style="margin-top:20px; display:none" id="oeeRtTableCard">
-                <h2>Detalle (Snapshot)</h2>
+                <h2 id="oeeRtTableTitle">Detalle (Snapshot)</h2>
                 <div class="table-wrap">
                   <table id="oeeRtTable">
                     <thead>
@@ -3216,14 +3435,14 @@
           <!-- Tab Content: Historic -->
           <div id="tabContentOeeHist" style="display:none">
             <div class="card">
-              <h2>OEE Global / Turno</h2>
-              <p class="sub">Análisis de periodo. Selecciona un rango de fechas para ver el desempeño consolidado.</p>
+              <h2 id="oeeHistTitle">OEE Global / Turno</h2>
+              <p class="sub" id="oeeHistSub">Análisis de periodo. Selecciona un rango de fechas para ver el desempeño consolidado.</p>
 
               <div class="form-row">
-                <label class="small muted" for="oeeRange">Fechas:</label>
+                <label class="small muted" for="oeeRange" id="oeeLabelFechas">Fechas:</label>
                 <input id="oeeRange" type="text" placeholder="Seleccione el Rango de Días" style="width: 200px" />
 
-                <label class="small muted" for="oeeShift">Turno:</label>
+                <label class="small muted" for="oeeShift" id="oeeLabelTurno">Turno:</label>
                 <select id="oeeShift">
                   <option value="">(Todos)</option>
                   <option value="Primer Turno">Primer Turno</option>
@@ -3246,7 +3465,7 @@
                     <span class="cv-kpi-icon" id="oeeKpiOeeIcon">🏭</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">OEE Global</div>
+                    <div class="cv-kpi-label" id="lblOeeKpiOee">OEE Global</div>
                     <div class="cv-kpi-value" id="kpiRangeOee">—</div>
                     <div class="cv-kpi-sub" id="oeeKpiOeeSub">Consolidado del rango</div>
                   </div>
@@ -3261,7 +3480,7 @@
                     <span class="cv-kpi-icon" id="oeeKpiAvailIcon">⏱️</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">Disponibilidad</div>
+                    <div class="cv-kpi-label" id="lblOeeKpiAvail">Disponibilidad</div>
                     <div class="cv-kpi-value" id="kpiRangeAvail">—</div>
                     <div class="cv-kpi-sub" id="oeeKpiAvailSub">Uso del tiempo productivo</div>
                   </div>
@@ -3276,7 +3495,7 @@
                     <span class="cv-kpi-icon" id="oeeKpiPerfIcon">⚡</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">Desempeño</div>
+                    <div class="cv-kpi-label" id="lblOeeKpiPerf">Desempeño</div>
                     <div class="cv-kpi-value" id="kpiRangePerf">—</div>
                     <div class="cv-kpi-sub" id="oeeKpiPerfSub">Ritmo vs. velocidad nominal</div>
                   </div>
@@ -3291,7 +3510,7 @@
                     <span class="cv-kpi-icon" id="oeeKpiQualIcon">✅</span>
                   </div>
                   <div class="cv-kpi-body">
-                    <div class="cv-kpi-label">Calidad</div>
+                    <div class="cv-kpi-label" id="lblOeeKpiQual">Calidad</div>
                     <div class="cv-kpi-value" id="kpiRangeQual">—</div>
                     <div class="cv-kpi-sub" id="oeeKpiQualSub">Producto conforme</div>
                   </div>
@@ -3303,7 +3522,7 @@
               </div>
 
               <div class="card" id="oeeDayTableCard" style="margin-top:20px; display:none">
-                <h2>Detalle por Turno</h2>
+                <h2 id="oeeHistTableTitle">Detalle por Turno</h2>
                 <div class="table-wrap">
                   <table id="oeeDayTable">
                     <thead>
@@ -3349,12 +3568,12 @@
                 <span>+</span> Nueva Conversación
               </button>
               
-              <div style="font-size: 11px; font-weight: 700; color: #a1a1aa; letter-spacing: 0.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+              <div id="recentConversationsHeader" style="font-size: 11px; font-weight: 700; color: #a1a1aa; letter-spacing: 0.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
                 🕒 CONVERSACIONES RECIENTES
               </div>
               
               <div class="agent-conversations-list" id="agentConversationsList">
-                <div class="agent-conversation-item active">
+                <div class="agent-conversation-item active" id="currentConversationItem">
                   💬 Conversación actual
                 </div>
               </div>
@@ -3370,7 +3589,7 @@
                     <span class="edit-icon" id="btnEditProfile" style="cursor: pointer; opacity: 0.6; font-size: 12px;">✏️</span>
                   </div>
                   <span style="font-size: 11px; color: #10b981; display: flex; align-items: center; gap: 4px;">
-                    <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span> online
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span> <span id="profileLabelOnline">online</span>
                   </span>
                 </div>
               </div>
@@ -3384,7 +3603,7 @@
                   <div style="width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></div>
                   <div>
                     <div id="chatHeaderTitle" style="font-weight: 600; font-size: 14px;">Duma Agent</div>
-                    <div style="font-size: 11px; color: #a1a1aa;">Online</div>
+                    <div id="chatHeaderOnline" style="font-size: 11px; color: #a1a1aa;">Online</div>
                   </div>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
@@ -3415,6 +3634,14 @@
                 <div class="chat-input-wrapper">
                   <input type="text" class="chat-input" id="chatInput" placeholder="Escribe tu pregunta..." autocomplete="off" maxlength="2000" aria-label="Escribe tu pregunta a Duma">
                   <span class="chat-char-counter" id="chatCharCounter">0/2000</span>
+                  <button class="chat-tts-toggle" id="chatTtsToggle" type="button" title="Respuesta por voz: desactivada" aria-label="Activar respuesta por voz">
+                    🔊
+                  </button>
+                  <button class="chat-mic-btn" id="chatMicBtn" type="button" aria-label="Grabar mensaje de voz" title="Grabar mensaje de voz">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 20px; height: 20px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                    </svg>
+                  </button>
                   <button class="chat-send-btn" id="chatSendBtn" aria-label="Enviar mensaje">➤</button>
                 </div>
               </div>
@@ -3470,6 +3697,9 @@
 
       initTheme();
       el('themeToggle')?.addEventListener('click', toggleTheme);
+      el('langToggle')?.addEventListener('click', () => {
+        applyLang(currentLang === 'es' ? 'en' : 'es');
+      });
 
       // Sidebar Toggle
       el('brandToggle')?.addEventListener('click', () => {
@@ -3602,6 +3832,504 @@
         ParosNoProgramadosCont: "Paros no programados (Eventos)",
         ParosProgramadosCont: "Paros programados (Eventos)"
       };
+
+      // ===========================
+      // I18N — SISTEMA DE IDIOMAS
+      // ===========================
+      const STRINGS = {
+        es: {
+          // Sidebar
+          menuCV: "Variables de Control",
+          menuOEE: "OEE (Eficiencia)",
+          menuAgent: "Duma AI Agent",
+          menuHint: "Análisis completo de variables críticas con IA y visualizaciones avanzadas",
+          // Topbar
+          btnClear: "Limpiar Vista",
+          statusReady: "Listo",
+          statusBusy: "Procesando...",
+          statusError: "Error",
+          // Títulos secciones (showView)
+          titleCV: "Variables de Control",
+          subtitleCV: "Día completo (3 turnos) — variables críticas",
+          titleOEE: "OEE (Eficiencia)",
+          subtitleOEE: "Desempeño global y por turno",
+          titleAgent: "Duma AI Agent",
+          subtitleAgent: "Asistente Operativo con Inteligencia Artificial",
+          // Sección CV
+          cvCardTitle: "Variables de Control (Día Completo)",
+          cvCardSub: "Selecciona una fecha para generar gráficas de variables críticas con análisis de IA",
+          cvLabelRange: "Rango de Días:",
+          btnGenCV: "Generar Análisis",
+          btnDlCvPdf: "📄 Descargar PDF",
+          btnAiCV: "🤖 Análisis Duma",
+          cvAiTitle: "Análisis y Recomendaciones (IA)",
+          cvInfoEmpty: "Ingresa un rango de fecha.",
+          lblCvKpiHealth: "Salud Global del Proceso",
+          cvKpiHealthSub: "promedio ponderado",
+          lblCvKpiCrit: "Variables Críticas",
+          cvKpiCritSub: "con ≥75% fuera de rango",
+          lblCvKpiWorst: "Equipo Más Problemático",
+          cvKpiWorstSub: "mayor desviación promedio",
+          lblCvKpiAvg: "Promedio % Fuera de Rango",
+          cvKpiAvgSub: "entre todas las variables",
+          lblCvKpiOk: "Variables en Rango",
+          cvKpiOkSub: "0% fuera de rango hoy",
+          cvSummaryTitle: "Métricas por Variable",
+          thCvVar: "Variable",
+          thCvDevice: "Equipo",
+          thCvReads: "Lecturas",
+          thCvOut: "Lecturas fuera de rango",
+          thCvPct: "% Fuera de rango",
+          thCvMin: "Lectura mínima",
+          thCvMax: "Lectura máxima",
+          healthStable: "Proceso estable ✓",
+          healthAttention: "Atención recomendada",
+          healthIntervention: "Intervención necesaria",
+          healthCritical: "Estado crítico — actuar ya",
+          critNone: "Ninguna en alerta 🎉",
+          critSub: "con ≥75% fuera de rango",
+          worstSub: "% desviación promedio",
+          avgSub: "entre {N} variables analizadas",
+          okAll: "¡Todas en rango! 🎉",
+          okNone: "Ninguna dentro del rango",
+          okSome: "operando dentro de límites",
+          // Sección OEE
+          tabRT: "Tiempo Real",
+          tabHist: "Histórico",
+          oeeRtTitle: "OEE en Tiempo Real",
+          oeeRtSub: "Snapshot actualizado automáticamente de la línea de producción",
+          btnFetchOeeRT: "🔄 Actualizar Ahora",
+          btnDlOeeRtPdf: "📄 Descargar PDF",
+          btnAiOeeRT: "🤖 Análisis Duma",
+          oeeRtAiTitle: "Análisis y Recomendaciones (IA)",
+          oeeHistTitle: "OEE Global / Turno",
+          oeeHistSub: "Análisis de periodo. Selecciona un rango de fechas para ver el desempeño consolidado.",
+          oeeLabelFechas: "Fechas:",
+          oeeLabelTurno: "Turno:",
+          btnFetchOeeDay: "Consultar Rango",
+          btnDlOeeDayPdf: "📄 Descargar PDF",
+          btnAiOeeDay: "🤖 Análisis Duma",
+          oeeDayAiTitle: "Análisis y Recomendaciones (IA)",
+          lblOeeRtKpiOee: "OEE",
+          lblOeeRtKpiAvail: "Disponibilidad",
+          lblOeeRtKpiPerf: "Desempeño",
+          lblOeeRtKpiQual: "Producto Conforme",
+          lblOeeKpiOee: "OEE Global",
+          lblOeeKpiAvail: "Disponibilidad",
+          lblOeeKpiPerf: "Desempeño",
+          lblOeeKpiQual: "Calidad",
+          oeeRtTableTitle: "Detalle (Snapshot)",
+          oeeHistTableTitle: "Detalle por Turno",
+          // Chat
+          btnNewChat: "+ Nueva Conversación",
+          btnClearChat: "Limpiar Chat",
+          chatPlaceholder: "Escribe tu pregunta...",
+          recentConvs: "🕒 CONVERSACIONES RECIENTES",
+          currentConversation: "💬 Conversación actual",
+          profileName: "José Luis Domínguez",
+          profileLabelOnline: "online",
+          chatHeaderTitle: "Duma Agent",
+          chatHeaderOnline: "Online",
+          // Welcome Agent Dashboard
+          welcomeSubtitle: "Tu analista de piso con Inteligencia Artificial. Monitorea OEE, paros y variables críticas en tiempo real.",
+          catOee: "📊 OEE & RENDIMIENTO",
+          catStops: "🚨 PAROS & PARETO",
+          catSensors: "⚙️ SENSORES & VARIABLES",
+          sugOeeQ: "¿Cuál es el estado actual de la planta?",
+          sugOeeA: "Dame el estado actual de la planta: OEE, disponibilidad y producción.",
+          sugOeeQ2: "OEE de ayer por turnos",
+          sugOeeA2: "Dame el OEE de ayer desglosado por turnos.",
+          sugStopsQ: "Pareto 80/20 de los paros de ayer",
+          sugStopsA: "Generar un análisis Pareto (80/20) de las fallas de ayer.",
+          sugStopsQ2: "Pérdida de producción hoy",
+          sugStopsA2: "¿Cuál fue la pérdida de producción estimada hoy por paros no programados?",
+          sugSensorsQ: "Sensores fuera de rango hoy",
+          sugSensorsA: "Analiza qué variables de control o sensores estuvieron fuera de rango hoy.",
+          sugSensorsQ2: "Correlación Chiller vs paros",
+          sugSensorsA2: "¿Existe alguna correlación entre la temperatura del Chiller y los paros registrados hoy?",
+          connectingStatus: "Estableciendo conexión segura con el Agente...",
+          connectedStatus: "Conectado en línea",
+          // Estados dinámicos
+          generating: "Generando...",
+          analyzing: "Analizando...",
+          consulting: "Consultando...",
+          analyzingIA: "Generando Análisis IA...",
+          noData: "No hay datos de snapshot.",
+          noDataRange: "No hay datos para ese periodo/turno.",
+          selectDates: "Selecciona ambas fechas.",
+          // KPI sublabels OEE RT
+          oeeOk: "Clase Mundial ✓",
+          oeeWarn: "Aceptable — mejora posible",
+          oeeHigh: "Por debajo del estándar",
+          oeeCrit: "Crítico — intervención urgente",
+          availOk: "Disponibilidad óptima",
+          availWarn: "Pérdida leve por paros",
+          availHigh: "Paros frecuentes detectados",
+          availCrit: "Disponibilidad crítica",
+          perfOk: "Ritmo nominal alcanzado",
+          perfWarn: "Micro-paros presentes",
+          perfHigh: "Velocidad reducida",
+          perfCrit: "Bajo rendimiento operativo",
+          qualOk: "Calidad excelente",
+          qualWarn: "Descarte mínimo tolerable",
+          qualHigh: "Revisión de proceso necesaria",
+          qualCrit: "Alta tasa de rechazo",
+          // Confirmaciones
+          newChatConfirm: "¿Deseas iniciar una nueva conversación?",
+          // LABEL_OEE_RT en idioma
+          LABEL_RT: {
+            LineName: "Línea",
+            SnapshotAtLocal: "Snapshot (hora local)",
+            OEE: "OEE (%)",
+            Availability: "Disponibilidad (%)",
+            Performance: "Desempeño (%)",
+            "Producto Conforme": "Producto Conforme (%)",
+            StatusCode: "Estatus",
+            StatusTimeMin: "Tiempo en estatus (min)",
+            NaturalTimeMin: "Tiempo natural (min)",
+            ProductiveTimeMin: "Tiempo productivo (min)",
+            ScheduledStopageMin: "Paros programados (Duración)",
+            UnscheduledStopageMin: "Paros no programados (Duración)",
+            ParosNoProgramadosCont: "Paros no programados (Eventos)",
+            ParosProgramadosCont: "Paros programados (Eventos)",
+            CurrentRate: "Velocidad real (kg/h)",
+            ExpectedRate: "Velocidad esperada (kg/h)",
+            CurrentShiftProduction: "Producción real turno (kg)",
+            ExpectedShiftProduction: "Producción esperada turno (kg)",
+            CurrentProduction: "Producción real día (kg)",
+            ExpectedDayProduction: "Producción esperada día (kg)"
+          },
+          // LABEL_OEE_DAY en idioma
+          LABEL_DAY: {
+            "Fecha": "Fecha",
+            "Turno": "Turno",
+            "OEE": "OEE (%)",
+            "Disponibilidad": "Disponibilidad (%)",
+            "Desempeno": "Desempeño (%)",
+            "Producto Conforme": "Producto Conforme (%)",
+            "Producción Real (Kg)": "Producción Real (Kg)",
+            "Producción Esperada (Kg)": "Producción Esperada (Kg)",
+            "Paros no programados (Duración)": "Paros no programados (Duración)",
+            "Paros No Prog (Eventos)": "Paros No Prog (Eventos)",
+            "Paros programados (Duración)": "Paros programados (Duración)",
+            "Paros Prog (Eventos)": "Paros Prog (Eventos)"
+          }
+        },
+        en: {
+          // Sidebar
+          menuCV: "Control Variables",
+          menuOEE: "OEE (Efficiency)",
+          menuAgent: "Duma AI Agent",
+          menuHint: "Complete analysis of critical variables with AI and advanced visualizations",
+          // Topbar
+          btnClear: "Clear View",
+          statusReady: "Ready",
+          statusBusy: "Processing...",
+          statusError: "Error",
+          // Títulos secciones (showView)
+          titleCV: "Control Variables",
+          subtitleCV: "Full day (3 shifts) — critical variables",
+          titleOEE: "OEE (Efficiency)",
+          subtitleOEE: "Global and per-shift performance",
+          titleAgent: "Duma AI Agent",
+          subtitleAgent: "Operational Assistant with Artificial Intelligence",
+          // Sección CV
+          cvCardTitle: "Control Variables (Full Day)",
+          cvCardSub: "Select a date range to generate critical variable charts with AI analysis",
+          cvLabelRange: "Date Range:",
+          btnGenCV: "Generate Analysis",
+          btnDlCvPdf: "📄 Download PDF",
+          btnAiCV: "🤖 Duma Analysis",
+          cvAiTitle: "Analysis & Recommendations (AI)",
+          cvInfoEmpty: "Please enter a date range.",
+          lblCvKpiHealth: "Global Process Health",
+          cvKpiHealthSub: "weighted average",
+          lblCvKpiCrit: "Critical Variables",
+          cvKpiCritSub: "with ≥75% out of range",
+          lblCvKpiWorst: "Most Problematic Equipment",
+          cvKpiWorstSub: "highest average deviation",
+          lblCvKpiAvg: "Average % Out of Range",
+          cvKpiAvgSub: "across all variables",
+          lblCvKpiOk: "Variables in Range",
+          cvKpiOkSub: "0% out of range today",
+          cvSummaryTitle: "Metrics by Variable",
+          thCvVar: "Variable",
+          thCvDevice: "Equipment",
+          thCvReads: "Readings",
+          thCvOut: "Out of range readings",
+          thCvPct: "% Out of range",
+          thCvMin: "Min reading",
+          thCvMax: "Max reading",
+          healthStable: "Stable process ✓",
+          healthAttention: "Attention recommended",
+          healthIntervention: "Intervention needed",
+          healthCritical: "Critical state — act now",
+          critNone: "None in alert 🎉",
+          critSub: "with ≥75% out of range",
+          worstSub: "% average deviation",
+          avgSub: "across {N} analyzed variables",
+          okAll: "All in range! 🎉",
+          okNone: "None within range",
+          okSome: "operating within limits",
+          // Sección OEE
+          tabRT: "Real Time",
+          tabHist: "Historical",
+          oeeRtTitle: "OEE Real Time",
+          oeeRtSub: "Automatically updated snapshot of the production line",
+          btnFetchOeeRT: "🔄 Refresh Now",
+          btnDlOeeRtPdf: "📄 Download PDF",
+          btnAiOeeRT: "🤖 Duma Analysis",
+          oeeRtAiTitle: "Analysis & Recommendations (AI)",
+          oeeHistTitle: "OEE Global / Shift",
+          oeeHistSub: "Period analysis. Select a date range to view consolidated performance.",
+          oeeLabelFechas: "Dates:",
+          oeeLabelTurno: "Shift:",
+          btnFetchOeeDay: "Query Range",
+          btnDlOeeDayPdf: "📄 Download PDF",
+          btnAiOeeDay: "🤖 Duma Analysis",
+          oeeDayAiTitle: "Analysis & Recommendations (AI)",
+          lblOeeRtKpiOee: "OEE",
+          lblOeeRtKpiAvail: "Availability",
+          lblOeeRtKpiPerf: "Performance",
+          lblOeeRtKpiQual: "Conforming Product",
+          lblOeeKpiOee: "Global OEE",
+          lblOeeKpiAvail: "Availability",
+          lblOeeKpiPerf: "Performance",
+          lblOeeKpiQual: "Quality",
+          oeeRtTableTitle: "Detail (Snapshot)",
+          oeeHistTableTitle: "Detail by Shift",
+          // Chat
+          btnNewChat: "+ New Conversation",
+          btnClearChat: "Clear Chat",
+          chatPlaceholder: "Type your question...",
+          recentConvs: "🕒 RECENT CONVERSATIONS",
+          currentConversation: "💬 Current conversation",
+          profileName: "José Luis Domínguez",
+          profileLabelOnline: "online",
+          chatHeaderTitle: "Duma Agent",
+          chatHeaderOnline: "Online",
+          // Welcome Agent Dashboard
+          welcomeSubtitle: "Your shop floor analyst with Artificial Intelligence. Monitor OEE, stops and critical variables in real time.",
+          catOee: "📊 OEE & PERFORMANCE",
+          catStops: "🚨 STOPS & PARETO",
+          catSensors: "⚙️ SENSORS & VARIABLES",
+          sugOeeQ: "What is the current status of the plant?",
+          sugOeeA: "Give me the current state of the plant: OEE, availability and production.",
+          sugOeeQ2: "Yesterday's OEE by shifts",
+          sugOeeA2: "Give me yesterday's OEE broken down by shifts.",
+          sugStopsQ: "Yesterday's stops Pareto 80/20",
+          sugStopsA: "Generate a Pareto analysis (80/20) of yesterday's failures.",
+          sugStopsQ2: "Today's production loss",
+          sugStopsA2: "What was the estimated production loss today due to unscheduled stops?",
+          sugSensorsQ: "Sensors out of range today",
+          sugSensorsA: "Analyze which control variables or sensors were out of range today.",
+          sugSensorsQ2: "Correlation Chiller vs stops",
+          sugSensorsA2: "Is there any correlation between the Chiller temperature and the stops recorded today?",
+          connectingStatus: "Establishing secure connection with the Agent...",
+          connectedStatus: "Connected online",
+          // Estados dinámicos
+          generating: "Generating...",
+          analyzing: "Analyzing...",
+          consulting: "Consulting...",
+          analyzingIA: "Generating AI Analysis...",
+          noData: "No snapshot data available.",
+          noDataRange: "No data available for that period/shift.",
+          selectDates: "Please select both dates.",
+          // KPI sublabels OEE RT
+          oeeOk: "World Class ✓",
+          oeeWarn: "Acceptable — room for improvement",
+          oeeHigh: "Below standard",
+          oeeCrit: "Critical — urgent action required",
+          availOk: "Optimal availability",
+          availWarn: "Minor loss due to stops",
+          availHigh: "Frequent stops detected",
+          availCrit: "Critical availability",
+          perfOk: "Nominal rate achieved",
+          perfWarn: "Micro-stops present",
+          perfHigh: "Reduced speed",
+          perfCrit: "Low operational performance",
+          qualOk: "Excellent quality",
+          qualWarn: "Minimum acceptable scrap",
+          qualHigh: "Process review needed",
+          qualCrit: "High rejection rate",
+          newChatConfirm: "Do you want to start a new conversation?",
+          // LABEL_OEE_RT en idioma
+          LABEL_RT: {
+            LineName: "Line",
+            SnapshotAtLocal: "Snapshot (local time)",
+            OEE: "OEE (%)",
+            Availability: "Availability (%)",
+            Performance: "Performance (%)",
+            "Producto Conforme": "Conforming Product (%)",
+            StatusCode: "Status",
+            StatusTimeMin: "Status time (min)",
+            NaturalTimeMin: "Natural time (min)",
+            ProductiveTimeMin: "Productive time (min)",
+            ScheduledStopageMin: "Scheduled stops (Duration)",
+            UnscheduledStopageMin: "Unscheduled stops (Duration)",
+            ParosNoProgramadosCont: "Unscheduled stops (Events)",
+            ParosProgramadosCont: "Scheduled stops (Events)",
+            CurrentRate: "Actual speed (kg/h)",
+            ExpectedRate: "Expected speed (kg/h)",
+            CurrentShiftProduction: "Actual shift production (kg)",
+            ExpectedShiftProduction: "Expected shift production (kg)",
+            CurrentProduction: "Actual day production (kg)",
+            ExpectedDayProduction: "Expected day production (kg)"
+          },
+          // LABEL_OEE_DAY en idioma
+          LABEL_DAY: {
+            "Fecha": "Date",
+            "Turno": "Shift",
+            "OEE": "OEE (%)",
+            "Disponibilidad": "Availability (%)",
+            "Desempeno": "Performance (%)",
+            "Producto Conforme": "Conforming Product (%)",
+            "Producción Real (Kg)": "Actual Production (kg)",
+            "Producción Esperada (Kg)": "Expected Production (kg)",
+            "Paros no programados (Duración)": "Unscheduled Stops (Duration)",
+            "Paros No Prog (Eventos)": "Unscheduled Stops (Events)",
+            "Paros programados (Duración)": "Scheduled Stops (Duration)",
+            "Paros Prog (Eventos)": "Scheduled Stops (Events)"
+          }
+        }
+      };
+
+      // Estado de idioma actual
+      let currentLang = localStorage.getItem("dumaLang") || "es";
+      let currentView = "CV";
+
+      // Helper de traducción
+      function T(key) {
+        return (STRINGS[currentLang] && STRINGS[currentLang][key] !== undefined)
+          ? STRINGS[currentLang][key]
+          : (STRINGS["es"][key] || key);
+      }
+
+      // Aplica el idioma seleccionado a toda la UI
+      function applyLang(lang) {
+        currentLang = lang;
+        localStorage.setItem("dumaLang", lang);
+
+        // Botón toggle
+        const langLabel = el("langLabel");
+        if (langLabel) langLabel.textContent = lang === "es" ? "🌐 Eng" : "🌐 Esp";
+
+        // Sidebar
+        const mlCV = el("menuLabelCV"); if (mlCV) mlCV.textContent = T("menuCV");
+        const mlOEE = el("menuLabelOEE"); if (mlOEE) mlOEE.textContent = T("menuOEE");
+        const mlAgent = el("menuLabelAgent"); if (mlAgent) mlAgent.textContent = T("menuAgent");
+        const mHint = el("menuHint"); if (mHint) mHint.textContent = T("menuHint");
+
+        // Topbar buttons
+        const bClear = el("btnClear"); if (bClear) bClear.textContent = T("btnClear");
+
+        // Sección CV
+        const cvCT = el("cvCardTitle"); if (cvCT) cvCT.textContent = T("cvCardTitle");
+        const cvCS = el("cvCardSub"); if (cvCS) cvCS.textContent = T("cvCardSub");
+        const cvLR = el("cvLabelRange"); if (cvLR) cvLR.textContent = T("cvLabelRange");
+        const bGenCV = el("btnGenCV"); if (bGenCV && !bGenCV.classList.contains("busy")) bGenCV.textContent = T("btnGenCV");
+        const bDlCvPdf = el("btnDlCvPdf"); if (bDlCvPdf) bDlCvPdf.textContent = T("btnDlCvPdf");
+        const bAiCV = el("btnAiCV"); if (bAiCV && !bAiCV.classList.contains("busy")) bAiCV.textContent = T("btnAiCV");
+        const cvAiT = el("cvAiTitle"); if (cvAiT) cvAiT.textContent = T("cvAiTitle");
+
+        // CV KPI Labels
+        const cvKpiH = el("lblCvKpiHealth"); if (cvKpiH) cvKpiH.textContent = T("lblCvKpiHealth");
+        const cvKpiHS = el("cvKpiHealthSub"); if (cvKpiHS && (cvKpiHS.textContent === "promedio ponderado" || cvKpiHS.textContent === "weighted average")) cvKpiHS.textContent = T("cvKpiHealthSub");
+        const cvKpiC = el("lblCvKpiCrit"); if (cvKpiC) cvKpiC.textContent = T("lblCvKpiCrit");
+        const cvKpiCS = el("cvKpiCritSub"); if (cvKpiCS && (cvKpiCS.textContent === "con ≥75% fuera de rango" || cvKpiCS.textContent === "with ≥75% out of range")) cvKpiCS.textContent = T("cvKpiCritSub");
+        const cvKpiW = el("lblCvKpiWorst"); if (cvKpiW) cvKpiW.textContent = T("lblCvKpiWorst");
+        const cvKpiWS = el("cvKpiWorstSub"); if (cvKpiWS) cvKpiWS.textContent = T("cvKpiWorstSub");
+        const cvKpiA = el("lblCvKpiAvg"); if (cvKpiA) cvKpiA.textContent = T("lblCvKpiAvg");
+        const cvKpiAS = el("cvKpiAvgSub"); if (cvKpiAS) cvKpiAS.textContent = T("cvKpiAvgSub");
+        const cvKpiO = el("lblCvKpiOk"); if (cvKpiO) cvKpiO.textContent = T("lblCvKpiOk");
+        const cvKpiOS = el("cvKpiOkSub"); if (cvKpiOS && (cvKpiOS.textContent === "0% fuera de rango hoy" || cvKpiOS.textContent === "0% out of range today")) cvKpiOS.textContent = T("cvKpiOkSub");
+
+        // CV Table Headers
+        const cvSumTitle = el("cvSummaryTitle"); if (cvSumTitle) cvSumTitle.textContent = T("cvSummaryTitle");
+        const thCvV = el("thCvVar"); if (thCvV) thCvV.textContent = T("thCvVar");
+        const thCvD = el("thCvDevice"); if (thCvD) thCvD.textContent = T("thCvDevice");
+        const thCvR = el("thCvReads"); if (thCvR) thCvR.textContent = T("thCvReads");
+        const thCvO = el("thCvOut"); if (thCvO) thCvO.textContent = T("thCvOut");
+        const thCvP = el("thCvPct"); if (thCvP) thCvP.textContent = T("thCvPct");
+        const thCvMi = el("thCvMin"); if (thCvMi) thCvMi.textContent = T("thCvMin");
+        const thCvMa = el("thCvMax"); if (thCvMa) thCvMa.textContent = T("thCvMax");
+
+        // Sección OEE tabs
+        const tRT = el("tabBtnOeeRT"); if (tRT) tRT.textContent = T("tabRT");
+        const tHist = el("tabBtnOeeHist"); if (tHist) tHist.textContent = T("tabHist");
+
+        // OEE Realtime
+        const oeeRtT = el("oeeRtTitle"); if (oeeRtT) oeeRtT.textContent = T("oeeRtTitle");
+        const oeeRtS = el("oeeRtSub"); if (oeeRtS) oeeRtS.textContent = T("oeeRtSub");
+        const bFetchRT = el("btnFetchOeeRT"); if (bFetchRT && !bFetchRT.classList.contains("busy")) bFetchRT.textContent = T("btnFetchOeeRT");
+        const bDlRT = el("btnDlOeeRtPdf"); if (bDlRT) bDlRT.textContent = T("btnDlOeeRtPdf");
+        const bAiRT = el("btnAiOeeRT"); if (bAiRT && !bAiRT.classList.contains("busy")) bAiRT.textContent = T("btnAiOeeRT");
+
+        // OEE Histórico
+        const oeeHT = el("oeeHistTitle"); if (oeeHT) oeeHT.textContent = T("oeeHistTitle");
+        const oeeHS = el("oeeHistSub"); if (oeeHS) oeeHS.textContent = T("oeeHistSub");
+        const oeeFL = el("oeeLabelFechas"); if (oeeFL) oeeFL.textContent = T("oeeLabelFechas");
+        const oeeTL = el("oeeLabelTurno"); if (oeeTL) oeeTL.textContent = T("oeeLabelTurno");
+        const bFetchDay = el("btnFetchOeeDay"); if (bFetchDay && !bFetchDay.classList.contains("busy")) bFetchDay.textContent = T("btnFetchOeeDay");
+        const bDlDay = el("btnDlOeeDayPdf"); if (bDlDay) bDlDay.textContent = T("btnDlOeeDayPdf");
+        const bAiDay = el("btnAiOeeDay"); if (bAiDay && !bAiDay.classList.contains("busy")) bAiDay.textContent = T("btnAiOeeDay");
+
+        // OEE Labels & Titles
+        const oeeRtTitle = el("lblOeeRtKpiOee"); if (oeeRtTitle) oeeRtTitle.textContent = T("lblOeeRtKpiOee");
+        const oeeRtAvail = el("lblOeeRtKpiAvail"); if (oeeRtAvail) oeeRtAvail.textContent = T("lblOeeRtKpiAvail");
+        const oeeRtPerf = el("lblOeeRtKpiPerf"); if (oeeRtPerf) oeeRtPerf.textContent = T("lblOeeRtKpiPerf");
+        const oeeRtQual = el("lblOeeRtKpiQual"); if (oeeRtQual) oeeRtQual.textContent = T("lblOeeRtKpiQual");
+
+        const oeeKpiOee = el("lblOeeKpiOee"); if (oeeKpiOee) oeeKpiOee.textContent = T("lblOeeKpiOee");
+        const oeeKpiAvail = el("lblOeeKpiAvail"); if (oeeKpiAvail) oeeKpiAvail.textContent = T("lblOeeKpiAvail");
+        const oeeKpiPerf = el("lblOeeKpiPerf"); if (oeeKpiPerf) oeeKpiPerf.textContent = T("lblOeeKpiPerf");
+        const oeeKpiQual = el("lblOeeKpiQual"); if (oeeKpiQual) oeeKpiQual.textContent = T("lblOeeKpiQual");
+
+        const oeeRtTableTitle = el("oeeRtTableTitle"); if (oeeRtTableTitle) oeeRtTableTitle.textContent = T("oeeRtTableTitle");
+        const oeeHistTableTitle = el("oeeHistTableTitle"); if (oeeHistTableTitle) oeeHistTableTitle.textContent = T("oeeHistTableTitle");
+
+        // Chat placeholder & buttons
+        const chatInp = el("chatInput"); if (chatInp) chatInp.placeholder = T("chatPlaceholder");
+        const bNewChat = el("btnNewChat"); if (bNewChat) bNewChat.textContent = T("btnNewChat");
+        const bClearChat = el("chatClearBtn"); if (bClearChat) bClearChat.textContent = T("btnClearChat");
+
+        // Chat Sidebar & Header
+        const recentHeader = el("recentConversationsHeader"); if (recentHeader) recentHeader.textContent = T("recentConvs");
+        const currConvItem = el("currentConversationItem"); if (currConvItem && (currConvItem.textContent.includes("Conversación actual") || currConvItem.textContent.includes("Current conversation"))) currConvItem.textContent = T("currentConversation");
+        const chatHTitle = el("chatHeaderTitle"); if (chatHTitle) chatHTitle.textContent = T("chatHeaderTitle");
+        const chatHOnline = el("chatHeaderOnline"); if (chatHOnline) chatHOnline.textContent = T("chatHeaderOnline");
+        const profOnline = el("profileLabelOnline"); if (profOnline) profOnline.textContent = T("profileLabelOnline");
+
+        // Redraw welcome screens if agent chat is open
+        if (typeof chatWidget !== 'undefined' && chatWidget.isChatInitialized) {
+          const welcomeDashboard = el("chatWelcomeDashboard");
+          if (welcomeDashboard) {
+            chatWidget.renderWelcomeDashboard();
+            chatWidget.loadDynamicChips(100);
+          }
+        }
+
+        // Actualizar label objects para tablas OEE
+        Object.assign(LABEL_OEE_RT, T("LABEL_RT"));
+        Object.assign(LABEL_OEE_DAY, T("LABEL_DAY"));
+
+        // Re-render dynamic elements if data is loaded
+        if (typeof lastOeeRtData !== 'undefined' && lastOeeRtData) {
+          renderOeeRtKpis(lastOeeRtData);
+          buildTable(el("oeeRtHead"), el("oeeRtBody"), lastOeeRtData.columns, lastOeeRtData.rows, LABEL_OEE_RT);
+        }
+        if (typeof lastOeeDayData !== 'undefined' && lastOeeDayData) {
+          renderOeeDayKpis(lastOeeDayData);
+          renderOEEDayTable(lastOeeDayData.columns, lastOeeDayData.rows);
+        }
+        if (typeof lastCvData !== 'undefined' && lastCvData) {
+          renderCVSummary(lastCvData.summary);
+          renderCVKpis(lastCvData.summary);
+        }
+
+        // Re-render topbar title/subtitle con el idioma nuevo
+        showView(currentView);
+      }
 
       /**
      * Recolecta capturas PNG Base64 de todos los iframes (Plotly) y canvases (Chart.js)
@@ -3746,11 +4474,21 @@
             } else if (normCol === "statuscode" || normCol === "estatus") {
               let icon = "⚙️";
               let color = "var(--text)";
-              if (val.includes("Disponible") || val === "AV") { icon = "🟢"; color = "#10b981"; }
-              else if (val.includes("No Programado") || val === "US") { icon = "🔴"; color = "#ef4444"; }
-              else if (val.includes("Programado") || val === "SS") { icon = "🟡"; color = "#eab308"; }
-              else if (val.includes("Baja") || val === "LP") { icon = "⚠️"; color = "#f97316"; }
-              td.innerHTML = `<span style="font-weight: 700; color: ${color};">${icon} ${val}</span>`;
+              let displayVal = val;
+              if (val.includes("Disponible") || val === "AV") { 
+                icon = "🟢"; color = "#10b981"; 
+                displayVal = currentLang === 'en' ? "Available" : "Disponible";
+              } else if (val.includes("No Programado") || val === "US") { 
+                icon = "🔴"; color = "#ef4444"; 
+                displayVal = currentLang === 'en' ? "Unscheduled Stop" : "Paro No Programado";
+              } else if (val.includes("Programado") || val === "SS") { 
+                icon = "🟡"; color = "#eab308"; 
+                displayVal = currentLang === 'en' ? "Scheduled Stop" : "Paro Programado";
+              } else if (val.includes("Baja") || val === "LP") { 
+                icon = "⚠️"; color = "#f97316"; 
+                displayVal = currentLang === 'en' ? "Low Speed" : "Baja Velocidad";
+              }
+              td.innerHTML = `<span style="font-weight: 700; color: ${color};">${icon} ${displayVal}</span>`;
             } else if (normCol === "linename" || normCol === "línea") {
               td.innerHTML = `<span style="font-weight: 600;">🏭 ${val}</span>`;
             } else if (normCol === "snapshotatlocal" || normCol === "fecha") {
@@ -3812,6 +4550,7 @@
           el("view" + v).style.display = (v === name) ? "" : "none";
         }
 
+        currentView = name;
         el("btnMenuCV").classList.toggle("active", name === "CV");
         el("btnMenuOEE").classList.toggle("active", name === "OEE");
         el("btnMenuAgent").classList.toggle("active", name === "Agent");
@@ -3829,14 +4568,14 @@
         if (el("btnClear")) el("btnClear").style.display = isAgent ? "none" : "";
 
         if (name === "CV") {
-          el("topTitle").textContent = "Variables de Control";
-          el("topSubtitle").textContent = "Día completo (3 turnos) — variables críticas";
+          el("topTitle").textContent = T("titleCV");
+          el("topSubtitle").textContent = T("subtitleCV");
         } else if (name === "OEE") {
-          el("topTitle").textContent = "OEE (Eficiencia)";
-          el("topSubtitle").textContent = "Desempeño global y por turno";
+          el("topTitle").textContent = T("titleOEE");
+          el("topSubtitle").textContent = T("subtitleOEE");
         } else if (name === "Agent") {
-          el("topTitle").textContent = "Duma AI Agent";
-          el("topSubtitle").textContent = "Asistente Operativo con Inteligencia Artificial";
+          el("topTitle").textContent = T("titleAgent");
+          el("topSubtitle").textContent = T("subtitleAgent");
         }
       }
 
@@ -3909,10 +4648,10 @@
         // Emoji + color based on severity
         function severityBadge(pct) {
           const p = parseFloat(pct) || 0;
-          if (p >= 75)  return { emoji: "🔴", cls: "sev-critical", label: "Crítico" };
-          if (p >= 30)  return { emoji: "🟠", cls: "sev-high",     label: "Alto" };
-          if (p >= 10)  return { emoji: "🟡", cls: "sev-medium",   label: "Medio" };
-          if (p > 0)    return { emoji: "🟢", cls: "sev-low",      label: "Bajo" };
+          if (p >= 75)  return { emoji: "🔴", cls: "sev-critical", label: currentLang === 'en' ? "Critical" : "Crítico" };
+          if (p >= 30)  return { emoji: "🟠", cls: "sev-high",     label: currentLang === 'en' ? "High" : "Alto" };
+          if (p >= 10)  return { emoji: "🟡", cls: "sev-medium",   label: currentLang === 'en' ? "Medium" : "Medio" };
+          if (p > 0)    return { emoji: "🟢", cls: "sev-low",      label: currentLang === 'en' ? "Low" : "Bajo" };
           return           { emoji: "✅", cls: "sev-ok",       label: "OK" };
         }
 
@@ -4014,10 +4753,10 @@
         const hEmoji = { ok:"🛡️", warn:"⚠️", high:"🔶", crit:"🚨" }[hState];
         el("cvKpiHealthIcon").textContent = hEmoji;
         el("cvKpiHealthVal").textContent = health.toFixed(1) + "%";
-        el("cvKpiHealthSub").textContent = health >= 80 ? "Proceso estable ✓"
-                                         : health >= 60 ? "Atención recomendada"
-                                         : health >= 40 ? "Intervención necesaria"
-                                         : "Estado crítico — actuar ya";
+        el("cvKpiHealthSub").textContent = health >= 80 ? T("healthStable")
+                                         : health >= 60 ? T("healthAttention")
+                                         : health >= 40 ? T("healthIntervention")
+                                         : T("healthCritical");
         setCardState(el("cvKpiHealth"), hState);
         animateBar(el("cvKpiHealthBar"), health, kpiBarColor(hState));
 
@@ -4026,7 +4765,7 @@
         const critCount = critVars.length;
         const cState = critCount === 0 ? "ok" : critCount <= 1 ? "warn" : critCount <= 3 ? "high" : "crit";
         el("cvKpiCritVal").textContent = critCount + " / " + rows.length;
-        el("cvKpiCritSub").textContent = critCount === 0 ? "Ninguna en alerta 🎉" : "con ≥75% fuera de rango";
+        el("cvKpiCritSub").textContent = critCount === 0 ? T("critNone") : T("critSub");
         setCardState(el("cvKpiCritCard"), cState);
         const badgesEl = el("cvKpiCritBadges");
         badgesEl.innerHTML = critVars.slice(0, 4).map(r =>
@@ -4048,13 +4787,13 @@
         const wState = kpiState(worstPct);
         el("cvKpiWorstIcon").textContent = cvDeviceIcon(worstDevice);
         el("cvKpiWorstVal").textContent = worstDevice;
-        el("cvKpiWorstSub").textContent = worstPct.toFixed(1) + "% desviación promedio";
+        el("cvKpiWorstSub").textContent = worstPct.toFixed(1) + T("worstSub");
         setCardState(el("cvKpiWorstCard"), wState);
 
         // --- KPI 4: Promedio % Fuera de Rango ---
         const aState = kpiState(avgOut);
         el("cvKpiAvgVal").textContent = avgOut.toFixed(2) + "%";
-        el("cvKpiAvgSub").textContent = "entre " + rows.length + " variables analizadas";
+        el("cvKpiAvgSub").textContent = T("avgSub").replace("{N}", rows.length);
         setCardState(el("cvKpiAvgCard"), aState);
         animateBar(el("cvKpiAvgBar"), avgOut, kpiBarColor(aState));
 
@@ -4066,9 +4805,9 @@
         el("cvKpiOkIcon").textContent = okCount === rows.length ? "✅" : okCount > 0 ? "🟡" : "❌";
         el("cvKpiOkVal").textContent = okCount + " / " + rows.length;
         el("cvKpiOkSub").textContent = okCount === rows.length
-          ? "¡Todas en rango! 🎉"
-          : okCount === 0 ? "Ninguna dentro del rango"
-          : "operando dentro de límites";
+          ? T("okAll")
+          : okCount === 0 ? T("okNone")
+          : T("okSome");
         setCardState(el("cvKpiOkCard"), oState);
       }
 
@@ -4154,7 +4893,7 @@
         }
 
         if (!start_day || !end_day) {
-          el("cvInfo").textContent = "Ingresa un rango de fecha.";
+          el("cvInfo").textContent = T("cvInfoEmpty");
           return;
         }
 
@@ -4167,14 +4906,14 @@
         el("btnDlCvPdf").style.display = "none";
         clearCVKpis();
 
-        setStatus("busy", "Generando...");
+        setStatus("busy", T("generating"));
         setBtnBusy("btnGenCV", true);
 
         try {
           const res = await fetch("api/cv/day/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ start_day, end_day, skip_ai: true })
+            body: JSON.stringify({ start_day, end_day, skip_ai: true, lang: currentLang })
           });
           const data = await res.json();
 
@@ -4204,12 +4943,12 @@
 
           el("btnAiCV").style.display = "";
           el("btnDlCvPdf").style.display = "";
-          setBtnBusy("btnAiCV", false, "🤖 Análisis Duma");
+          setBtnBusy("btnAiCV", false, T("btnAiCV"));
 
-          setStatus("ok", "Listo");
+          setStatus("ok", T("statusReady"));
         } catch (err) {
           el("cvInfo").textContent = "⚠️ " + (err.message || err);
-          setStatus("err", "Error");
+          setStatus("err", T("statusError"));
         } finally {
           setBtnBusy("btnGenCV", false);
         }
@@ -4217,13 +4956,13 @@
 
       async function generateCvAI() {
         if (!lastCvStartDay || !lastCvEndDay) return;
-        setStatus("busy", "Generando Análisis IA...");
-        setBtnBusy("btnAiCV", true, "Analizando...");
+        setStatus("busy", T("analyzingIA"));
+        setBtnBusy("btnAiCV", true, T("analyzing"));
         try {
           const res = await fetch("api/cv/day/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ start_day: lastCvStartDay, end_day: lastCvEndDay, skip_ai: false })
+            body: JSON.stringify({ start_day: lastCvStartDay, end_day: lastCvEndDay, skip_ai: false, lang: currentLang })
           });
           const data = await res.json();
           if (!res.ok) {
@@ -4235,12 +4974,12 @@
             el("cvAICard").style.display = "";
             el("cvAICard").scrollIntoView({ behavior: "smooth" });
           }
-          setStatus("ok", "Listo");
+          setStatus("ok", T("statusReady"));
         } catch (err) {
           el("cvInfo").textContent = "⚠️ " + (err.message || err);
-          setStatus("err", "Error");
+          setStatus("err", T("statusError"));
         } finally {
-          setBtnBusy("btnAiCV", false, "🤖 Análisis Duma");
+          setBtnBusy("btnAiCV", false, T("btnAiCV"));
         }
       }
 
@@ -4280,6 +5019,103 @@
         }
       }
 
+      function renderOeeRtKpis(data) {
+        if (!data || !data.rows || data.rows.length === 0) return;
+        const rows = data.rows;
+        const cols = data.columns || [];
+        const first = rows[0] || [];
+        const idx = (name) => cols.findIndex(c => String(c).toLowerCase() === String(name).toLowerCase());
+
+        const iOee = idx("OEE");
+        const iAv = idx("Availability");
+        const iPe = idx("Performance");
+        const iQu = idx("Producto Conforme");
+        const iLine = idx("LineName");
+        const iSnap = idx("SnapshotAtLocal");
+
+        const oeeVal  = (iOee >= 0) ? parseFloat(first[iOee]) : 0;
+        const availVal = (iAv >= 0) ? parseFloat(first[iAv]) : 0;
+        const perfVal  = (iPe >= 0) ? parseFloat(first[iPe]) : 0;
+        const qualVal  = (iQu >= 0) ? parseFloat(first[iQu]) : 0;
+
+        el("kpiOee").textContent = (iOee >= 0) ? toPct(first[iOee]) : "—";
+        el("kpiAvail").textContent = (iAv >= 0) ? toPct(first[iAv]) : "—";
+        el("kpiPerf").textContent = (iPe >= 0) ? toPct(first[iPe]) : "—";
+        el("kpiQual").textContent = (iQu >= 0) ? toPct(first[iQu]) : "—";
+
+        const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
+        const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
+
+        // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
+        paintOeeKpi("oeeRtKpiOeeCard", "oeeRtKpiOeeIcon", "oeeRtKpiOeeBar", "oeeRtKpiOeeSub", oeeVal,
+          [65, 50, 35],
+          ["🏆", "🏭", "⚠️", "🚨"],
+          [(`${line} ${snap ? "— " + snap : ""}` || T("oeeOk")), T("oeeWarn"), T("oeeHigh"), T("oeeCrit")]
+        );
+        // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
+        paintOeeKpi("oeeRtKpiAvailCard", "oeeRtKpiAvailIcon", "oeeRtKpiAvailBar", "oeeRtKpiAvailSub", availVal,
+          [90, 75, 60],
+          ["✅", "⏱️", "⚠️", "🔴"],
+          [T("availOk"), T("availWarn"), T("availHigh"), T("availCrit")]
+        );
+        // Desempeño: ≥95 ok, ≥80 warn, ≥65 high, <65 crit
+        paintOeeKpi("oeeRtKpiPerfCard", "oeeRtKpiPerfIcon", "oeeRtKpiPerfBar", "oeeRtKpiPerfSub", perfVal,
+          [95, 80, 65],
+          ["⚡", "📈", "⚠️", "🐢"],
+          [T("perfOk"), T("perfWarn"), T("perfHigh"), T("perfCrit")]
+        );
+        // Calidad: ≥99 ok, ≥95 warn, ≥90 high, <90 crit
+        paintOeeKpi("oeeRtKpiQualCard", "oeeRtKpiQualIcon", "oeeRtKpiQualBar", "oeeRtKpiQualSub", qualVal,
+          [99, 95, 90],
+          ["✅", "🎯", "⚠️", "❌"],
+          [T("qualOk"), T("qualWarn"), T("qualHigh"), T("qualCrit")]
+        );
+
+        el("oeeRtKpis").style.display = "";
+      }
+
+      function renderOeeDayKpis(data) {
+        if (!data || !data.summary) return;
+        const summary = data.summary;
+
+        const oeeVal  = parseFloat(summary.OEE)          || 0;
+        const availVal = parseFloat(summary.Availability) || 0;
+        const perfVal  = parseFloat(summary.Performance)  || 0;
+        const qualVal  = parseFloat(summary.Quality)      || 0;
+
+        el("kpiRangeOee").textContent  = toPct(summary.OEE);
+        el("kpiRangeAvail").textContent = toPct(summary.Availability);
+        el("kpiRangePerf").textContent  = toPct(summary.Performance);
+        el("kpiRangeQual").textContent  = toPct(summary.Quality);
+
+        // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
+        paintOeeKpi("oeeKpiOeeCard","oeeKpiOeeIcon","oeeKpiOeeBar","oeeKpiOeeSub", oeeVal,
+          [65,50,35],
+          ["🏆","🏭","⚠️","🚨"],
+          [T("oeeOk"),T("oeeWarn"),T("oeeHigh"),T("oeeCrit")]
+        );
+        // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
+        paintOeeKpi("oeeKpiAvailCard","oeeKpiAvailIcon","oeeKpiAvailBar","oeeKpiAvailSub", availVal,
+          [90,75,60],
+          ["✅","⏱️","⚠️","🔴"],
+          [T("availOk"),T("availWarn"),T("availHigh"),T("availCrit")]
+        );
+        // Desempeño: ≥95 ok, ≥80 warn, ≥65 high, <65 crit
+        paintOeeKpi("oeeKpiPerfCard","oeeKpiPerfIcon","oeeKpiPerfBar","oeeKpiPerfSub", perfVal,
+          [95,80,65],
+          ["⚡","📈","⚠️","🐢"],
+          [T("perfOk"),T("perfWarn"),T("perfHigh"),T("perfCrit")]
+        );
+        // Calidad: ≥99 ok, ≥95 warn, ≥90 high, <90 crit
+        paintOeeKpi("oeeKpiQualCard","oeeKpiQualIcon","oeeKpiQualBar","oeeKpiQualSub", qualVal,
+          [99,95,90],
+          ["✅","🎯","⚠️","❌"],
+          [T("qualOk"),T("qualWarn"),T("qualHigh"),T("qualCrit")]
+        );
+
+        el("oeeDayKpis").style.display = "";
+      }
+
       // ===========================
       // OEE REALTIME
       // ===========================
@@ -4292,10 +5128,10 @@
         el("btnAiOeeRT").style.display = "none";
         el("btnDlOeeRtPdf").style.display = "none";
 
-        setStatus("busy", "Consultando...");
-        setBtnBusy("btnFetchOeeRT", true, "Consultando...");
+        setStatus("busy", T("consulting"));
+        setBtnBusy("btnFetchOeeRT", true, T("consulting"));
         try {
-          const res = await fetch("api/oee/realtime/?skip_ai=true");
+          const res = await fetch(`api/oee/realtime/?skip_ai=true&lang=${currentLang}`);
           const data = await res.json();
           if (!res.ok) {
             throw new Error(data.detail || data.error || "Error en /api/oee/realtime");
@@ -4305,60 +5141,12 @@
           const cols = data.columns || [];
 
           if (rows.length === 0) {
-            el("oeeRtInfo").textContent = "No hay datos de snapshot.";
-            setStatus("ok", "Listo");
+            el("oeeRtInfo").textContent = T("noData");
+            setStatus("ok", T("statusReady"));
             return;
           }
 
-          const first = rows[0] || [];
-          const idx = (name) => cols.findIndex(c => String(c).toLowerCase() === String(name).toLowerCase());
-
-          const iOee = idx("OEE");
-          const iAv = idx("Availability");
-          const iPe = idx("Performance");
-          const iQu = idx("Producto Conforme");
-          const iLine = idx("LineName");
-          const iSnap = idx("SnapshotAtLocal");
-
-          const oeeVal  = (iOee >= 0) ? parseFloat(first[iOee]) : 0;
-          const availVal = (iAv >= 0) ? parseFloat(first[iAv]) : 0;
-          const perfVal  = (iPe >= 0) ? parseFloat(first[iPe]) : 0;
-          const qualVal  = (iQu >= 0) ? parseFloat(first[iQu]) : 0;
-
-          el("kpiOee").textContent = (iOee >= 0) ? toPct(first[iOee]) : "—";
-          el("kpiAvail").textContent = (iAv >= 0) ? toPct(first[iAv]) : "—";
-          el("kpiPerf").textContent = (iPe >= 0) ? toPct(first[iPe]) : "—";
-          el("kpiQual").textContent = (iQu >= 0) ? toPct(first[iQu]) : "—";
-
-          const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
-          const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
-
-          // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
-          paintOeeKpi("oeeRtKpiOeeCard", "oeeRtKpiOeeIcon", "oeeRtKpiOeeBar", "oeeRtKpiOeeSub", oeeVal,
-            [65, 50, 35],
-            ["🏆", "🏭", "⚠️", "🚨"],
-            [(`${line} ${snap ? "— " + snap : ""}` || "Clase Mundial ✓"), "Aceptable — mejora posible", "Por debajo del estándar", "Crítico — intervención urgente"]
-          );
-          // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
-          paintOeeKpi("oeeRtKpiAvailCard", "oeeRtKpiAvailIcon", "oeeRtKpiAvailBar", "oeeRtKpiAvailSub", availVal,
-            [90, 75, 60],
-            ["✅", "⏱️", "⚠️", "🔴"],
-            ["Disponibilidad óptima", "Pérdida leve por paros", "Paros frecuentes detectados", "Disponibilidad crítica"]
-          );
-          // Desempeño: ≥95 ok, ≥80 warn, ≥65 high, <65 crit
-          paintOeeKpi("oeeRtKpiPerfCard", "oeeRtKpiPerfIcon", "oeeRtKpiPerfBar", "oeeRtKpiPerfSub", perfVal,
-            [95, 80, 65],
-            ["⚡", "📈", "⚠️", "🐢"],
-            ["Ritmo nominal alcanzado", "Micro-paros presentes", "Velocidad reducida", "Bajo rendimiento operativo"]
-          );
-          // Calidad: ≥99 ok, ≥95 warn, ≥90 high, <90 crit
-          paintOeeKpi("oeeRtKpiQualCard", "oeeRtKpiQualIcon", "oeeRtKpiQualBar", "oeeRtKpiQualSub", qualVal,
-            [99, 95, 90],
-            ["✅", "🎯", "⚠️", "❌"],
-            ["Calidad excelente", "Descarte mínimo tolerable", "Revisión de proceso necesaria", "Alta tasa de rechazo"]
-          );
-
-          el("oeeRtKpis").style.display = "";
+          renderOeeRtKpis(data);
 
           buildTable(el("oeeRtHead"), el("oeeRtBody"), cols, rows, LABEL_OEE_RT);
           el("oeeRtTableCard").style.display = "";
@@ -4376,12 +5164,12 @@
 
           el("btnAiOeeRT").style.display = "";
           el("btnDlOeeRtPdf").style.display = "";
-          setBtnBusy("btnAiOeeRT", false, "🤖 Análisis Duma");
+          setBtnBusy("btnAiOeeRT", false, T("btnAiOeeRT"));
 
-          setStatus("ok", "Listo");
+          setStatus("ok", T("statusReady"));
         } catch (err) {
           el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
-          setStatus("err", "Error");
+          setStatus("err", T("statusError"));
         } finally {
           setBtnBusy("btnFetchOeeRT", false);
         }
@@ -4421,10 +5209,10 @@
       }
 
       async function generateOeeRtAI() {
-        setStatus("busy", "Generando Análisis IA...");
-        setBtnBusy("btnAiOeeRT", true, "Analizando...");
+        setStatus("busy", T("analyzingIA"));
+        setBtnBusy("btnAiOeeRT", true, T("analyzing"));
         try {
-          const res = await fetch("api/oee/realtime/?skip_ai=false");
+          const res = await fetch(`api/oee/realtime/?skip_ai=false&lang=${currentLang}`);
           const data = await res.json();
           if (!res.ok) {
             throw new Error(data.detail || data.error || "Error generando IA");
@@ -4435,12 +5223,12 @@
             el("oeeRtAICard").style.display = "";
             el("oeeRtAICard").scrollIntoView({ behavior: "smooth" });
           }
-          setStatus("ok", "Listo");
+          setStatus("ok", T("statusReady"));
         } catch (err) {
           el("oeeRtInfo").textContent = "⚠️ " + (err.message || err);
-          setStatus("err", "Error");
+          setStatus("err", T("statusError"));
         } finally {
-          setBtnBusy("btnAiOeeRT", false, "🤖 Análisis Duma");
+          setBtnBusy("btnAiOeeRT", false, T("btnAiOeeRT"));
         }
       }
 
@@ -4570,6 +5358,64 @@
         });
       }
 
+      // Renderizado Premium de la tabla OEE Histórico
+      function renderOEEDayTable(cols, rows) {
+        const thead = el("oeeDayHead");
+        const tbody = el("oeeDayBody");
+        if (!thead || !tbody) return;
+        thead.innerHTML = "";
+        tbody.innerHTML = "";
+        
+        // Headers
+        cols.forEach(c => {
+          const th = document.createElement("th");
+          th.textContent = LABEL_OEE_DAY[c] || c;
+          thead.appendChild(th);
+        });
+        
+        // Rows
+        rows.forEach(r => {
+          const tr = document.createElement("tr");
+          cols.forEach((c, idx) => {
+            const td = document.createElement("td");
+            let val = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
+            
+            // Aplicar estilos premium segun la columna
+            if (c === "OEE" || c === "Disponibilidad" || c === "Desempeno" || c === "Producto Conforme") {
+              let pct = parseFloat(val);
+              if (!isNaN(pct)) {
+                let color = "#10b981"; // default ok
+                if (c === "OEE") { color = pct>=65?"#10b981":pct>=50?"#eab308":pct>=35?"#f97316":"#ef4444"; }
+                else if (c === "Disponibilidad") { color = pct>=90?"#10b981":pct>=75?"#eab308":pct>=60?"#f97316":"#ef4444"; }
+                else if (c === "Desempeno") { color = pct>=95?"#10b981":pct>=80?"#eab308":pct>=65?"#f97316":"#ef4444"; }
+                else if (c === "Producto Conforme") { color = pct>=99?"#10b981":pct>=95?"#eab308":pct>=90?"#f97316":"#ef4444"; }
+                td.innerHTML = `<span style="color: ${color}; font-weight: 800; font-size: 1.05em;">${val}</span>`;
+              } else { td.textContent = val; }
+            } else if (c === "Turno") {
+              let icon = "📡";
+              let displayVal = val;
+              if (val.includes("Primer")) {
+                icon = "☀️";
+                displayVal = currentLang === 'en' ? "1st Shift" : "Primer Turno";
+              } else if (val.includes("Segundo")) {
+                icon = "🌇";
+                displayVal = currentLang === 'en' ? "2nd Shift" : "Segundo Turno";
+              } else if (val.includes("Tercer")) {
+                icon = "🌙";
+                displayVal = currentLang === 'en' ? "3rd Shift" : "Tercer Turno";
+              }
+              td.innerHTML = `<span style="font-weight: 600;">${icon} ${displayVal}</span>`;
+            } else if (c === "Fecha") {
+              td.innerHTML = `<span style="color: var(--muted); font-family: monospace;">${val}</span>`;
+            } else {
+              td.textContent = val;
+            }
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+      }
+
       async function fetchOeeDay() {
         const rangeVal = (el("oeeRange").value || "").trim();
         let from = "", to = "";
@@ -4583,7 +5429,7 @@
         const shift = (el("oeeShift").value || "").trim();
 
         if (!from || !to) {
-          el("oeeDayInfo").textContent = "Selecciona ambas fechas.";
+          el("oeeDayInfo").textContent = T("selectDates");
           return;
         }
 
@@ -4595,10 +5441,10 @@
         el("btnAiOeeDay").style.display = "none";
         el("btnDlOeeDayPdf").style.display = "none";
 
-        setStatus("busy", "Analizando periodo...");
-        setBtnBusy("btnFetchOeeDay", true, "Consultando...");
+        setStatus("busy", T("analyzingIA"));
+        setBtnBusy("btnFetchOeeDay", true, T("consulting"));
         try {
-          const body = { from_day: from, to_day: to, skip_ai: true };
+          const body = { from_day: from, to_day: to, skip_ai: true, lang: currentLang };
           if (shift) body.shift_name = shift;
 
           const res = await fetch("api/oee/day-turn/", {
@@ -4621,99 +5467,13 @@
           const summary = data.summary;
 
           if (summary) {
-            // Utiliza paintOeeKpi global
-
-            const oeeVal  = parseFloat(summary.OEE)          || 0;
-            const availVal = parseFloat(summary.Availability) || 0;
-            const perfVal  = parseFloat(summary.Performance)  || 0;
-            const qualVal  = parseFloat(summary.Quality)      || 0;
-
-            el("kpiRangeOee").textContent  = toPct(summary.OEE);
-            el("kpiRangeAvail").textContent = toPct(summary.Availability);
-            el("kpiRangePerf").textContent  = toPct(summary.Performance);
-            el("kpiRangeQual").textContent  = toPct(summary.Quality);
-
-            // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
-            paintOeeKpi("oeeKpiOeeCard","oeeKpiOeeIcon","oeeKpiOeeBar","oeeKpiOeeSub", oeeVal,
-              [65,50,35],
-              ["🏆","🏭","⚠️","🚨"],
-              ["Clase Mundial ✓","Aceptable — mejora posible","Por debajo del estándar","Crítico — intervención urgente"]
-            );
-            // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
-            paintOeeKpi("oeeKpiAvailCard","oeeKpiAvailIcon","oeeKpiAvailBar","oeeKpiAvailSub", availVal,
-              [90,75,60],
-              ["✅","⏱️","⚠️","🔴"],
-              ["Disponibilidad óptima","Pérdida leve por paros","Paros frecuentes detectados","Disponibilidad crítica"]
-            );
-            // Desempeño: ≥95 ok, ≥80 warn, ≥65 high, <65 crit
-            paintOeeKpi("oeeKpiPerfCard","oeeKpiPerfIcon","oeeKpiPerfBar","oeeKpiPerfSub", perfVal,
-              [95,80,65],
-              ["⚡","📈","⚠️","🐢"],
-              ["Ritmo nominal alcanzado","Micro-paros presentes","Velocidad reducida","Bajo rendimiento operativo"]
-            );
-            // Calidad: ≥99 ok, ≥95 warn, ≥90 high, <90 crit
-            paintOeeKpi("oeeKpiQualCard","oeeKpiQualIcon","oeeKpiQualBar","oeeKpiQualSub", qualVal,
-              [99,95,90],
-              ["✅","🎯","⚠️","❌"],
-              ["Calidad excelente","Descarte mínimo tolerable","Revisión de proceso necesaria","Alta tasa de rechazo"]
-            );
-
-            el("oeeDayKpis").style.display = "";
+            renderOeeDayKpis(data);
           }
 
           if (rows.length === 0) {
-            el("oeeDayInfo").textContent = "No hay datos para ese periodo/turno.";
-            setStatus("ok", "Listo");
+            el("oeeDayInfo").textContent = T("noDataRange");
+            setStatus("ok", T("statusReady"));
             return;
-          }
-
-          // Renderizado Premium de la tabla OEE
-          function renderOEEDayTable(cols, rows) {
-            const thead = el("oeeDayHead");
-            const tbody = el("oeeDayBody");
-            thead.innerHTML = "";
-            tbody.innerHTML = "";
-            
-            // Headers
-            cols.forEach(c => {
-              const th = document.createElement("th");
-              th.textContent = LABEL_OEE_DAY[c] || c;
-              thead.appendChild(th);
-            });
-            
-            // Rows
-            rows.forEach(r => {
-              const tr = document.createElement("tr");
-              cols.forEach((c, idx) => {
-                const td = document.createElement("td");
-                let val = (r && r[idx] !== undefined && r[idx] !== null) ? String(r[idx]) : "";
-                
-                // Aplicar estilos premium segun la columna
-                if (c === "OEE" || c === "Disponibilidad" || c === "Desempeno" || c === "Producto Conforme") {
-                  let pct = parseFloat(val);
-                  if (!isNaN(pct)) {
-                    let color = "#10b981"; // default ok
-                    if (c === "OEE") { color = pct>=65?"#10b981":pct>=50?"#eab308":pct>=35?"#f97316":"#ef4444"; }
-                    else if (c === "Disponibilidad") { color = pct>=90?"#10b981":pct>=75?"#eab308":pct>=60?"#f97316":"#ef4444"; }
-                    else if (c === "Desempeno") { color = pct>=95?"#10b981":pct>=80?"#eab308":pct>=65?"#f97316":"#ef4444"; }
-                    else if (c === "Producto Conforme") { color = pct>=99?"#10b981":pct>=95?"#eab308":pct>=90?"#f97316":"#ef4444"; }
-                    td.innerHTML = `<span style="color: ${color}; font-weight: 800; font-size: 1.05em;">${val}</span>`;
-                  } else { td.textContent = val; }
-                } else if (c === "Turno") {
-                  let icon = "📡";
-                  if (val.includes("Primer")) icon = "☀️";
-                  else if (val.includes("Segundo")) icon = "🌇";
-                  else if (val.includes("Tercer")) icon = "🌙";
-                  td.innerHTML = `<span style="font-weight: 600;">${icon} ${val}</span>`;
-                } else if (c === "Fecha") {
-                  td.innerHTML = `<span style="color: var(--muted); font-family: monospace;">${val}</span>`;
-                } else {
-                  td.textContent = val;
-                }
-                tr.appendChild(td);
-              });
-              tbody.appendChild(tr);
-            });
           }
 
           renderOEEDayTable(cols, rows);
@@ -4741,10 +5501,10 @@
           el("btnDlOeeDayPdf").style.display = "";
           setBtnBusy("btnAiOeeDay", false, "🤖 Análisis Duma");
 
-          setStatus("ok", "Listo");
+          setStatus("ok", T("statusReady"));
         } catch (err) {
           el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
-          setStatus("err", "Error");
+          setStatus("err", T("statusError"));
         } finally {
           setBtnBusy("btnFetchOeeDay", false);
         }
@@ -4752,10 +5512,10 @@
 
       async function generateOeeDayAI() {
         if (!lastOeeFrom || !lastOeeTo) return;
-        setStatus("busy", "Generando Análisis IA...");
-        setBtnBusy("btnAiOeeDay", true, "Analizando...");
+        setStatus("busy", T("analyzingIA"));
+        setBtnBusy("btnAiOeeDay", true, T("analyzing"));
         try {
-          const body = { from_day: lastOeeFrom, to_day: lastOeeTo, skip_ai: false };
+          const body = { from_day: lastOeeFrom, to_day: lastOeeTo, skip_ai: false, lang: currentLang };
           if (lastOeeShift) body.shift_name = lastOeeShift;
 
           const res = await fetch("api/oee/day-turn/", {
@@ -4773,12 +5533,12 @@
             el("oeeDayAICard").style.display = "";
             el("oeeDayAICard").scrollIntoView({ behavior: "smooth" });
           }
-          setStatus("ok", "Listo");
+          setStatus("ok", T("statusReady"));
         } catch (err) {
           el("oeeDayInfo").textContent = "⚠️ " + (err.message || err);
-          setStatus("err", "Error");
+          setStatus("err", T("statusError"));
         } finally {
-          setBtnBusy("btnAiOeeDay", false, "🤖 Análisis Duma");
+          setBtnBusy("btnAiOeeDay", false, T("btnAiOeeDay"));
         }
       }
 
@@ -4789,7 +5549,7 @@
       // Download Handlers
       // ===========================
       el("btnDlCvPdf")?.addEventListener("click", async () => {
-        if (!lastCvDay || !lastCvData) return alert("Genera primero un análisis.");
+        if (!lastCvDay || !lastCvData) return alert(currentLang === 'en' ? "Please generate an analysis first." : "Genera primero un análisis.");
         setBtnBusy("btnDlCvPdf", true, "Capturando...");
         try {
           let kpiSnapshot = null;
@@ -4829,7 +5589,7 @@
       });
 
       el("btnDlOeeRtPdf")?.addEventListener("click", async () => {
-        if (!lastOeeRtData) return alert("Actualiza primero el snapshot.");
+        if (!lastOeeRtData) return alert(currentLang === 'en' ? "Please refresh the snapshot first." : "Actualiza primero el snapshot.");
         setBtnBusy("btnDlOeeRtPdf", true, "Capturando...");
         try {
           // Captura nativa de los iframes y canvases en toda la pestaña de Tiempo Real
@@ -4849,7 +5609,7 @@
       });
 
       el("btnDlOeeDayPdf")?.addEventListener("click", async () => {
-        if (!lastOeeFrom || !lastOeeDayData) return alert("Consulta primero un periodo.");
+        if (!lastOeeFrom || !lastOeeDayData) return alert(currentLang === 'en' ? "Please query a period first." : "Consulta primero un periodo.");
         setBtnBusy("btnDlOeeDayPdf", true, "Capturando...");
         try {
           let kpiSnapshot = null;
@@ -4914,18 +5674,24 @@
         maxDate: today
       });
 
-      // Inicializar vista
+      // Inicializar vista y aplicar idioma guardado
+      applyLang(currentLang);
       showView("CV");
 
       // ===========================
       // DUMA CHAT LOGIC
       // ===========================
-      const chatWidget = {
+      var chatWidget = {
         threadId: null,
         isOpen: false,
         isTyping: false,
         isChatInitialized: false,
         isTypingEffectRunning: false,
+        mediaRecorder: null,
+        audioChunks: [],
+        isRecording: false,
+        ttsEnabled: false,       // Modo voz: respuestas automáticas con TTS
+        currentAudio: null,      // Instancia Audio actual para poder detenerla
 
         init() {
           if (el("chatBubbleBtn")) el("chatBubbleBtn").addEventListener("click", () => this.toggle());
@@ -4936,6 +5702,14 @@
           el("chatInput").addEventListener("keypress", (e) => {
             if (e.key === "Enter") this.handleSend();
           });
+          if (el("chatMicBtn")) {
+            el("chatMicBtn").addEventListener("click", () => this.toggleVoiceRecording());
+          }
+
+          // TTS toggle button
+          if (el("chatTtsToggle")) {
+            el("chatTtsToggle").addEventListener("click", () => this.toggleTts());
+          }
 
           if (el("btnNewChat")) {
             el("btnNewChat").addEventListener("click", () => this.clearChat());
@@ -5014,7 +5788,7 @@
         },
 
         clearChat() {
-          if (!confirm("¿Deseas iniciar una nueva conversación?")) return;
+          if (!confirm(T("newChatConfirm"))) return;
           this.threadId = null;
           this.messages = [];
           localStorage.removeItem("duma_thread_id");
@@ -5024,7 +5798,7 @@
           items.forEach(item => item.classList.remove("active"));
 
           const chatHeaderTitle = document.getElementById("chatHeaderTitle");
-          if (chatHeaderTitle) chatHeaderTitle.textContent = "Nueva Conversación";
+          if (chatHeaderTitle) chatHeaderTitle.textContent = T("btnNewChat").replace("+ ", "");
           
           this.initializeProactiveChat();
         },
@@ -5200,7 +5974,7 @@
         },
 
         async renameThread(threadId, currentTitle) {
-          const newTitle = prompt("Ingresa el nuevo título:", currentTitle);
+          const newTitle = prompt(currentLang === 'en' ? "Enter new title:" : "Ingresa el nuevo título:", currentTitle);
           if (newTitle === null) return;
           const cleanTitle = newTitle.trim();
           if (!cleanTitle) return;
@@ -5215,16 +5989,16 @@
               this.loadConversations();
             } else {
               const data = await res.json();
-              alert("Error al renombrar la conversación: " + (data.error || "desconocido"));
+              alert((currentLang === 'en' ? "Error renaming conversation: " : "Error al renombrar la conversación: ") + (data.error || (currentLang === 'en' ? "unknown" : "desconocido")));
             }
           } catch (e) {
             console.error("Error renombrando conversación:", e);
-            alert("Error de conexión al renombrar.");
+            alert(currentLang === 'en' ? "Connection error while renaming." : "Error de conexión al renombrar.");
           }
         },
 
         async deleteThread(threadId) {
-          if (!confirm("¿Estás seguro de que deseas eliminar esta conversación? Se borrará de la base de datos y de los servidores de la IA.")) return;
+          if (!confirm(currentLang === 'en' ? "Are you sure you want to delete this conversation? It will be deleted from the database and AI servers." : "¿Estás seguro de que deseas eliminar esta conversación? Se borrará de la base de datos y de los servidores de la IA.")) return;
           
           try {
             const res = await fetch(`chat/threads/${threadId}`, {
@@ -5242,11 +6016,11 @@
               this.loadConversations();
             } else {
               const data = await res.json();
-              alert("Error al eliminar la conversación: " + (data.error || "desconocido"));
+              alert((currentLang === 'en' ? "Error deleting conversation: " : "Error al eliminar la conversación: ") + (data.error || (currentLang === 'en' ? "unknown" : "desconocido")));
             }
           } catch (e) {
             console.error("Error eliminando conversación:", e);
-            alert("Error de conexión al eliminar.");
+            alert(currentLang === 'en' ? "Connection error while deleting." : "Error de conexión al eliminar.");
           }
         },
 
@@ -5295,7 +6069,7 @@
           }
           
           try {
-            const rtRes = await fetch("api/oee/realtime/");
+            const rtRes = await fetch("api/oee/realtime/?skip_ai=true");
             let oeeVal = 100;
             if (rtRes.ok) {
               const rtData = await rtRes.json();
@@ -5307,7 +6081,7 @@
             const initRes = await fetch("chat/", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ input: "[init]" })
+              body: JSON.stringify({ input: "[init]", lang: currentLang })
             });
 
             if (initRes.ok) {
@@ -5319,7 +6093,7 @@
 
               const loadingEl = el("chatLoadingGreeting");
               if (loadingEl) {
-                loadingEl.innerHTML = `<span class="welcome-pulse online"></span> Conectado en línea`;
+                loadingEl.innerHTML = `<span class="welcome-pulse online"></span> ${T("connectedStatus")}`;
                 setTimeout(() => {
                   if (loadingEl) loadingEl.remove();
                 }, 1500);
@@ -5339,7 +6113,7 @@
             console.error("Error initializing proactive chat:", e);
             const loadingEl = el("chatLoadingGreeting");
             if (loadingEl) {
-              loadingEl.innerHTML = `<span class="welcome-pulse online" style="background-color: #ef4444; box-shadow: none;"></span> Conexión inestable (Offline)`;
+              loadingEl.innerHTML = `<span class="welcome-pulse online" style="background-color: #ef4444; box-shadow: none;"></span> ${currentLang === 'en' ? "Unstable connection (Offline)" : "Conexión inestable (Offline)"}`;
             }
           }
         },
@@ -5354,40 +6128,40 @@
                 <div class="welcome-avatar-glow"></div>
               </div>
               <h2 class="welcome-title">Duma AI Agent</h2>
-              <p class="welcome-subtitle">Tu analista de piso con Inteligencia Artificial. Monitorea OEE, paros y variables críticas en tiempo real.</p>
+              <p class="welcome-subtitle">${T("welcomeSubtitle")}</p>
               
               <div class="welcome-categories">
                 <div class="welcome-card">
-                  <div class="welcome-card-header">📊 OEE & RENDIMIENTO</div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Dame el estado actual de la planta: OEE, disponibilidad y producción.')">
-                    ¿Cuál es el estado actual de la planta?
+                  <div class="welcome-card-header">${T("catOee")}</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugOeeA").replace(/'/g, "\\'")}')">
+                    ${T("sugOeeQ")}
                   </div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Dame el OEE de ayer desglosado por turnos.')">
-                    OEE de ayer por turnos
-                  </div>
-                </div>
-                <div class="welcome-card">
-                  <div class="welcome-card-header">🚨 PAROS & PARETO</div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Genera un análisis Pareto (80/20) de las fallas de ayer.')">
-                    Pareto 80/20 de los paros de ayer
-                  </div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('¿Cuál fue la pérdida de producción estimada hoy por paros no programados?')">
-                    Pérdida de producción hoy
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugOeeA2").replace(/'/g, "\\'")}')">
+                    ${T("sugOeeQ2")}
                   </div>
                 </div>
                 <div class="welcome-card">
-                  <div class="welcome-card-header">⚙️ SENSORES & VARIABLES</div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('Analiza qué variables de control o sensores estuvieron fuera de rango hoy.')">
-                    Sensores fuera de rango hoy
+                  <div class="welcome-card-header">${T("catStops")}</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugStopsA").replace(/'/g, "\\'")}')">
+                    ${T("sugStopsQ")}
                   </div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('¿Existe alguna correlación entre la temperatura del Chiller y los paros registrados hoy?')">
-                    Correlación Chiller vs paros
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugStopsA2").replace(/'/g, "\\'")}')">
+                    ${T("sugStopsQ2")}
+                  </div>
+                </div>
+                <div class="welcome-card">
+                  <div class="welcome-card-header">${T("catSensors")}</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugSensorsA").replace(/'/g, "\\'")}')">
+                    ${T("sugSensorsQ")}
+                  </div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugSensorsA2").replace(/'/g, "\\'")}')">
+                    ${T("sugSensorsQ2")}
                   </div>
                 </div>
               </div>
               
               <div class="welcome-status-bar" id="chatLoadingGreeting">
-                <span class="welcome-pulse connecting"></span> Estableciendo conexión segura con el Agente...
+                <span class="welcome-pulse connecting"></span> ${T("connectingStatus")}
               </div>
             </div>
           `;
@@ -5409,23 +6183,30 @@
           const now = new Date();
           const hour = now.getHours();
           const chips = [];
+          const is_en = currentLang === 'en';
 
           if (oeeVal < 50) {
-            chips.push("🚨 OEE Crítico — analiza causa raíz ahora");
+            chips.push(is_en ? "🚨 Critical OEE — analyze root cause now" : "🚨 OEE Crítico — analiza causa raíz ahora");
           }
 
           if (hour >= 7 && hour < 9) {
-            chips.push("¿Cómo cerró el turno nocturno?");
-            chips.push("¿Qué problemas de paros heredamos?");
+            chips.push(is_en ? "How did the night shift close?" : "¿Cómo cerró el turno nocturno?");
+            chips.push(is_en ? "What stoppage problems did we inherit?" : "¿Qué problemas de paros heredamos?");
           } else if (hour >= 15 && hour < 17) {
-            chips.push("Balance del turno matutino");
-            chips.push("¿Vamos a cumplir la meta hoy?");
+            chips.push(is_en ? "Morning shift balance" : "Balance del turno matutino");
+            chips.push(is_en ? "Are we going to meet the target today?" : "¿Vamos a cumplir la meta hoy?");
           } else if (hour >= 23 || hour < 1) {
-            chips.push("Balance del turno vespertino");
-            chips.push("¿Cómo va el inicio del nocturno?");
+            chips.push(is_en ? "Evening shift balance" : "Balance del turno vespertino");
+            chips.push(is_en ? "How is the start of the night shift?" : "¿Cómo va el inicio del nocturno?");
           }
 
-          const defaultChips = [
+          const defaultChips = is_en ? [
+            "Duma, give me an executive report of the most critical issue now",
+            "Where are we losing most production today and why?",
+            "Analyze current anomalies in sensors and potential risks",
+            "At the current rate, how far are we from the daily target?",
+            "Generate a Pareto diagnostic (80/20) of yesterday's failures"
+          ] : [
             "Duma, dame un informe ejecutivo del problema más crítico ahora",
             "¿Dónde estamos perdiendo más producción hoy y por qué?",
             "Analiza las anomalías actuales en sensores y posibles riesgos",
@@ -5489,7 +6270,8 @@
               body: JSON.stringify({
                 input: input,
                 thread_id: this.threadId,
-                username: username
+                username: username,
+                lang: currentLang
               })
             });
 
@@ -5517,6 +6299,109 @@
             this.addMessage("bot", "⚠️ Error de conexión con el servidor.");
           }
         },
+
+        async toggleVoiceRecording() {
+          if (this.isTyping || this.isTypingEffectRunning) return;
+
+          const micBtn = el("chatMicBtn");
+          if (!this.isRecording) {
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              this.mediaRecorder = new MediaRecorder(stream);
+              this.audioChunks = [];
+
+              this.mediaRecorder.ondataavailable = (event) => {
+                this.audioChunks.push(event.data);
+              };
+
+              this.mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                await this.sendAudioMessage(audioBlob);
+              };
+
+              this.mediaRecorder.start();
+              this.isRecording = true;
+              micBtn.classList.add('recording');
+              micBtn.title = currentLang === 'en' ? "Stop recording" : "Detener grabación";
+              el("chatInput").placeholder = currentLang === 'en' ? "🎙️ Recording voice... press microphone to stop." : "🎙️ Grabando voz... presiona el micrófono para detener.";
+              el("chatInput").disabled = true;
+            } catch (err) {
+              console.error('Error accediendo al micrófono:', err);
+              alert(currentLang === 'en' ? 'Could not access microphone. Please check recording permissions in your browser.' : 'No se pudo acceder al micrófono. Por favor verifica los permisos de grabación en tu navegador.');
+            }
+          } else {
+            if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+              this.mediaRecorder.stop();
+              this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            this.isRecording = false;
+            micBtn.classList.remove('recording');
+            micBtn.title = currentLang === 'en' ? "Record voice message" : "Grabar mensaje de voz";
+            el("chatInput").placeholder = T("chatPlaceholder");
+            el("chatInput").disabled = false;
+            el("chatInput").focus();
+          }
+        },
+
+        async sendAudioMessage(audioBlob) {
+          const username = localStorage.getItem("duma_user_name") || "Anónimo";
+          this.isChatInitialized = true;
+          const loadingEl = el("chatLoadingGreeting");
+          if (loadingEl) loadingEl.remove();
+
+          const welcomeDashboard = el("chatWelcomeDashboard");
+          if (welcomeDashboard) welcomeDashboard.remove();
+
+          if (el("chatSuggestions")) el("chatSuggestions").style.display = "none";
+
+          this.showTyping(true);
+
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'voice_query.webm');
+          if (this.threadId) {
+            formData.append('thread_id', this.threadId);
+          }
+          formData.append('username', username);
+
+          try {
+            const prefix = window.location.pathname.includes("/Bafar") ? "Bafar/" : "";
+            const res = await fetch(`${prefix}chat/audio/`, {
+              method: "POST",
+              body: formData
+            });
+
+            const data = await res.json();
+            this.showTyping(false);
+
+            if (data.error) {
+              this.addMessage("bot", "⚠️ Error al transcribir: " + data.error);
+              return;
+            }
+
+            if (data.transcription) {
+              this.addMessage("user", `🎙️ [Mensaje de voz]: "${data.transcription}"`);
+            }
+
+            if (data.thread_id) {
+              const oldThreadId = this.threadId;
+              this.threadId = data.thread_id;
+              localStorage.setItem("duma_thread_id", data.thread_id);
+              
+              if (oldThreadId !== data.thread_id) {
+                this.loadConversations();
+              }
+            }
+
+            if (data.message) {
+              this.addMessage("bot", data.message, data.images, true);
+            }
+          } catch (err) {
+            this.showTyping(false);
+            this.addMessage("bot", "⚠️ Error de conexión al procesar el audio.");
+            console.error(err);
+          }
+        },
+
 
         appendImagesToMessage(msgEl, images) {
           if (!images || images.length === 0) return;
@@ -5564,6 +6449,102 @@
           });
         },
 
+        // ── TTS: Activar/desactivar modo de respuesta por voz ──────────────
+        toggleTts() {
+          this.ttsEnabled = !this.ttsEnabled;
+          const btn = el("chatTtsToggle");
+          if (!btn) return;
+          if (this.ttsEnabled) {
+            btn.classList.add("active");
+            btn.title = "Respuesta por voz: activada (click para desactivar)";
+            showToast("🔊 Modo voz activado — Duma responderá en audio", 2500);
+          } else {
+            btn.classList.remove("active");
+            btn.title = "Respuesta por voz: desactivada";
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            showToast("🔇 Modo voz desactivado", 2000);
+          }
+        },
+
+        // ── TTS: Convierte texto a audio (Web Speech API nativa del browser) ──
+        speakText(text, btn) {
+          // Cancelar cualquier síntesis previa
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+          this.currentAudio = null;
+
+          if (!window.speechSynthesis) {
+            if (btn) { btn.classList.add("speak-error"); btn.innerHTML = `⚠️ Sin soporte de voz`; }
+            return;
+          }
+
+          // Limpiar texto: eliminar markdown y emojis para voz más limpia
+          const cleanText = text
+            .replace(/[*_`#>|\[\]()!]/g, '')
+            .replace(/\bhttps?:\/\/\S+/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 3000);
+
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          utterance.lang = currentLang === 'en' ? 'en-US' : 'es-MX';
+          utterance.rate = 1.05;
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+
+          // Intentar usar una voz en español si está disponible
+          const voices = window.speechSynthesis.getVoices();
+          const esVoice = voices.find(v =>
+            v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Microsoft') || v.localService)
+          ) || voices.find(v => v.lang.startsWith('es'));
+          if (esVoice) utterance.voice = esVoice;
+
+          this._currentUtterance = utterance;
+
+          if (btn) {
+            btn.classList.remove("speak-error");
+            btn.classList.add("speaking");
+            btn.innerHTML = `<div class="audio-wave active"><span></span><span></span><span></span><span></span><span></span></div> Hablando...`;
+          }
+
+          utterance.onend = () => {
+            this._currentUtterance = null;
+            if (btn) { btn.classList.remove("speaking"); btn.innerHTML = `🔊 Reproducir`; }
+          };
+
+          utterance.onerror = (e) => {
+            this._currentUtterance = null;
+            if (btn) {
+              btn.classList.remove("speaking");
+              if (e.error !== 'interrupted') {
+                btn.classList.add("speak-error"); btn.innerHTML = `⚠️ Error de voz`;
+                setTimeout(() => { btn.classList.remove("speak-error"); btn.innerHTML = `🔊 Reproducir`; }, 3000);
+              } else { btn.innerHTML = `🔊 Reproducir`; }
+            }
+          };
+
+          window.speechSynthesis.speak(utterance);
+        },
+
+        // ── Agrega botón de reproducción a un mensaje bot ─────────────────
+        addSpeakButton(msgEl, text) {
+          const btn = document.createElement("button");
+          btn.className = "msg-speak-btn";
+          btn.innerHTML = `🔊 Reproducir`;
+          btn.title = "Escuchar respuesta";
+          btn.addEventListener("click", () => {
+            if (btn.classList.contains("speaking")) {
+              // Si ya está hablando, detener
+              if (this.currentAudio) { this.currentAudio.pause(); this.currentAudio = null; }
+              btn.classList.remove("speaking");
+              btn.innerHTML = `🔊 Reproducir`;
+            } else {
+              this.speakText(text, btn);
+            }
+          });
+          msgEl.appendChild(btn);
+          return btn;
+        },
+
         addMessage(role, text, images = [], isLive = false) {
           if (!this.messages) this.messages = [];
           
@@ -5606,6 +6587,14 @@
                   if (images && images.length > 0) {
                     this.appendImagesToMessage(msg, images);
                   }
+
+                  // Agregar botón 🔊 al final del mensaje del bot
+                  const speakBtn = this.addSpeakButton(msg, text);
+                  // Auto-reproducir si modo voz está activo
+                  if (this.ttsEnabled) {
+                    this.speakText(text, speakBtn);
+                  }
+
                   container.scrollTop = container.scrollHeight;
                 }
               }, 30);
@@ -5613,6 +6602,12 @@
               msg.innerHTML = mdToHtml(text);
               if (images && images.length > 0) {
                 this.appendImagesToMessage(msg, images);
+              }
+              // Agregar botón 🔊
+              const speakBtnStatic = this.addSpeakButton(msg, text);
+              // Auto-reproducir si modo voz está activo
+              if (this.ttsEnabled) {
+                this.speakText(text, speakBtnStatic);
               }
               container.appendChild(msg);
               container.scrollTop = container.scrollHeight;
@@ -5643,7 +6638,7 @@
             wrapper.innerHTML = `
             <div class="msg bot typing" style="display: flex; align-items: center; gap: 8px; padding: 10px 16px;">
               <span class="animated-hourglass" style="font-size: 14px;">⏳</span>
-              <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Analizando datos, un momento...</span>
+              <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">${currentLang === 'en' ? "Analyzing data, one moment..." : "Analizando datos, un momento..."}</span>
             </div>
           `;
             el("chatMsgs").appendChild(wrapper);

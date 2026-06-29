@@ -44,10 +44,14 @@ PASO D — INTERPRETAR
 ────────────────────────────────────────────────────────────
 Para OEE en rangos (mes/semana) o días consolidados:
 1. SUMA los datos brutos de TODO el periodo.
-2. OEE Global = (SUM(ProductiveTimeMin) / SUM(AvailableTimeMin)) * (SUM(RealKg) / SUM(ExpectedProductionSummaryModified)) * (SUM(RealKg - ConfiscationKg) / SUM(RealKg)) * 100
+2. OEE Global = (SUM(ProductiveTimeMin) / SUM(AvailableTimeMin)) * (SUM(RealKg) / SUM(ExpectedProductionSummaryModified)) * (SUM(RealKg * [Producto Conforme] / 100) / SUM(RealKg)) * 100
+   (Nota: Dado que la consulta SQL devuelve el porcentaje [Producto Conforme] en vez de ConfiscationKg, calcula los Kilos Conformes de cada fila como `RealKg * ([Producto Conforme] / 100)` y súmalos para obtener el total).
 3. NUNCA promedies porcentajes diarios o por turno.
 4. Para graficar OEE consolidado por día (sin segmentar por turnos), USA SIEMPRE la herramienta `get_oee_historical_charts`. Esta herramienta garantiza que los valores sean idénticos a los del módulo OEE Histórico del dashboard.
 5. PROHIBIDO usar viz_render para graficar OEE diario consolidado — usa get_oee_historical_charts.
+6. **Paros Programados (SS/P)**: Los paros programados (ej. comidas, juntas, mantenimiento preventivo programado) se restan de la duración total del turno para obtener el Tiempo Disponible (`AvailableTimeMin = DuracionTurno - ParoProgramado`). Por lo tanto, **NO penalizan el OEE ni la Disponibilidad** (son neutrales porque se descuentan tanto del numerador como del denominador).
+7. **Paros No Programados (US/NP)**: Solo los paros no programados (ej. fallas mecánicas, atascos, falta de materia prima) restan tiempo productivo (`ProductiveTimeMin = AvailableTimeMin - ParoNoProgramado`) y, por lo tanto, **SÍ penalizan el OEE y la Disponibilidad**.
+8. Si el usuario te pregunta conceptualmente o en un análisis, explícale claramente que la planta opera con OEE estándar de Clase Mundial, donde los paros programados no afectan negativamente el porcentaje de OEE.
 
 ────────────────────────────────────────────────────────────
 🧠 PROTOCOLO DE ANÁLISIS AGÉNTICO (5 PASOS OBLIGATORIOS)
