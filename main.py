@@ -2473,6 +2473,41 @@ def load_critical_reads_for_range(start_day: str, end_day: str) -> pd.DataFrame:
 
 
 
+def translate_cv_name(text: str, lang: str = "es") -> str:
+    if lang != "en":
+        return text
+    
+    # Mapeo insensible a mayúsculas
+    mapping = {
+        "presion diferencial": "Differential Pressure",
+        "presión diferencial": "Differential Pressure",
+        "temperatura interna": "Internal Temperature",
+        "temperatura del agua": "Water Temperature",
+        "temperatura del producto": "Product Temperature",
+        "tiempo de hidratación": "Hydration Time",
+        "tiempo de hidratacion": "Hydration Time",
+        "alertas": "Alerts",
+        "iqf": "IQF",
+        "chiller": "Chiller",
+        "molino": "Mill",
+        "volteador": "Turner",
+        "detector de metales": "Metal Detector",
+    }
+    
+    val = text.strip()
+    val_lower = val.lower()
+    if val_lower in mapping:
+        return mapping[val_lower]
+    
+    # Reemplazar subcadenas si es necesario
+    for k, v in mapping.items():
+        if k in val_lower:
+            import re
+            val = re.sub(re.escape(k), v, val, flags=re.IGNORECASE)
+            
+    return val
+
+
 def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_path: str) -> str:
     """Grafica una variable con los 3 turnos en un solo gráfico y guarda HTML."""
     vid = var_id.strip().lower()
@@ -2496,11 +2531,17 @@ def plot_critical_timeseries_day(df_day: pd.DataFrame, var_id: str, out_html_pat
             meta = m
             break
 
-    title = f"{meta.get('name','Variable')} — {meta.get('device','')}" if meta else "Serie de tiempo"
+    lang = getattr(_cv_lang_ctx, 'lang', 'es')
+    is_en = (lang == 'en')
+
+    if meta:
+        var_name = translate_cv_name(meta.get('name','Variable'), lang=lang)
+        dev_name = translate_cv_name(meta.get('device',''), lang=lang)
+        title = f"{var_name} — {dev_name}"
+    else:
+        title = "Time series" if is_en else "Serie de tiempo"
 
     fig = go.Figure()
-
-    is_en = getattr(_cv_lang_ctx, 'lang', 'es') == 'en'
 
     # Banda crítica
     fig.add_trace(go.Scatter(
@@ -2650,7 +2691,16 @@ def plot_critical_timeseries_day_png(
     crit_max = float(d["CriticalMaxValue"].median())
 
     meta = next((CRITICAL_VARS[k] for k in CRITICAL_VARS if k.strip().lower() == var_id.strip().lower()), None)
-    title = f"{meta.get('name','Variable')} — {meta.get('device','')}" if meta else str(var_id)
+    
+    lang = getattr(_cv_lang_ctx, 'lang', 'es')
+    is_en = (lang == 'en')
+
+    if meta:
+        var_name = translate_cv_name(meta.get('name','Variable'), lang=lang)
+        dev_name = translate_cv_name(meta.get('device',''), lang=lang)
+        title = f"{var_name} — {dev_name}"
+    else:
+        title = str(var_id)
 
     # Colores estéticos
     COLOR_IN = "#2ecc71"   # Verde esmeralda
@@ -2660,8 +2710,6 @@ def plot_critical_timeseries_day_png(
 
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(10, 3.8), dpi=160)
-
-    is_en = getattr(_cv_lang_ctx, 'lang', 'es') == 'en'
 
     # Línea principal
     ax.plot(d["LocalTime"], d["Value"], color=COLOR_LINE, linewidth=1.0, alpha=0.7,
@@ -3909,6 +3957,9 @@ async def api_reload_critical_vars():
 @app.post("/api/cv/day/")
 async def api_control_variables_day(payload: dict):
     """Devuelve plots + resumen para rango de días de variables críticas."""
+    lang = (payload.get("lang") or "es").strip().lower()
+    _cv_lang_ctx.lang = lang
+
     start_day = normalize_day_str(payload.get("start_day") or payload.get("day") or "")
     end_day   = normalize_day_str(payload.get("end_day") or start_day)
     
@@ -3980,9 +4031,6 @@ async def api_control_variables_day(payload: dict):
     executive_summary = "\r\n".join(exec_lines)
 
     skip_ai = payload.get("skip_ai", False)
-    lang = (payload.get("lang") or "es").strip().lower()
-    # Set context for chart generation
-    _cv_lang_ctx.lang = lang
     if not skip_ai:
         ai_analysis = ai_control_variables_day(day=f"{start_day} a {end_day}", summary=summary, executive_summary=executive_summary, lang=lang)
     else:
