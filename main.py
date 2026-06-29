@@ -1446,22 +1446,22 @@ ORDER BY Fecha DESC, Turno;
                                 sf = f"\r\n    AND wst.Name = N'{str(shift).replace(chr(39), chr(39)*2)}'"
                             tf = ""
                             if stop_type == "NP":
-                                tf = "\r\n    AND m.StoppageType = 'NP'"
+                                tf = "\r\n    AND ISNULL(m.StoppageType, s.Type) = 'NP'"
                             elif stop_type == "P":
-                                tf = "\r\n    AND m.StoppageType = 'P'"
+                                tf = "\r\n    AND ISNULL(m.StoppageType, s.Type) = 'P'"
 
                             sp_sql = f"""
 DECLARE @fromDay DATE = {from_sql_t}, @toDay DATE = {to_sql_t};
 SELECT TOP 50
-    mt.Name        AS Tipo_General,
-    m.Name         AS Motivo_Particular,
-    m.StoppageType AS Clasificacion,
+    ISNULL(mt.Name, N'Sin Clasificar')        AS Tipo_General,
+    ISNULL(m.Name, N'Sin Clasificar')         AS Motivo_Particular,
+    ISNULL(m.StoppageType, s.Type)            AS Clasificacion,
     SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
     COUNT(*)                                              AS Eventos,
     AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
 FROM dbo.Stopages s
-JOIN dbo.Motives m            ON s.MotiveId            = m.MotiveId
-JOIN dbo.MotivesType mt       ON m.MotiveTypeId         = mt.MotiveTypeId
+LEFT JOIN dbo.Motives m            ON s.MotiveId            = m.MotiveId
+LEFT JOIN dbo.MotivesType mt       ON m.MotiveTypeId         = mt.MotiveTypeId
 JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
 JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
 WHERE s.Active = 1
@@ -1470,7 +1470,7 @@ WHERE s.Active = 1
             ELSE CAST(wse.StartDate AS date)
        END) BETWEEN @fromDay AND @toDay
 {sf}{tf}
-GROUP BY mt.Name, m.Name, m.StoppageType
+GROUP BY mt.Name, m.Name, m.StoppageType, s.Type
 ORDER BY Duracion_Min DESC;
 """
                             sp_rows, sp_cols = run_sql(sp_sql)
@@ -1504,20 +1504,21 @@ ORDER BY Duracion_Min DESC;
                                 stops_corr_sql = f"""
 DECLARE @day DATE = CONVERT(date, '{cv_day}');
 SELECT TOP 10
-    mt.Name AS Tipo_General, m.Name AS Motivo_Particular,
-    m.StoppageType AS Clasificacion,
+    ISNULL(mt.Name, N'Sin Clasificar') AS Tipo_General, 
+    ISNULL(m.Name, N'Sin Clasificar') AS Motivo_Particular,
+    ISNULL(m.StoppageType, s.Type) AS Clasificacion,
     SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
     COUNT(*) AS Eventos
 FROM dbo.Stopages s
-JOIN dbo.Motives m   ON s.MotiveId=m.MotiveId
-JOIN dbo.MotivesType mt ON m.MotiveTypeId=mt.MotiveTypeId
+LEFT JOIN dbo.Motives m   ON s.MotiveId=m.MotiveId
+LEFT JOIN dbo.MotivesType mt ON m.MotiveTypeId=mt.MotiveTypeId
 JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId=wse.WorkshiftExecutionId
 JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId=wst.WorkShiftTemplateId
 WHERE s.Active=1
   AND (CASE WHEN wst.EndTime<wst.StartTime
             THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
             ELSE CAST(wse.StartDate AS date) END) = @day
-GROUP BY mt.Name, m.Name, m.StoppageType ORDER BY Duracion_Min DESC;
+GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
 """
                                 sc_rows, sc_cols = run_sql(stops_corr_sql)
                                 stops_corr = [dict(zip(sc_cols, r)) for r in sc_rows]
@@ -3166,15 +3167,15 @@ async def api_oee_realtime(export_png: bool = False, skip_ai: bool = False, lang
     pareto_sql = f"""
 DECLARE @today DATE = CONVERT(date, '{from_day}');
 SELECT TOP 10
-    mt.Name          AS Tipo_General,
-    m.Name           AS Motivo_Particular,
-    m.StoppageType   AS Clasificacion,
+    ISNULL(mt.Name, N'Sin Clasificar')        AS Tipo_General,
+    ISNULL(m.Name, N'Sin Clasificar')         AS Motivo_Particular,
+    ISNULL(m.StoppageType, s.Type)            AS Clasificacion,
     SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
     COUNT(*)                                              AS Eventos,
     AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
 FROM dbo.Stopages s
-JOIN dbo.Motives m            ON s.MotiveId           = m.MotiveId
-JOIN dbo.MotivesType mt       ON m.MotiveTypeId        = mt.MotiveTypeId
+LEFT JOIN dbo.Motives m            ON s.MotiveId           = m.MotiveId
+LEFT JOIN dbo.MotivesType mt       ON m.MotiveTypeId        = mt.MotiveTypeId
 JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
 JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
 WHERE s.Active = 1
@@ -3183,7 +3184,7 @@ WHERE s.Active = 1
             THEN DATEADD(day, -1, CAST(wse.EndDate AS date))
             ELSE CAST(wse.StartDate AS date)
        END) = @today
-GROUP BY mt.Name, m.Name, m.StoppageType
+GROUP BY mt.Name, m.Name, m.StoppageType, s.Type
 ORDER BY Duracion_Min DESC;
 """
     rows_p, cols_p = run_sql(pareto_sql)
@@ -3727,15 +3728,15 @@ AND (CASE WHEN wst.EndTime < wst.StartTime THEN DATEADD(day, -1, CAST(wse.EndDat
     pareto_sql = f"""
 DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
 SELECT TOP 20
-    mt.Name          AS Tipo_General,
-    m.Name           AS Motivo_Particular,
-    m.StoppageType   AS Clasificacion,
+    ISNULL(mt.Name, N'Sin Clasificar')        AS Tipo_General,
+    ISNULL(m.Name, N'Sin Clasificar')         AS Motivo_Particular,
+    ISNULL(m.StoppageType, s.Type)            AS Clasificacion,
     SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
     COUNT(*)                                              AS Eventos,
     AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
 FROM dbo.Stopages s
-JOIN dbo.Motives m            ON s.MotiveId           = m.MotiveId
-JOIN dbo.MotivesType mt       ON m.MotiveTypeId        = mt.MotiveTypeId
+LEFT JOIN dbo.Motives m            ON s.MotiveId           = m.MotiveId
+LEFT JOIN dbo.MotivesType mt       ON m.MotiveTypeId        = mt.MotiveTypeId
 JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
 JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
 WHERE s.Active = 1
@@ -3745,7 +3746,7 @@ WHERE s.Active = 1
             ELSE CAST(wse.StartDate AS date)
        END) BETWEEN @fromDay AND @toDay
 {shift_filter}
-GROUP BY mt.Name, m.Name, m.StoppageType
+GROUP BY mt.Name, m.Name, m.StoppageType, s.Type
 ORDER BY Duracion_Min DESC;
 """
     rows_p, cols_p = run_sql(pareto_sql)
@@ -3900,22 +3901,22 @@ async def api_oee_stop_reasons(payload: dict):
 
     type_filter = ""
     if stop_type == "NP":
-        type_filter = "\r\n    AND m.StoppageType = 'NP'"
+        type_filter = "\r\n    AND ISNULL(m.StoppageType, s.Type) = 'NP'"
     elif stop_type == "P":
-        type_filter = "\r\n    AND m.StoppageType = 'P'"
+        type_filter = "\r\n    AND ISNULL(m.StoppageType, s.Type) = 'P'"
 
     sql = f"""
 DECLARE @fromDay DATE = {from_sql}, @toDay DATE = {to_sql};
 SELECT TOP 30
-    mt.Name          AS Tipo_General,
-    m.Name           AS Motivo_Particular,
-    m.StoppageType   AS Clasificacion,
+    ISNULL(mt.Name, N'Sin Clasificar')        AS Tipo_General,
+    ISNULL(m.Name, N'Sin Clasificar')         AS Motivo_Particular,
+    ISNULL(m.StoppageType, s.Type)            AS Clasificacion,
     SUM(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Min,
     COUNT(*)                                              AS Eventos,
     AVG(DATEDIFF(SECOND, s.StartDate, s.EndDate)) / 60.0 AS Duracion_Promedio_Min
 FROM dbo.Stopages s
-JOIN dbo.Motives m            ON s.MotiveId            = m.MotiveId
-JOIN dbo.MotivesType mt       ON m.MotiveTypeId         = mt.MotiveTypeId
+LEFT JOIN dbo.Motives m            ON s.MotiveId            = m.MotiveId
+LEFT JOIN dbo.MotivesType mt       ON m.MotiveTypeId         = mt.MotiveTypeId
 JOIN dbo.WorkShiftExecutions wse ON s.WorkshiftExecutionId = wse.WorkshiftExecutionId
 JOIN dbo.WorkShiftTemplates wst  ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
 WHERE s.Active = 1
@@ -3924,7 +3925,7 @@ WHERE s.Active = 1
             ELSE CAST(wse.StartDate AS date)
        END) BETWEEN @fromDay AND @toDay
 {shift_filter}{type_filter}
-GROUP BY mt.Name, m.Name, m.StoppageType
+GROUP BY mt.Name, m.Name, m.StoppageType, s.Type
 ORDER BY Duracion_Min DESC;
 """
     rows, cols = run_sql(sql)
