@@ -6502,7 +6502,7 @@
         },
 
         // ── TTS: Convierte texto a audio usando Azure Speech API ──
-        speakText(text, btn) {
+        async speakText(text, btn) {
           this.cancelSpeech();
 
           // --- 00. MODO EJECUTIVO (RESUMIR TEXTO PARA AUDIO) ---
