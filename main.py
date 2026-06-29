@@ -1,4 +1,5 @@
 import os
+import azure.cognitiveservices.speech as speechsdk
 import io
 import uuid
 import json
@@ -4155,6 +4156,52 @@ async def chat(request: Request):
         return JSONResponse(out)
 
     except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# TTS: Convierte texto a voz usando Azure Cognitive Services Speech SDK
+# ---------------------------------------------------------------------------
+@app.post("/api/chat/tts")
+async def text_to_speech(payload: dict):
+    """
+    Convierte texto a audio mp3 usando Azure Cognitive Services Speech SDK.
+    """
+    text = payload.get("text", "")
+    key = os.getenv("AZURE_SPEECH_KEY")
+    region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+    
+    if not key:
+        return JSONResponse({"error": "Azure Speech API Key no configurada en el servidor."}, status_code=500)
+        
+    try:
+        def synthesize():
+            speech_config = speechsdk.SpeechConfig(subscription=key, region=region)
+            speech_config.speech_synthesis_voice_name = "es-MX-DaliaNeural"
+            speech_config.set_speech_synthesis_output_format(
+                speechsdk.SpeechSynthesisOutputFormat.Audio16Khz128KBitRateMonoMp3
+            )
+            
+            synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
+            result = synthesizer.speak_text_async(text).get()
+            return result
+
+        result = await asyncio.to_thread(synthesize)
+        
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            return Response(content=result.audio_data, media_type="audio/mpeg")
+        elif result.reason == speechsdk.ResultReason.Canceled:
+            cancellation_details = result.cancellation_details
+            error_msg = f"Síntesis cancelada: {cancellation_details.reason}"
+            if cancellation_details.error_details:
+                error_msg += f". Detalles: {cancellation_details.error_details}"
+            logging.error(error_msg)
+            return JSONResponse({"error": error_msg}, status_code=500)
+            
+        return JSONResponse({"error": "Error desconocido en la síntesis de voz."}, status_code=500)
+
+    except Exception as e:
+        logging.error(f"Error en endpoint TTS: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 

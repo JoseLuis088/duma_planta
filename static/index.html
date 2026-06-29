@@ -1901,6 +1901,15 @@
       color: white;
       box-shadow: 0 0 12px rgba(72,187,120,0.5);
     }
+    .chat-tts-toggle.speaking {
+      animation: tts-speaking-pulse 1.2s ease-in-out infinite !important;
+      background: linear-gradient(135deg, #38A169, #2F855A) !important;
+    }
+    @keyframes tts-speaking-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.7); transform: scale(1); }
+      70% { box-shadow: 0 0 0 10px rgba(72, 187, 120, 0); transform: scale(1.1); }
+      100% { box-shadow: 0 0 0 0 rgba(72, 187, 120, 0); transform: scale(1); }
+    }
     /* Audio wave bars animation (shows when TTS is playing) */
     .audio-wave {
       display: none;
@@ -3607,6 +3616,10 @@
                   </div>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text); cursor: pointer; user-select: none; opacity: 0.8; font-weight: 600; margin-right: 5px;">
+                    <input type="checkbox" id="chkAudioExec" style="accent-color: #10b981; cursor: pointer;">
+                    🎙️ Modo Ejecutivo
+                  </label>
                   <button class="chat-export-btn btn" id="chatExportPdfBtn" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-radius: 8px; background: transparent; border: 1px solid var(--border); color: var(--text);" aria-label="Descargar conversación como PDF">
                     📄 Descargar PDF
                   </button>
@@ -6302,6 +6315,7 @@
 
         async toggleVoiceRecording() {
           if (this.isTyping || this.isTypingEffectRunning) return;
+          this.cancelSpeech();
 
           const micBtn = el("chatMicBtn");
           if (!this.isRecording) {
@@ -6456,49 +6470,181 @@
           if (!btn) return;
           if (this.ttsEnabled) {
             btn.classList.add("active");
+            btn.innerHTML = "🔊";
             btn.title = "Respuesta por voz: activada (click para desactivar)";
             showToast("🔊 Modo voz activado — Duma responderá en audio", 2500);
           } else {
             btn.classList.remove("active");
+            btn.innerHTML = "🔇";
             btn.title = "Respuesta por voz: desactivada";
-            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            this.cancelSpeech();
             showToast("🔇 Modo voz desactivado", 2000);
           }
         },
 
-        // ── TTS: Convierte texto a audio (Web Speech API nativa del browser) ──
-        speakText(text, btn) {
-          // Cancelar cualquier síntesis previa
+        cancelSpeech() {
           if (window.speechSynthesis) window.speechSynthesis.cancel();
-          this.currentAudio = null;
+          if (this.currentAudio) {
+            try {
+              this.currentAudio.pause();
+            } catch (e) {}
+            this.currentAudio = null;
+          }
+          document.querySelectorAll(".msg-speak-btn.speaking").forEach(btn => {
+            btn.classList.remove("speaking");
+            btn.innerHTML = `🔊 Reproducir`;
+          });
+          const globalBtn = el("chatTtsToggle");
+          if (globalBtn) {
+            globalBtn.classList.remove("speaking");
+            globalBtn.innerHTML = this.ttsEnabled ? "🔊" : "🔇";
+          }
+        },
 
-          if (!window.speechSynthesis) {
-            if (btn) { btn.classList.add("speak-error"); btn.innerHTML = `⚠️ Sin soporte de voz`; }
-            return;
+        // ── TTS: Convierte texto a audio usando Azure Speech API ──
+        speakText(text, btn) {
+          this.cancelSpeech();
+
+          // --- 00. MODO EJECUTIVO (RESUMIR TEXTO PARA AUDIO) ---
+          const execCheck = el('chkAudioExec');
+          const isExecMode = execCheck && execCheck.checked;
+          if (isExecMode) {
+            const lines = text.split('\n');
+            const summaryLines = [];
+            let insideTable = false;
+            let insideRecommendations = false;
+            for (let i = 0; i < lines.length; i++) {
+              const trimmed = lines[i].trim();
+              if (trimmed.toLowerCase().includes('recomendaciones') || trimmed.toLowerCase().includes('acción') || trimmed.toLowerCase().includes('accionable')) {
+                insideRecommendations = true;
+                summaryLines.push("Recomendaciones accionables:");
+                continue;
+              }
+              if (trimmed.startsWith('|')) {
+                if (!insideTable) {
+                  summaryLines.push("Detalle completo en la tabla mostrada en pantalla.");
+                  insideTable = true;
+                }
+                continue;
+              } else {
+                insideTable = false;
+              }
+              if (insideRecommendations) {
+                if (trimmed.length > 0 && (trimmed.match(/^\d+[\.\)]/) || trimmed.startsWith('-') || trimmed.startsWith('*'))) {
+                  summaryLines.push(trimmed);
+                }
+              } else {
+                if (trimmed.length > 0 && !trimmed.startsWith('!') && !trimmed.startsWith('#') && summaryLines.length < 3) {
+                  summaryLines.push(trimmed);
+                }
+              }
+            }
+            text = summaryLines.join('\n');
           }
 
-          // Limpiar texto: eliminar markdown y emojis para voz más limpia
-          const cleanText = text
-            .replace(/[*_`#>|\[\]()!]/g, '')
-            .replace(/\bhttps?:\/\/\S+/g, '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 3000);
+          // --- 0. INTERPRETAR TABLAS MARKDOWN DE FORMA CONVERSACIONAL ---
+          const hasTable = text.includes('|');
+          if (hasTable) {
+            const lines = text.split('\n');
+            let i = 0;
+            const newText = [];
+            
+            while (i < lines.length) {
+              const line = lines[i].trim();
+              if (line.startsWith('|') && line.endsWith('|')) {
+                const tableRows = [];
+                while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+                  tableRows.push(lines[i].trim());
+                  i++;
+                }
+                
+                if (tableRows.length >= 3) {
+                  const headers = tableRows[0].split('|').map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+                  const conversationalRows = [];
+                  for (let r = 2; r < tableRows.length; r++) {
+                    const cells = tableRows[r].split('|').map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+                    if (cells.length > 0) {
+                      const subject = cells[0];
+                      const details = [];
+                      for (let c = 1; c < cells.length; c++) {
+                        const headerName = headers[c] || `Columna ${c + 1}`;
+                        const val = cells[c] || 'no disponible';
+                        details.push(`el ${headerName} es de ${val}`);
+                      }
+                      if (details.length > 0) {
+                        conversationalRows.push(`Para ${subject}, ${details.join(' y ')}.`);
+                      } else {
+                        conversationalRows.push(`Dato: ${subject}.`);
+                      }
+                    }
+                  }
+                  if (conversationalRows.length > 0) {
+                    newText.push(`Detalle de la tabla: ${conversationalRows.join(' ')}`);
+                  }
+                } else {
+                  newText.push(tableRows.join('\n'));
+                }
+              } else {
+                newText.push(lines[i]);
+                i++;
+              }
+            }
+            text = newText.join('\n');
+          }
 
-          const utterance = new SpeechSynthesisUtterance(cleanText);
-          utterance.lang = currentLang === 'en' ? 'en-US' : 'es-MX';
-          utterance.rate = 1.05;
-          utterance.pitch = 1.0;
-          utterance.volume = 1.0;
+          // --- NORMALIZACIÓN INTELIGENTE DE TEXTO PARA VOZ ---
+          let cleanText = text;
 
-          // Intentar usar una voz en español si está disponible
-          const voices = window.speechSynthesis.getVoices();
-          const esVoice = voices.find(v =>
-            v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Microsoft') || v.localService)
-          ) || voices.find(v => v.lang.startsWith('es'));
-          if (esVoice) utterance.voice = esVoice;
+          // 1. Eliminar Markdown de enlaces conservando solo el texto descriptivo
+          cleanText = cleanText.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-          this._currentUtterance = utterance;
+          // 2. Eliminar viñetas al inicio de línea
+          cleanText = cleanText.replace(/^\s*[-*•+]\s+/gm, ' ');
+
+          // 3. Eliminar caracteres Markdown básicos
+          cleanText = cleanText.replace(/[*_`~#\>|]/g, '');
+
+          // 4. Reemplazar siglas y símbolos por su lectura conversacional natural
+          cleanText = cleanText.replace(/\+\s*(\d+)/g, 'más $1');
+          cleanText = cleanText.replace(/%/g, ' por ciento');
+          cleanText = cleanText.replace(/(\d+)\s*°F/gi, '$1 grados Fahrenheit');
+          cleanText = cleanText.replace(/(\d+)\s*°C/gi, '$1 grados Celsius');
+          cleanText = cleanText.replace(/(\d+)\s*A\b/g, '$1 Amperes');
+          cleanText = cleanText.replace(/\bPSI\b/gi, 'P S I');
+          cleanText = cleanText.replace(/\bQSR\b/gi, 'Q S R');
+          cleanText = cleanText.replace(/\bIoT\b/gi, 'internet de las cosas');
+          cleanText = cleanText.replace(/\bKPIs?\b/gi, 'indicadores de desempeño');
+
+          // 5. Filtrar Emojis
+          cleanText = cleanText.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]/gu, '');
+
+          // 6. Cambiar guiones largos, dobles o slash en medio de palabras por pausas (comas)
+          cleanText = cleanText.replace(/—/g, ', ');
+          cleanText = cleanText.replace(/\s+-\s+/g, ', ');
+          cleanText = cleanText.replace(/\//g, ' o ');
+
+          // 6.5. Asegurar punto al final de cada viñeta/línea
+          const lines = cleanText.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.length > 0) {
+              if (!/[.,;:!?\-]$/.test(line)) {
+                lines[i] = lines[i] + '.';
+              }
+            }
+          }
+          cleanText = lines.join('\n');
+
+          // 7. Limpiar espacios redundantes y limitar longitud
+          cleanText = cleanText.replace(/\s+/g, ' ').trim().slice(0, 3000);
+
+          if (!cleanText) return;
+
+          const globalBtn = el("chatTtsToggle");
+          if (globalBtn) {
+            globalBtn.classList.add("speaking");
+            globalBtn.innerHTML = "🔊";
+          }
 
           if (btn) {
             btn.classList.remove("speak-error");
@@ -6506,23 +6652,75 @@
             btn.innerHTML = `<div class="audio-wave active"><span></span><span></span><span></span><span></span><span></span></div> Hablando...`;
           }
 
-          utterance.onend = () => {
-            this._currentUtterance = null;
-            if (btn) { btn.classList.remove("speaking"); btn.innerHTML = `🔊 Reproducir`; }
-          };
+          try {
+            // Llamar a nuestro endpoint local de Azure TTS usando POST para evitar 404 por longitud de URL
+            const res = await fetch(`${window.API_BASE || ''}/api/chat/tts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: cleanText })
+            });
 
-          utterance.onerror = (e) => {
-            this._currentUtterance = null;
+            if (!res.ok) throw new Error(`Error en TTS HTTP ${res.status}`);
+
+            const blob = await res.blob();
+            const audioUrl = URL.createObjectURL(blob);
+            const audio = new Audio(audioUrl);
+            this.currentAudio = audio;
+
+            audio.play().catch(err => {
+              console.error("Error al reproducir audio de Azure TTS:", err);
+              this.currentAudio = null;
+              if (btn) {
+                btn.classList.remove("speaking");
+                btn.classList.add("speak-error");
+                btn.innerHTML = `⚠️ Error de voz`;
+                setTimeout(() => { btn.classList.remove("speak-error"); btn.innerHTML = `🔊 Reproducir`; }, 3000);
+              }
+              if (globalBtn) {
+                globalBtn.classList.remove("speaking");
+                globalBtn.innerHTML = this.ttsEnabled ? "🔊" : "🔇";
+              }
+            });
+
+            audio.onended = () => {
+              this.currentAudio = null;
+              if (btn) {
+                btn.classList.remove("speaking");
+                btn.innerHTML = `🔊 Reproducir`;
+              }
+              if (globalBtn) {
+                globalBtn.classList.remove("speaking");
+                globalBtn.innerHTML = this.ttsEnabled ? "🔊" : "🔇";
+              }
+            };
+
+            audio.onerror = (e) => {
+              console.error("Error en elemento de audio:", e);
+              this.currentAudio = null;
+              if (btn) {
+                btn.classList.remove("speaking");
+                btn.classList.add("speak-error");
+                btn.innerHTML = `⚠️ Error de voz`;
+                setTimeout(() => { btn.classList.remove("speak-error"); btn.innerHTML = `🔊 Reproducir`; }, 3000);
+              }
+              if (globalBtn) {
+                globalBtn.classList.remove("speaking");
+                globalBtn.innerHTML = this.ttsEnabled ? "🔊" : "🔇";
+              }
+            };
+          } catch (err) {
+            console.error("Error en solicitud TTS:", err);
             if (btn) {
               btn.classList.remove("speaking");
-              if (e.error !== 'interrupted') {
-                btn.classList.add("speak-error"); btn.innerHTML = `⚠️ Error de voz`;
-                setTimeout(() => { btn.classList.remove("speak-error"); btn.innerHTML = `🔊 Reproducir`; }, 3000);
-              } else { btn.innerHTML = `🔊 Reproducir`; }
+              btn.classList.add("speak-error");
+              btn.innerHTML = `⚠️ Error de voz`;
+              setTimeout(() => { btn.classList.remove("speak-error"); btn.innerHTML = `🔊 Reproducir`; }, 3000);
             }
-          };
-
-          window.speechSynthesis.speak(utterance);
+            if (globalBtn) {
+              globalBtn.classList.remove("speaking");
+              globalBtn.innerHTML = this.ttsEnabled ? "🔊" : "🔇";
+            }
+          }
         },
 
         // ── Agrega botón de reproducción a un mensaje bot ─────────────────
@@ -6533,10 +6731,7 @@
           btn.title = "Escuchar respuesta";
           btn.addEventListener("click", () => {
             if (btn.classList.contains("speaking")) {
-              // Si ya está hablando, detener
-              if (this.currentAudio) { this.currentAudio.pause(); this.currentAudio = null; }
-              btn.classList.remove("speaking");
-              btn.innerHTML = `🔊 Reproducir`;
+              this.cancelSpeech();
             } else {
               this.speakText(text, btn);
             }
