@@ -124,13 +124,13 @@ def main():
             f"docker run -d "
             f"--name {APP_NAME} "
             f"--restart always "
-            f"-p 80:8000 "
+            f"-p 80:8000 -p 8002:8000 "
             f"--env-file /home/{USER}/{APP_NAME}/.env "
             f"{APP_NAME}"
         )
         if run_command(ssh, cmd_run, sudo=True):
             print("\n--- Deployment Complete! ---")
-            print(f"App available at http://{HOST}")
+            print(f"App available at http://{HOST} or http://{HOST}:8002")
         else:
             print("Failed to start container.")
 
