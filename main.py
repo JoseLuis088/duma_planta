@@ -595,7 +595,7 @@ def wrap_plotly_fig_for_pdf_capture(fig, fname_html: str) -> str:
                     const gd = document.querySelector('.plotly-graph-div');
                     if (gd) {{
                         try {{
-                            const dataUrl = await Plotly.toImage(gd, {{format: 'png', width: 900, height: 450}});
+                            const dataUrl = await Plotly.toImage(gd, {{format: 'jpeg', width: 900, height: 450}});
                             window.parent.postMessage({{ action: "PNG_RESULT", src: document.body.getAttribute('data-chart-url'), dataUrl: dataUrl }}, "*");
                         }} catch (err) {{
                             console.error("Error toImage:", err);

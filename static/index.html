@@ -4401,7 +4401,7 @@
         try {
           if (c.width > 0 && c.height > 0) {
             console.log("🎨 Capturando Canvas:", c.id || `index_${idx}`);
-            b64Map["canvas_" + (c.id || idx)] = c.toDataURL("image/png");
+            b64Map["canvas_" + (c.id || idx)] = c.toDataURL("image/jpeg", 0.7);
           }
         } catch (e) {
           console.warn("❌ Error capturando canvas:", e);
@@ -5572,8 +5572,8 @@
           const kpiGrid = el("cvKpiRow");
           if (kpiGrid) {
             try {
-              const canvas = await html2canvas(kpiGrid, { scale: 2, backgroundColor: "#ffffff" });
-              kpiSnapshot = canvas.toDataURL("image/png");
+              const canvas = await html2canvas(kpiGrid, { scale: 1.2, backgroundColor: "#ffffff" });
+              kpiSnapshot = canvas.toDataURL("image/jpeg", 0.7);
               console.log("CV KPI Snapshot capturado");
             } catch(e) { console.error("Error capturando KPIs CV:", e); }
           }
@@ -5582,8 +5582,8 @@
           const tblCard = el("cvSummaryCard");
           if (tblCard) {
             try {
-              const canvas = await html2canvas(tblCard, { scale: 2, backgroundColor: "#ffffff" });
-              tableSnapshot = canvas.toDataURL("image/png");
+              const canvas = await html2canvas(tblCard, { scale: 1.2, backgroundColor: "#ffffff" });
+              tableSnapshot = canvas.toDataURL("image/jpeg", 0.7);
               console.log("CV Table Snapshot capturado");
             } catch(e) { console.error("Error capturando tabla CV:", e); }
           }
@@ -5632,8 +5632,8 @@
           const kpiGrid = el("oeeDayKpis");
           if (kpiGrid) {
             try {
-              const canvas = await html2canvas(kpiGrid, { scale: 2, backgroundColor: "#ffffff" });
-              kpiSnapshot = canvas.toDataURL("image/png");
+              const canvas = await html2canvas(kpiGrid, { scale: 1.2, backgroundColor: "#ffffff" });
+              kpiSnapshot = canvas.toDataURL("image/jpeg", 0.7);
               console.log("OEE KPI Snapshot capturado");
             } catch(e) { console.error("Error capturando KPIs OEE:", e); }
           }
@@ -5642,8 +5642,8 @@
           const tblCard = el("oeeDayTableCard");
           if (tblCard) {
             try {
-              const canvas = await html2canvas(tblCard, { scale: 2, backgroundColor: "#ffffff" });
-              tableSnapshot = canvas.toDataURL("image/png");
+              const canvas = await html2canvas(tblCard, { scale: 1.2, backgroundColor: "#ffffff" });
+              tableSnapshot = canvas.toDataURL("image/jpeg", 0.7);
               console.log("OEE Table Snapshot capturado");
             } catch(e) { console.error("Error capturando tabla OEE:", e); }
           }

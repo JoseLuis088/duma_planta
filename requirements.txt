@@ -34,3 +34,5 @@ kaleido==0.2.1
 
 plotly
 polars-lts-cpu
+azure-cognitiveservices-speech
+
