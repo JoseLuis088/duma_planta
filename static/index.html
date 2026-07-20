@@ -3680,10 +3680,38 @@
       const el = (id) => document.getElementById(id);
 
       // ===========================
+      // Safe Storage (Fallback for Tracking Prevention & Cross-Origin iFrames)
+      // ===========================
+      const _inMemoryStore = {};
+      const safeStorage = {
+        getItem(key) {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (e) {
+            return _inMemoryStore[key] !== undefined ? _inMemoryStore[key] : null;
+          }
+        },
+        setItem(key, value) {
+          try {
+            window.localStorage.setItem(key, value);
+          } catch (e) {
+            _inMemoryStore[key] = String(value);
+          }
+        },
+        removeItem(key) {
+          try {
+            window.localStorage.removeItem(key);
+          } catch (e) {
+            delete _inMemoryStore[key];
+          }
+        }
+      };
+
+      // ===========================
       // Theme Toggle
       // ===========================
       function initTheme() {
-        const savedTheme = localStorage.getItem('duma-theme');
+        const savedTheme = safeStorage.getItem('duma-theme');
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         const theme = savedTheme || (prefersDark ? 'dark' : 'light');
 
@@ -3696,7 +3724,7 @@
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
         document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('duma-theme', newTheme);
+        safeStorage.setItem('duma-theme', newTheme);
         updateThemeIcon(newTheme);
       }
 
@@ -4208,7 +4236,7 @@
       };
 
       // Estado de idioma actual
-      let currentLang = localStorage.getItem("dumaLang") || "es";
+      let currentLang = safeStorage.getItem("dumaLang") || "es";
       let currentView = "CV";
 
       // Helper de traducción
@@ -4221,7 +4249,7 @@
       // Aplica el idioma seleccionado a toda la UI
       function applyLang(lang) {
         currentLang = lang;
-        localStorage.setItem("dumaLang", lang);
+        safeStorage.setItem("dumaLang", lang);
 
         // Botón toggle
         const langLabel = el("langLabel");
@@ -5732,7 +5760,7 @@
           this.initUserName();
 
           this.isChatInitialized = false;
-          this.threadId = localStorage.getItem("duma_thread_id") || null;
+          this.threadId = safeStorage.getItem("duma_thread_id") || null;
           this.messages = [];
           
           // Cargar sugerencias por defecto
@@ -5749,19 +5777,19 @@
         },
 
         initUserName() {
-          let name = localStorage.getItem("duma_user_name") || "";
+          let name = safeStorage.getItem("duma_user_name") || "";
           if (!name) {
             name = "Definir Nombre";
           }
           this.setUserName(name);
 
           const editAction = () => {
-            const currentName = localStorage.getItem("duma_user_name") || "";
+            const currentName = safeStorage.getItem("duma_user_name") || "";
             const newName = prompt("Introduce tu nombre:", currentName === "Definir Nombre" ? "" : currentName);
             if (newName !== null) {
               const cleanName = newName.trim();
               if (cleanName) {
-                localStorage.setItem("duma_user_name", cleanName);
+                safeStorage.setItem("duma_user_name", cleanName);
                 this.setUserName(cleanName);
                 this.loadConversations(); // Recargar historial del nuevo usuario
                 showToast("✅ Nombre actualizado correctamente");
@@ -5804,7 +5832,7 @@
           if (!confirm(T("newChatConfirm"))) return;
           this.threadId = null;
           this.messages = [];
-          localStorage.removeItem("duma_thread_id");
+          safeStorage.removeItem("duma_thread_id");
           
           // Deseleccionar elementos activos del sidebar
           const items = document.querySelectorAll(".agent-conversation-item");
@@ -5881,7 +5909,7 @@
         },
 
         async loadConversations() {
-          const username = localStorage.getItem("duma_user_name") || "Definir Nombre";
+          const username = safeStorage.getItem("duma_user_name") || "Definir Nombre";
           if (username === "Definir Nombre") {
             const listEl = el("agentConversationsList");
             if (listEl) {
@@ -5966,7 +5994,7 @@
         async switchThread(threadId) {
           if (this.threadId === threadId) return;
           this.threadId = threadId;
-          localStorage.setItem("duma_thread_id", threadId);
+          safeStorage.setItem("duma_thread_id", threadId);
           
           // Actualizar clases activas en sidebar y actualizar título del encabezado
           const items = document.querySelectorAll(".agent-conversation-item");
@@ -6020,7 +6048,7 @@
             if (res.ok) {
               if (this.threadId === threadId) {
                 this.threadId = null;
-                localStorage.removeItem("duma_thread_id");
+                safeStorage.removeItem("duma_thread_id");
                 this.messages = [];
                 const container = el("chatMsgs");
                 if (container) container.innerHTML = "";
@@ -6114,7 +6142,7 @@
 
               if (data.thread_id) {
                 this.threadId = data.thread_id;
-                localStorage.setItem("duma_thread_id", data.thread_id);
+                safeStorage.setItem("duma_thread_id", data.thread_id);
               }
               if (data.message) {
                 this.addMessage("bot", data.message, [], true);
@@ -6260,7 +6288,7 @@
           const input = el("chatInput").value.trim();
           if (!input || this.isTyping || this.isTypingEffectRunning) return;
 
-          const username = localStorage.getItem("duma_user_name") || "Anónimo";
+          const username = safeStorage.getItem("duma_user_name") || "Anónimo";
 
           this.isChatInitialized = true;
           const loadingEl = el("chatLoadingGreeting");
@@ -6294,7 +6322,7 @@
             if (data.thread_id) {
               const oldThreadId = this.threadId;
               this.threadId = data.thread_id;
-              localStorage.setItem("duma_thread_id", data.thread_id);
+              safeStorage.setItem("duma_thread_id", data.thread_id);
               
               if (oldThreadId !== data.thread_id) {
                 this.loadConversations();
@@ -6358,7 +6386,7 @@
         },
 
         async sendAudioMessage(audioBlob) {
-          const username = localStorage.getItem("duma_user_name") || "Anónimo";
+          const username = safeStorage.getItem("duma_user_name") || "Anónimo";
           this.isChatInitialized = true;
           const loadingEl = el("chatLoadingGreeting");
           if (loadingEl) loadingEl.remove();
@@ -6399,7 +6427,7 @@
             if (data.thread_id) {
               const oldThreadId = this.threadId;
               this.threadId = data.thread_id;
-              localStorage.setItem("duma_thread_id", data.thread_id);
+              safeStorage.setItem("duma_thread_id", data.thread_id);
               
               if (oldThreadId !== data.thread_id) {
                 this.loadConversations();
