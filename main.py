@@ -1,5 +1,8 @@
 import os
-import azure.cognitiveservices.speech as speechsdk
+try:
+    import azure.cognitiveservices.speech as speechsdk
+except ImportError:
+    speechsdk = None
 import io
 import uuid
 import json
@@ -1480,8 +1483,9 @@ ORDER BY Duracion_Min DESC;
                             for r in sp_data:
                                 dur = float(r.get("Duracion_Min") or 0)
                                 cumsum_t += dur
-                                r["Pct_Total"]    = round(dur / total_min * 100, 1) if total_min > 0 else 0
-                                r["Pct_Acumulado"] = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
+                                r["Pct_Total"]           = round(dur / total_min * 100, 1) if total_min > 0 else 0
+                                r["Pct_Acumulado"]       = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
+                                r["Kg_Perdidos_Estimados"] = round(dur * (1300.0 / 60.0), 1)
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
                                 "output": json.dumps({
@@ -1758,9 +1762,28 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
 
 
                 # Detección explícita de consultas de tiempo real
-        # Detección explícita de consultas de tiempo real
         is_realtime = any(k in msg for k in ["actual", "ahora", "último", "ultimo", "snapshot", "estado actual", "oee actual"]) \
               and not any(k in msg for k in ["turno", "ayer", "semana", "mes"])
+
+        is_report_request = any(k in msg for k in ["informe", "reporte", "resumen diario", "resumen de turno", "diagnostico", "diagnóstico", "evaluacion", "evaluación", "desempeño", "desempeno"])
+        if is_report_request:
+            extra_instructions += (
+                "\r\n\r\n🔴 ALERTA: EL USUARIO ESTÁ SOLICITANDO UN INFORME O REPORTE EJECUTIVO.\r\n"
+                "PARA EVITAR RESPUESTAS CORTAS, REPETITIVAS O MONÓTONAS, DEBES SEGUIR EL PROTOCOLO OBLIGATORIO DE CONSULTA 360°:\r\n"
+                "1. EJECUTA MÚLTIPLES HERRAMIENTAS: No te limites a 1 sola consulta. Llama obligatoriamente a:\r\n"
+                "   a) sql_query / get_oee_historical_charts (para OEE, Disponibilidad, Desempeño, Calidad y Producción Real vs Esperada).\r\n"
+                "   b) get_stopages_pareto (para obtener el desglose de Paros No Programados y Programados con causas, eventos y minutos).\r\n"
+                "   c) get_control_variables / get_control_variables_correlation (para verificar las variables físicas/sensores como temperaturas y presiones en el mismo periodo).\r\n"
+                "2. ESTRUCTURA EL INFORME EN 4 SECCIONES OBLIGATORIAS:\r\n"
+                "   - Sección 1: 📊 Resumen Ejecutivo & Score de Salud. EVALÚA EL ESTADO DE PLANTA DINÁMICAMENTE SEGÚN EL OEE REAL:\r\n"
+                "     * Si OEE ≥ 85%: 🟢 CLASE MUNDIAL (o ÓPTIMO). ¡NUNCA PONGAS 'EN RIESGO' SI EL OEE ES MAYOR A 85%! (Ej. OEE de 99.9% es 🟢 CLASE MUNDIAL).\r\n"
+                "     * Si OEE entre 65% y 84%: 🟡 EN RIESGO.\r\n"
+                "     * Si OEE < 65%: 🔴 CRÍTICO.\r\n"
+                "   - Sección 2: 🔍 ANÁLISIS DETALLADO POR TURNO (Comparativa por turno, brechas en Kg y velocidad nominal).\r\n"
+                "   - Sección 3: ⚙️ DIAGNÓSTICO CAUSA-RAÍZ (RCA) Y SENSORES ASOCIADOS (Top causas de paros no programados, horas perdidas y coincidencia con lecturas de sensores).\r\n"
+                "   - Sección 4: 💡 PLAN DE ACCIÓN OPERATIVO (3-5 acciones cuantitativas directas para mantenimiento y jefes de planta para las próximas 24-48h).\r\n"
+                "PROHIBIDO responder con una sola línea o copiar etiquetas estáticas de riesgo si los números son excelentes.\r\n"
+            )
 
         if is_realtime:
             extra_instructions += (
@@ -3766,7 +3789,9 @@ SELECT
     wses.ExpectedProductionSummaryModified AS ExpectedProduction,
     wses.Quality AS Quality,
     ISNULL(wses.UnscheduledStopagesCount, 0) AS ParosNoProgramadosCont,
-    ISNULL(wses.ScheduledStopagesCount, 0) AS ParosProgramadosCont
+    ISNULL(wses.ScheduledStopagesCount, 0) AS ParosProgramadosCont,
+    ISNULL(wses.AvgCurrentVelocity, 0) AS AvgCurrentVelocity,
+    ISNULL(wses.AvgExpectedVelocity, 0) AS AvgExpectedVelocity
 FROM ind.WorkShiftExecutionSummaries AS wses
 INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
 INNER JOIN dbo.WorkShiftTemplates AS wst ON wse.WorkShiftTemplateId = wst.WorkShiftTemplateId
@@ -3811,23 +3836,26 @@ ORDER BY Fecha DESC, Turno;
                 "avail": 0.0, "prod": 0.0, "real": 0.0, "exp": 0.0, 
                 "np_min": 0.0, "p_min": 0.0, 
                 "np_cnt": 0.0, "p_cnt": 0.0,
-                "q_sum": 0.0, "q_count": 0
+                "q_sum": 0.0, "q_count": 0,
+                "vel_real_sum": 0.0, "vel_exp_sum": 0.0
             }
         
         def _f(v): 
             try: return float(v) if v is not None else 0.0
             except: return 0.0
 
-        agg[s]["avail"]  += _f(r.get("AvailableTimeMin"))
-        agg[s]["prod"]   += _f(r.get("ProductiveTimeMin"))
-        agg[s]["real"]   += _f(r.get("CurrentProduction"))
-        agg[s]["exp"]    += _f(r.get("ExpectedProduction"))
-        agg[s]["np_min"] += _f(r.get("TiempoNoProdNoProgramadoMin"))
-        agg[s]["p_min"]  += _f(r.get("TiempoNoProdProgramadoMin"))
-        agg[s]["np_cnt"] += _f(r.get("ParosNoProgramadosCont"))
-        agg[s]["p_cnt"]  += _f(r.get("ParosProgramadosCont"))
-        agg[s]["q_sum"]  += _f(r.get("Quality"))
-        agg[s]["q_count"] += 1
+        agg[s]["avail"]        += _f(r.get("AvailableTimeMin"))
+        agg[s]["prod"]         += _f(r.get("ProductiveTimeMin"))
+        agg[s]["real"]         += _f(r.get("CurrentProduction"))
+        agg[s]["exp"]          += _f(r.get("ExpectedProduction"))
+        agg[s]["np_min"]       += _f(r.get("TiempoNoProdNoProgramadoMin"))
+        agg[s]["p_min"]        += _f(r.get("TiempoNoProdProgramadoMin"))
+        agg[s]["np_cnt"]       += _f(r.get("ParosNoProgramadosCont"))
+        agg[s]["p_cnt"]        += _f(r.get("ParosProgramadosCont"))
+        agg[s]["q_sum"]        += _f(r.get("Quality"))
+        agg[s]["vel_real_sum"] += _f(r.get("AvgCurrentVelocity"))
+        agg[s]["vel_exp_sum"]  += _f(r.get("AvgExpectedVelocity"))
+        agg[s]["q_count"]      += 1
 
     table_by_turn = []
     # Ordenar por el orden estándar de turnos
@@ -3843,6 +3871,9 @@ ORDER BY Fecha DESC, Turno;
             oee_c = (v["prod"]/avail_safe) * (v["real"]/exp_safe) * (avg_q/100.0) * 100
             disp_c = (v["prod"]/avail_safe) * 100
             perf_c = (v["real"]/exp_safe) * 100
+
+            avg_vel_real = (v["vel_real_sum"] / v["q_count"]) if v["q_count"] > 0 else 0.0
+            avg_vel_exp  = (v["vel_exp_sum"] / v["q_count"]) if v["q_count"] > 0 else 1300.0
             
             table_by_turn.append({
                 "Fecha": range_label,
@@ -3853,15 +3884,16 @@ ORDER BY Fecha DESC, Turno;
                 "Producto Conforme": f"{avg_q:.1f}%",
                 "Producción Real (Kg)": f"{v['real']:,.0f}",
                 "Producción Esperada (Kg)": f"{v['exp']:,.0f}",
-                 "Paros no programados (Duración)": format_duration_es(v["np_min"], lang=lang),
-                 "Paros No Prog (Eventos)": f"{int(v['np_cnt'])} ev." if lang == "es" else f"{int(v['np_cnt'])} ev.",
-                 "Paros programados (Duración)": format_duration_es(v["p_min"], lang=lang),
-                 "Paros Prog (Eventos)": f"{int(v['p_cnt'])} ev." if lang == "es" else f"{int(v['p_cnt'])} ev."
+                "Velocidad Real vs Esperada (Kg/h)": f"{avg_vel_real:,.0f} / {avg_vel_exp:,.0f} kg/h",
+                "Paros no programados (Duración)": f"{format_duration_es(v['np_min'], lang=lang)} ({int(v['np_cnt'])} ev.)",
+                "Paros No Prog (Eventos)": f"{int(v['np_cnt'])} ev.",
+                "Paros programados (Duración)": f"{format_duration_es(v['p_min'], lang=lang)} ({int(v['p_cnt'])} ev.)",
+                "Paros Prog (Eventos)": f"{int(v['p_cnt'])} ev."
             })
     
     turn_cols = [
         "Fecha", "Turno", "OEE", "Disponibilidad", "Desempeno", "Producto Conforme", 
-        "Producción Real (Kg)", "Producción Esperada (Kg)", 
+        "Producción Real (Kg)", "Producción Esperada (Kg)", "Velocidad Real vs Esperada (Kg/h)",
         "Paros no programados (Duración)", "Paros No Prog (Eventos)", 
         "Paros programados (Duración)", "Paros Prog (Eventos)"
     ]
