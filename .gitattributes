@@ -1,0 +1,2 @@
+# Librerias vendorizadas: se guardan tal cual, sin normalizar saltos de linea.
+static/vendor/** -text
