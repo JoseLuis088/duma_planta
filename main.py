@@ -1468,6 +1468,94 @@ def load_thread_history(thread_id: str, limit: int = 20) -> List[dict]:
     return history
 
 
+def estado_oee(oee):
+    """Semaforo de planta. Se decide en codigo: el modelo se equivocaba en el limite."""
+    if oee is None:
+        return None
+    if oee >= 85:
+        return "🟢 CLASE MUNDIAL"
+    if oee >= 65:
+        return "🟡 EN RIESGO"
+    return "🔴 CRÍTICO"
+
+
+_COLS_OEE = {
+    "disponible": ("TiempoDisponibleMin", "AvailableTimeMin"),
+    "productivo": ("TiempoProductivoMin", "ProductiveTimeMin"),
+    "real": ("ProduccionRealKg", "CurrentProduction", "CurrentProductionSummary"),
+    "esperado": ("ProduccionEstimadaKg", "ExpectedProduction", "ExpectedProductionSummaryModified"),
+    "calidad": ("Producto Conforme", "Quality", "ProductoConforme"),
+}
+
+
+def oee_global_from_rows(rows_dicts):
+    """
+    OEE global del periodo aplicando la regla de oro: se suman los datos crudos de todos
+    los turnos y nunca se promedian porcentajes.
+
+    Se entrega ya calculado a la herramienta para que el modelo no lo derive a mano:
+    agregando turnos por su cuenta producia cifras y semaforos distintos entre corridas.
+    Devuelve None si las filas no traen las columnas necesarias.
+    """
+    if not rows_dicts:
+        return None
+
+    def col(fila, clave):
+        for nombre in _COLS_OEE[clave]:
+            if nombre in fila:
+                return nombre
+        for nombre in _COLS_OEE[clave]:
+            for k in fila:
+                if str(k).strip().lower() == nombre.lower():
+                    return k
+        return None
+
+    primera = rows_dicts[0]
+    nombres = {c: col(primera, c) for c in _COLS_OEE}
+    if not all(nombres.values()):
+        return None
+
+    def num(v):
+        try:
+            return float(v) if v is not None else 0.0
+        except Exception:
+            return 0.0
+
+    disponible = productivo = real = esperado = conforme = 0.0
+    for fila in rows_dicts:
+        r = num(fila.get(nombres["real"]))
+        disponible += num(fila.get(nombres["disponible"]))
+        productivo += num(fila.get(nombres["productivo"]))
+        real += r
+        esperado += num(fila.get(nombres["esperado"]))
+        conforme += r * num(fila.get(nombres["calidad"])) / 100.0
+
+    if disponible <= 0 or esperado <= 0 or real <= 0:
+        return None
+
+    disp = productivo / disponible * 100.0
+    desemp = real / esperado * 100.0
+    cal = conforme / real * 100.0
+    oee = disp * desemp * cal / 10000.0
+
+    return {
+        "OEE_global": round(oee, 2),
+        "estado": estado_oee(oee),
+        "Disponibilidad": round(disp, 2),
+        "Desempeno": round(desemp, 2),
+        "Producto_Conforme": round(cal, 2),
+        "produccion_real_kg": round(real, 1),
+        "produccion_esperada_kg": round(esperado, 1),
+        "brecha_vs_plan_kg": round(esperado - real, 1),
+        "turnos_considerados": len(rows_dicts),
+        "nota": (
+            "Calculado sumando los datos crudos de todos los turnos del periodo (regla de "
+            "oro: nunca promediar porcentajes). Usa estas cifras y este semaforo tal cual; "
+            "no los recalcules ni los reetiquetes."
+        ),
+    }
+
+
 def _normalize_stop_type(value) -> str:
     """
     El código filtra por 'NP' / 'P'. El modelo suele escribir "no programado".
@@ -1985,11 +2073,27 @@ ORDER BY Fecha, Turno;
                             print(select_sql)
                             print("==============================================\r\n")
 
-                            rows, columns = run_sql(select_sql)
+                            rows, columns = run_sql(select_sql, raise_on_error=True)
+                            if not rows:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": tool_empty(
+                                        "No hay turnos cerrados que coincidan con ese criterio.",
+                                        modo=mode,
+                                    ),
+                                })
+                                continue
+
+                            filas_dict = [dict(zip(columns, r)) for r in rows]
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
                                 "output": json.dumps(
-                                    {"columns": columns, "rows": rows},
+                                    {
+                                        "status": "ok",
+                                        "kpis_globales": oee_global_from_rows(filas_dict),
+                                        "columns": columns,
+                                        "rows": rows,
+                                    },
                                     ensure_ascii=False,
                                     default=str
                                 )
@@ -2223,6 +2327,8 @@ ORDER BY Fecha DESC, Turno;
                                 tool_outputs.append({
                                     "tool_call_id": tool.id,
                                     "output": json.dumps({
+                                        "status": "ok",
+                                        "kpis_globales": oee_global_from_rows(rows_dicts_h),
                                         "plots": plots_h,
                                         "from_day": from_day_h, "to_day": to_day_h,
                                         "message": f"Se generaron {len(plots_h)} graficas de OEE del {from_day_h} al {to_day_h} con calculo identico al modulo OEE Historico."
@@ -2546,10 +2652,13 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             return handle_run(msgs_payload)
 
 
-        # 3) Instrucciones base (Carga desde archivo + saludo mínimo + reglas SQL por turno)
+        # 3) Instrucciones de sesion.
+        #    El prompt de dominio vive en DUMA_EXECUTIVE_PROMPT.txt (fuente unica).
+        #    Aqui solo se agrega lo que cambia en cada sesion: idioma, fecha y sensores.
+        #    Antes, el catalogo de herramientas y la estructura del informe estaban
+        #    duplicados aqui y en el .txt, con reglas que se contradecian entre si.
         system_prompt_content = ""
         try:
-            # ✅ Redirigido al nuevo prompt ejecutivo para evitar bloqueos
             with open("DUMA_EXECUTIVE_PROMPT.txt", "r", encoding="utf-8") as f:
                 system_prompt_content = f.read()
         except Exception as e:
@@ -2562,117 +2671,29 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
         }
         is_pure_greeting = msg in greeting_set or msg.rstrip("!.?") in greeting_set
 
+        idioma = ("Respond in English." if (lang or "es").strip().lower() == "en"
+                  else "Responde en español.")
+
         extra_instructions = (
             f"{system_prompt_content}\r\n\r\n"
-            "CATÁLOGO DE SENSORES (VARIABLES DE CONTROL):\r\n"
+            "════════════════════════════════════════════════════════════\r\n"
+            "CATÁLOGO DE SENSORES DE ESTA PLANTA (variables de control)\r\n"
+            "════════════════════════════════════════════════════════════\r\n"
             f"{json.dumps(CRITICAL_VARS, indent=2, ensure_ascii=False)}\r\n\r\n"
-            "INSTRUCCIONES ADICIONALES DE SESIÓN:\r\n"
-            f"{'Respond in English.' if (lang or 'es').strip().lower() == 'en' else 'Responde en español.'} "
-            "Si el mensaje del usuario es SOLO un saludo, responde con un saludo breve y pregunta en qué puedes ayudar. "
-            "NO muestres consultas SQL en la respuesta final. "
-            "HERRAMIENTAS DISPONIBLES Y CUÁNDO USARLAS:\r\n"
-            "  • sql_query (modos: realtime|hist_turno_dia|hist_turno_rango): Para consultar OEE, producción y tiempos de turno.\r\n"
-            "  • get_oee_historical_charts (from_day, to_day?, shift_name?): HERRAMIENTA PRINCIPAL para graficar OEE DIARIO CONSOLIDADO (sin segmentar por turnos). Usa esta herramienta cuando el usuario pida una gráfica de OEE por día/semana/rango SIN segmentar por turnos. Produce exactamente los mismos valores que el módulo OEE Histórico del dashboard.\r\n"
-            "  • get_oee_intraday (day, from_hour?, to_hour?): OEE y paros HORA POR HORA dentro de un dia. "
-            "USALA para 'como estuvo el OEE hoy de 10 a 1', 'OEE por hora' o cualquier detalle intradia. "
-            "Los datos existen minuto a minuto: NUNCA respondas que solo hay informacion por turno.\r\n"
-            "  • get_stopages_pareto (from_day, to_day, shift_name?, type?, chart?): Para responder preguntas sobre motivos de paro, "
-            "causas más frecuentes, paros no programados, análisis 80/20. ÚSALO cuando el usuario pregunte por causas de paros. Pasa chart=true si pide una GRAFICA de paros.\r\n"
-            "  • get_control_variables_correlation (day): Para correlacionar lecturas de sensores con paros y OEE. "
-            "ÚSALO cuando el usuario pregunte por variables de control, sensores, o pida correlaciones.\r\n"
-            "  • get_control_variables (day): Para ver datos detallados de sensores de un día específico.\r\n"
-            "  • viz_render: Solo si el usuario pide explícitamente una gráfica.\r\n\r\n"
-            "PROTOCOLO AGÉNTICO (sigue estos pasos cuando detectes OEE bajo o preguntas de rendimiento):\r\n"
-            "1. Consulta OEE con sql_query → 2. Identifica KPI limitante → "
-            "3. Si disponibilidad baja, usa get_stopages_pareto → "
-            "4. Usa get_control_variables_correlation para correlacionar sensores → "
-            "5. Presenta hipótesis causa-efecto y recomendaciones cuantificadas.\r\n\r\n"
-            "DEFINICION OBLIGATORIA DE 'KILOS PERDIDOS' (una sola, siempre la misma):\r\n"
-            "  Kilos perdidos = produccion esperada del periodo - produccion real del periodo, "
-            "sumando TODOS los turnos del rango (los turnos que superaron el plan tambien cuentan, en negativo). "
-            "Si el resultado es <= 0, la planta cumplio o supero su plan: dilo asi y NO reportes kilos perdidos "
-            "aunque haya habido paros.\r\n"
-            "  NUNCA calcules los kilos perdidos multiplicando minutos de paro por la velocidad nominal: eso es un "
-            "techo teorico que sirve para PRIORIZAR causas de paro, no para cuantificar la perdida. Si lo mencionas, "
-            "etiquetalo explicitamente como 'impacto teorico a velocidad nominal'.\r\n"
-            "  Tampoco sumes solo los turnos con brecha positiva: eso infla la cifra.\r\n\r\n"
-            "**REGLA CRITICA DE GRAFICAS:** Si usas viz_render o get_control_variables, PROHIBIDO usar sintaxis `![]()`. "
-            "El sistema detecta la imagen automaticamente. "
-            "Usa rutas relativas (ej: static/plots/archivo.png) solo en herramientas, nunca en el texto final. "
-            "Para OEE por TURNO (segmentado): chart='line', x='Fecha', ys=['OEE'], hue='Turno'. "
-            "Para OEE DIARIO CONSOLIDADO (sin segmentar por turno): USA get_oee_historical_charts en vez de viz_render. "
-            "Esa herramienta genera automaticamente las graficas con el calculo correcto y ponderado. "
-            "NUNCA uses viz_render para graficar OEE consolidado diario — siempre usa get_oee_historical_charts. "
-            "Para comparaciones usa chart='bar', x='Turno', ys=['OEE']. "
-            "Para TIEMPO REAL usa RT.1 del cookbook. "
-            "Para TURNOS/FECHAS usa H1.x del cookbook."
+            "════════════════════════════════════════════════════════════\r\n"
+            "SESIÓN\r\n"
+            "════════════════════════════════════════════════════════════\r\n"
+            f"{idioma}\r\n"
+            "Aplica la regla de longitud de la sección 1: el tamaño de la respuesta lo "
+            "determina la pregunta, no tu entusiasmo. Sólo despliega el informe completo "
+            "de 4 secciones si el usuario pidió explícitamente un informe o reporte.\r\n"
         )
 
-
-                # Detección explícita de consultas de tiempo real
-        is_realtime = any(k in msg for k in ["actual", "ahora", "último", "ultimo", "snapshot", "estado actual", "oee actual"]) \
-              and not any(k in msg for k in ["turno", "ayer", "semana", "mes"])
-
-        is_report_request = any(k in msg for k in ["informe", "reporte", "resumen diario", "resumen de turno", "diagnostico", "diagnóstico", "evaluacion", "evaluación", "desempeño", "desempeno"])
-        if is_report_request:
-            extra_instructions += (
-                "\r\n\r\n🔴 ALERTA: EL USUARIO ESTÁ SOLICITANDO UN INFORME O REPORTE EJECUTIVO.\r\n"
-                "PARA EVITAR RESPUESTAS CORTAS, REPETITIVAS O MONÓTONAS, DEBES SEGUIR EL PROTOCOLO OBLIGATORIO DE CONSULTA 360°:\r\n"
-                "1. EJECUTA MÚLTIPLES HERRAMIENTAS: No te limites a 1 sola consulta. Llama obligatoriamente a:\r\n"
-                "   a) sql_query / get_oee_historical_charts (para OEE, Disponibilidad, Desempeño, Calidad y Producción Real vs Esperada).\r\n"
-                "   b) get_stopages_pareto (para obtener el desglose de Paros No Programados y Programados con causas, eventos y minutos).\r\n"
-                "   c) get_control_variables / get_control_variables_correlation (para verificar las variables físicas/sensores como temperaturas y presiones en el mismo periodo).\r\n"
-                "2. ESTRUCTURA EL INFORME EN 4 SECCIONES OBLIGATORIAS:\r\n"
-                "   - Sección 1: 📊 Resumen Ejecutivo & Score de Salud. EVALÚA EL ESTADO DE PLANTA DINÁMICAMENTE SEGÚN EL OEE REAL:\r\n"
-                "     * Si OEE ≥ 85%: 🟢 CLASE MUNDIAL (o ÓPTIMO). ¡NUNCA PONGAS 'EN RIESGO' SI EL OEE ES MAYOR A 85%! (Ej. OEE de 99.9% es 🟢 CLASE MUNDIAL).\r\n"
-                "     * Si OEE entre 65% y 84%: 🟡 EN RIESGO.\r\n"
-                "     * Si OEE < 65%: 🔴 CRÍTICO.\r\n"
-                "   - Sección 2: 🔍 ANÁLISIS DETALLADO POR TURNO (Comparativa por turno, brechas en Kg y velocidad nominal).\r\n"
-                "   - Sección 3: ⚙️ DIAGNÓSTICO CAUSA-RAÍZ (RCA) Y SENSORES ASOCIADOS (Top causas de paros no programados, horas perdidas y coincidencia con lecturas de sensores).\r\n"
-                "   - Sección 4: 💡 PLAN DE ACCIÓN OPERATIVO (3-5 acciones cuantitativas directas para mantenimiento y jefes de planta para las próximas 24-48h).\r\n"
-                "PROHIBIDO responder con una sola línea o copiar etiquetas estáticas de riesgo si los números son excelentes.\r\n"
-            )
-
-        if is_realtime:
-            extra_instructions += (
-                " En esta petición de TIEMPO REAL debes usar la RECETA RT.1 del archivo duma_cookbook.txt "
-                "para consultar dbo.ProductionLineIntervals (último snapshot de la línea). "
-                "No inventes otra consulta: usa RT.1 tal cual está definida en el cookbook. "
-                "Después interpreta los campos según el system prompt (estatus, tiempos, velocidades, producción, OEE y sus componentes)."
-                " Los campos importantes de ese registro significan lo siguiente:\r\n"
-                "   - TimeSinceLastStatusChange: duración que la línea lleva en el estatus actual.\r\n"
-                "   - TimeSinceLastWorkshiftBegin: tiempo natural transcurrido desde que inició el turno.\r\n"
-                "   - EffectiveAvailableTime: TIEMPO PRODUCTIVO (minutos u horas según la columna).\r\n"
-                "   - ScheduledStopageTime: tiempo NO productivo PROGRAMADO.\r\n"
-                "   - UnscheduledStopageTime: tiempo NO productivo NO programado.\r\n"
-                "   - CurrentRate: velocidad actual (kg/h).\r\n"
-                "   - ExpectedRate: velocidad esperada (kg/h).\r\n"
-                "   - CurrentShiftProduction: producción real del turno actual (kg).\r\n"
-                "   - ExpectedShiftProduction: producción estimada del turno a la hora actual (kg).\r\n"
-                "   - CurrentProduction: producción actual del día (kg).\r\n"
-                "   - ExpectedDayProduction: producción planificada del día (kg).\r\n"
-                "   - IntervalProductionLineStatus: estado actual de la línea.\r\n"
-                "   - OEE: indicador OEE global.\r\n"
-                "   - OEEAvailability: disponibilidad.\r\n"
-                "   - OEEPerformance: desempeño.\r\n"
-                "   - OEEQuality: Producto Conforme.\r\n"
-                " Cuando el usuario pregunte por 'tiempo productivo', responde usando EffectiveAvailableTime.\r\n"
-                " Cuando pregunte por 'tiempo no productivo programado', usa ScheduledStopageTime.\r\n"
-                " Cuando pregunte por 'tiempo no productivo no programado', usa UnscheduledStopageTime.\r\n"
-                " Si pide 'tiempo no productivo' en general, puedes explicar que es la suma de los tiempos "
-                "no productivos programados y no programados, e indicar ambos valores por separado.\r\n"
-                " Si el usuario pregunta 'qué es' un indicador (por ejemplo: 'qué es tiempo productivo'), "
-                "explica su definición usando estas descripciones sin llamar a sql_query.\r\n"
-                " Si el usuario pregunta 'cuánto es' un indicador (por ejemplo: 'cuál es el tiempo productivo'), "
-                "llama a sql_query con la SELECT indicada, toma el valor del último registro y devuelve el "
-                "resultado de forma clara (incluyendo la unidad de medida si está disponible).\r\n"
-    )
-
-
-
-        # saludo breve si el usuario solo saludó
         if is_pure_greeting:
-            extra_instructions += " Puedes incluir un solo saludo breve en este turno."
+            extra_instructions += (
+                "El usuario sólo saludó: responde con un saludo breve y pregunta en qué "
+                "puedes ayudarlo. No consultes datos ni generes informes.\r\n"
+            )
 
         # 4) Primer ciclo de razonamiento + herramientas
         last_text = run_turn(extra_instructions) or last_text
