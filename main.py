@@ -276,6 +276,40 @@ def run_thread_cleanup():
             logging.error(f"Error al eliminar el hilo {t_id} de la base de datos local: {e}")
 
 
+VENDOR_DIR = os.path.join("static", "vendor")
+
+
+def _ensure_plotly_vendor() -> str:
+    """
+    Deja en static/vendor/plotly.min.js el JS de la MISMA version de plotly instalada.
+
+    Las graficas se generan con plotly.py y se dibujan con plotly.js: si no coinciden,
+    el iframe puede quedar en blanco. Copiar el archivo a mano es una trampa, porque
+    produccion y desarrollo tenian versiones distintas (6.8.0 contra 5.9.0). Aqui se
+    sincroniza en el arranque a partir del paquete instalado.
+    """
+    destino = os.path.join(VENDOR_DIR, "plotly.min.js")
+    try:
+        from plotly.offline import get_plotlyjs
+        js = get_plotlyjs()
+    except Exception as e:
+        logging.warning("No se pudo obtener plotly.js del paquete instalado: %s", e)
+        return destino
+    try:
+        os.makedirs(VENDOR_DIR, exist_ok=True)
+        actual = None
+        if os.path.exists(destino):
+            with open(destino, "r", encoding="utf-8", errors="ignore") as f:
+                actual = f.read()
+        if actual != js:
+            with open(destino, "w", encoding="utf-8") as f:
+                f.write(js)
+            logging.info("plotly.js sincronizado con la version instalada (%d bytes).", len(js))
+    except Exception as e:
+        logging.warning("No se pudo escribir %s: %s", destino, e)
+    return destino
+
+
 # ---------- Purga de archivos generados ----------
 # Las graficas, los PNG de reporte y los snapshots se acumulaban sin limite: 3.7 GB en
 # el entorno de desarrollo y ~166 MB por cada dos horas de uso en la VM. La retencion se
@@ -651,8 +685,36 @@ app.mount("/Bafar/static", StaticFiles(directory="static"), name="static_bafar")
 
 @app.on_event("startup")
 async def startup_event():
+    # on_event esta deprecado en FastAPI; se mantiene por compatibilidad con la
+    # version fijada (0.111) y se migrara junto con el resto del arranque.
+    _ensure_plotly_vendor()
     init_history_db()
     asyncio.create_task(periodic_cleanup_task())
+
+
+@app.get("/health")
+@app.get("/Bafar/health")
+async def health():
+    """
+    Sonda para Docker y el proxy. Reporta si las dos bases responden.
+    Devuelve 200 mientras la app pueda atender, aunque una dependencia este caida:
+    asi el contenedor no se reinicia en bucle por un corte momentaneo de SQL.
+    """
+    estado = {"app": "ok", "deployment": AZURE_OPENAI_DEPLOYMENT or None}
+
+    def _probar(cadena, etiqueta):
+        try:
+            with pyodbc.connect(cadena, timeout=5) as conn:
+                conn.cursor().execute("SELECT 1").fetchone()
+            estado[etiqueta] = "ok"
+        except Exception as e:
+            estado[etiqueta] = "error"
+            estado[etiqueta + "_detalle"] = str(e)[:160]
+
+    await asyncio.to_thread(_probar, CONN_STR, "sql_planta")
+    await asyncio.to_thread(_probar, HISTORY_CONN_STR, "sql_historial")
+    estado["degradado"] = any(v == "error" for v in estado.values())
+    return JSONResponse(estado)
 
 # ---------- Helpers SQL ----------
 class SqlExecutionError(RuntimeError):
@@ -3427,15 +3489,25 @@ class _CriticalVarsProxy(dict):
 
 CRITICAL_VARS = _CriticalVarsProxy()
 
-@property
-def CRITICAL_VAR_IDS():
-    return set(k.strip().lower() for k in get_critical_vars().keys())
-
-# Compatibilidad directa (se recalcula en cada uso para reflejar el estado actual)
 def _get_critical_var_ids():
+    """Ids de variables criticas, siempre al dia con la BD."""
     return set(k.strip().lower() for k in get_critical_vars().keys())
 
-CRITICAL_VAR_IDS = _get_critical_var_ids()
+
+class _CriticalVarIdsProxy(set):
+    """
+    Se comporta como el set original pero consulta al momento de usarse.
+
+    Antes esto era `CRITICAL_VAR_IDS = _get_critical_var_ids()` a nivel de modulo, lo
+    que golpeaba SQL Server con solo importar main.py: imposible ejecutar una prueba
+    unitaria sin la base de datos de produccion, y el arranque fallaba si la BD tardaba.
+    """
+    def __contains__(self, key):  return key in _get_critical_var_ids()
+    def __iter__(self):           return iter(_get_critical_var_ids())
+    def __len__(self):            return len(_get_critical_var_ids())
+
+
+CRITICAL_VAR_IDS = _CriticalVarIdsProxy()
 
 def _normalize_shift(shift: str) -> ShiftName:
     s = (shift or "").strip().lower()

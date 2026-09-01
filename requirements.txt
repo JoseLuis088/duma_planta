@@ -1,38 +1,51 @@
+# Versiones fijadas a las que corren HOY en produccion (VM 172.168.10.106,
+# contenedor duma_planta), leidas con pip freeze. Fijarlas no cambia el
+# comportamiento actual: evita que el proximo docker build instale otra cosa.
+#
+# Antes, openai / plotly / matplotlib / scikit-learn / seaborn / pypdf /
+# python-docx / polars / azure-cognitiveservices-speech iban sin version: cada
+# rebuild traia lo que hubiera ese dia. Una 3.x de openai habria roto produccion
+# sin que nadie tocara el codigo.
+
+# --- Web ---
 fastapi==0.111.0
 uvicorn==0.30.1
 gunicorn==22.0.0
-
-openai
-python-dotenv==1.0.1
 python-multipart==0.0.9
 aiofiles==23.2.1
 orjson==3.10.7
-
-SQLAlchemy==2.0.32
-pyodbc==5.1.0
 pydantic==2.8.2
 
+# --- Azure OpenAI / voz ---
+openai==2.44.0
+azure-cognitiveservices-speech==1.50.0
+python-dotenv==1.0.1
+
+# --- Datos ---
+SQLAlchemy==2.0.32
+pyodbc==5.1.0
 pandas==2.2.2
+numpy==1.26.4
 pyarrow==16.1.0
 duckdb==1.4.3
-numpy==1.26.4
-scikit-learn
-matplotlib
-seaborn
+polars-lts-cpu==1.33.1
+scikit-learn==1.9.0
 
+# --- Graficas ---
+# plotly.js se sirve desde static/vendor/ y se sincroniza en el arranque con la
+# version instalada aqui (ver _ensure_plotly_vendor en main.py). Si cambias esta
+# version, el JS se regenera solo: no hay que actualizarlo a mano.
+plotly==6.8.0
+kaleido==0.2.1
+matplotlib==3.11.0
+seaborn==0.13.2
+pillow==12.0.0
+
+# --- Reportes ---
+reportlab==4.4.9
+pypdf==6.14.2
+python-docx==1.2.0
+
+# --- Almacenamiento ---
 adlfs==2024.4.1
 azure-storage-blob==12.19.0
-
-pypdf
-reportlab
-python-docx
-
-reportlab==4.4.9
-pillow==12.0.0
-kaleido==0.2.1
-
-
-plotly
-polars-lts-cpu
-azure-cognitiveservices-speech
-
