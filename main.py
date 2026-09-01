@@ -11,6 +11,7 @@ import time
 import base64
 import re
 from typing import List, Optional
+from types import SimpleNamespace
 import datetime as dt
 from datetime import datetime, date, timedelta
 
@@ -1871,8 +1872,25 @@ DUMA_TOOLS = [
 ]
 
 
+# ---------- Estados visibles del agente ----------
+# Lo que ve el usuario mientras el ciclo trabaja. Sin esto la espera de 30-90 s era
+# una pantalla con puntos suspensivos y ninguna senal de avance.
+ETIQUETAS_HERRAMIENTA = {
+    "sql_query": "Consultando OEE y produccion...",
+    "get_oee_intraday": "Reconstruyendo el OEE hora por hora...",
+    "get_oee_historical_charts": "Generando las graficas de OEE...",
+    "get_stopages_pareto": "Analizando las causas de paro...",
+    "get_control_variables": "Revisando los sensores...",
+    "get_control_variables_correlation": "Cruzando sensores con paros...",
+    "list_control_variables": "Consultando el catalogo de variables...",
+    "plot_variable": "Graficando la variable...",
+    "viz_render": "Generando la grafica...",
+}
+
+
 # ---------- Core assistant step ----------
-def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "es") -> dict:
+def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "es",
+                        emit=None) -> dict:
     """
     Crea/usa un thread, envía el mensaje y resuelve tool calls (sql_query y viz_render),
     devolviendo el último texto + recursos. Incluye:
@@ -1884,6 +1902,15 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
     """
     import logging, time, json, re
     logging.basicConfig(level=logging.INFO)
+
+    def avisar(evento: dict):
+        """Publica un evento de progreso si hay un consumidor escuchando (SSE)."""
+        if emit is None:
+            return
+        try:
+            emit(evento)
+        except Exception as e:
+            logging.warning("No se pudo emitir el evento de progreso: %s", e)
 
     # Siempre inicializa para evitar NameError en retornos/errores
     images_out: List[str] = []
@@ -1931,20 +1958,52 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
                 break
 
             try:
-                completion = client.chat.completions.create(
+                # stream=True para poder ir entregando el texto conforme se genera.
+                # Las tool_calls llegan troceadas: se acumulan por indice antes de
+                # ejecutarlas.
+                flujo = client.chat.completions.create(
                     model=AZURE_OPENAI_DEPLOYMENT,
                     messages=messages,
                     tools=DUMA_TOOLS,
                     tool_choice="auto",
                     temperature=0.2,
                     max_tokens=4000,
+                    stream=True,
                 )
+                partes_texto = []
+                acumuladas = {}
+                for tramo in flujo:
+                    if not getattr(tramo, "choices", None):
+                        continue
+                    delta = tramo.choices[0].delta
+                    if getattr(delta, "content", None):
+                        partes_texto.append(delta.content)
+                        avisar({"type": "delta", "text": delta.content})
+                    for tc in (getattr(delta, "tool_calls", None) or []):
+                        ranura = acumuladas.setdefault(
+                            tc.index, {"id": "", "name": "", "arguments": ""})
+                        if getattr(tc, "id", None):
+                            ranura["id"] = tc.id
+                        fn = getattr(tc, "function", None)
+                        if fn is not None:
+                            if getattr(fn, "name", None):
+                                ranura["name"] += fn.name
+                            if getattr(fn, "arguments", None):
+                                ranura["arguments"] += fn.arguments
             except Exception as e:
                 logging.error("Error llamando a Chat Completions: %s" % e)
                 break
 
-            reply = completion.choices[0].message
-            tool_calls = list(reply.tool_calls or [])
+            texto_parcial = "".join(partes_texto)
+            reply = SimpleNamespace(content=texto_parcial)
+            tool_calls = [
+                SimpleNamespace(
+                    id=datos["id"] or f"call_{indice}",
+                    function=SimpleNamespace(name=datos["name"], arguments=datos["arguments"]),
+                )
+                for indice, datos in sorted(acumuladas.items())
+                if datos["name"]
+            ]
 
             if tool_calls:
                 messages.append({
@@ -1966,6 +2025,11 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
                 for tool in tool_calls:
                     name = tool.function.name
                     tool_used = True  # <<-- ¡Se usó una herramienta!
+                    avisar({
+                        "type": "status",
+                        "tool": name,
+                        "text": ETIQUETAS_HERRAMIENTA.get(name, "Consultando datos..."),
+                    })
 
                     try:
                         args = json.loads(tool.function.arguments or "{}")
@@ -2947,6 +3011,42 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             "images": images_out,
             "captions": captions_out
         }
+
+def guardar_conversacion(thread_id: str, username: str, owner_key: str,
+                         texto_usuario: str, salida: dict, titulo_base: str = None):
+    """
+    Guarda el turno en SQL Server. Estaba duplicado en /chat y /chat/audio; ahora
+    tambien lo usa /chat/stream, asi que vive en un solo lugar.
+    """
+    if not thread_id:
+        return
+    try:
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM dbo.duma_conversations WHERE thread_id = ?",
+                           (thread_id,))
+            if not cursor.fetchone():
+                base = (titulo_base or texto_usuario or "").replace("\n", " ").replace("\r", " ").strip()
+                titulo = base[:47] + "..." if len(base) > 47 else (base or "Nueva conversación")
+                cursor.execute(
+                    "INSERT INTO dbo.duma_conversations (thread_id, user_name, title, owner_key) "
+                    "VALUES (?, ?, ?, ?)",
+                    (thread_id, username, titulo, owner_key or None)
+                )
+            cursor.execute(
+                "INSERT INTO dbo.duma_messages (thread_id, role, text, images) VALUES (?, ?, ?, ?)",
+                (thread_id, "user", texto_usuario, None)
+            )
+            if salida.get("message"):
+                imgs = json.dumps(salida.get("images")) if salida.get("images") else None
+                cursor.execute(
+                    "INSERT INTO dbo.duma_messages (thread_id, role, text, images) VALUES (?, ?, ?, ?)",
+                    (thread_id, "assistant", salida.get("message"), imgs)
+                )
+            conn.commit()
+    except Exception as e:
+        logging.error("Error al guardar la conversación %s: %s", thread_id, e)
+
 
 # ---------------------------------------------------------
 #  Página web del chat (sirve static/index.html)
@@ -5162,6 +5262,75 @@ async def chat(request: Request):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/chat/stream")
+@app.post("/Bafar/chat/stream")
+async def chat_stream(request: Request):
+    """
+    Igual que /chat/ pero por Server-Sent Events. Eventos emitidos:
+      status  -> que herramienta se esta ejecutando
+      delta   -> fragmento de texto conforme el modelo lo escribe
+      done    -> respuesta final ya post-procesada (imagenes, limpieza) + thread_id
+      error   -> fallo controlado
+    El cliente debe quedarse con el texto de `done`: los deltas son solo para que la
+    espera no sea ciega, y el mensaje final es el que pasa por el post-proceso.
+    """
+    body = await request.json()
+    user_text = (body.get("input") or "").strip()
+    thread_id = body.get("thread_id")
+    username = (body.get("username") or "").strip() or "Anónimo"
+    owner_key = (body.get("owner_key") or "").strip()[:64]
+    lang = (body.get("lang") or "es").strip().lower()
+
+    if not user_text:
+        return JSONResponse({"error": "input vacío"}, status_code=400)
+
+    cola: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def emit(evento: dict):
+        loop.call_soon_threadsafe(cola.put_nowait, evento)
+
+    async def trabajar():
+        try:
+            salida = await asyncio.to_thread(
+                run_assistant_cycle, user_text, thread_id, lang, emit)
+            resuelto = salida.get("thread_id")
+            if resuelto:
+                await asyncio.to_thread(
+                    guardar_conversacion, resuelto, username, owner_key, user_text, salida)
+            emit({"type": "done", **salida})
+        except Exception as e:
+            logging.exception("Error en /chat/stream")
+            emit({
+                "type": "error",
+                "message": ("⚠️ No pude completar la consulta en este momento. "
+                            "Vuelve a intentarlo en unos segundos."),
+            })
+
+    async def generar():
+        tarea = asyncio.create_task(trabajar())
+        try:
+            while True:
+                evento = await cola.get()
+                yield "data: " + json.dumps(evento, ensure_ascii=False, default=str) + "\n\n"
+                if evento.get("type") in ("done", "error"):
+                    break
+        finally:
+            if not tarea.done():
+                tarea.cancel()
+
+    return StreamingResponse(
+        generar(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Nginx bufferea SSE por defecto y los eventos llegarian todos al final.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

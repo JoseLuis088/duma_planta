@@ -6312,6 +6312,66 @@
           this.isOpen = false;
         },
 
+        // Muestra bajo el indicador de escritura que esta haciendo el agente.
+        setEstadoAgente(texto) {
+          // Se reescribe el texto del indicador de escritura que ya existe, en vez de
+          // agregar otra linea: el usuario ve "Analizando causas de paro..." donde
+          // antes siempre decia "Analizando datos, un momento...".
+          const etiqueta = document.querySelector(".typing-wrapper .msg.typing span:last-child");
+          if (!etiqueta) return;
+          etiqueta.textContent = texto || (currentLang === 'en'
+            ? "Analyzing data, one moment..."
+            : "Analizando datos, un momento...");
+        },
+
+        // Lee los eventos SSE de /chat/stream. Devuelve el objeto final (evento
+        // `done`), que es el que ya paso por el post-proceso del backend.
+        async enviarPorStream(cuerpo) {
+          const prefix = window.location.pathname.includes("/Bafar") ? "Bafar/" : "";
+          const res = await fetchConTimeout(`${prefix}chat/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: cuerpo
+          });
+          if (!res.ok || !res.body) throw new Error("stream no disponible (HTTP " + res.status + ")");
+
+          const lector = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let final = null;
+
+          while (true) {
+            const { value, done } = await lector.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let corte;
+            while ((corte = buffer.indexOf("\n\n")) !== -1) {
+              const bruto = buffer.slice(0, corte).trim();
+              buffer = buffer.slice(corte + 2);
+              if (!bruto.startsWith("data:")) continue;
+              let ev;
+              try {
+                ev = JSON.parse(bruto.slice(5).trim());
+              } catch (e) {
+                continue;
+              }
+              if (ev.type === "status") {
+                this.setEstadoAgente(ev.text || "");
+              } else if (ev.type === "delta") {
+                // Solo como senal de avance: el texto bueno llega en `done`.
+                this.setEstadoAgente(currentLang === 'en' ? "Writing the answer..." : "Redactando la respuesta...");
+              } else if (ev.type === "done") {
+                final = ev;
+              } else if (ev.type === "error") {
+                final = { message: ev.message };
+              }
+            }
+          }
+          if (!final) throw new Error("el stream termino sin respuesta");
+          return final;
+        },
+
         async handleSend() {
           const input = el("chatInput").value.trim();
           if (!input || this.isTyping || this.isTypingEffectRunning) return;
@@ -6343,19 +6403,35 @@
           if (el("chatSuggestions")) el("chatSuggestions").style.display = "none";
 
           try {
-            const res = await fetchConTimeout("chat/", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                input: input,
-                thread_id: this.threadId,
-                username: username,
-                owner_key: ownerKey(),
-                lang: currentLang
-              })
+            const cuerpo = JSON.stringify({
+              input: input,
+              thread_id: this.threadId,
+              username: username,
+              owner_key: ownerKey(),
+              lang: currentLang
             });
 
-            const data = await res.json();
+            // Se intenta primero por streaming para que el usuario vea el avance
+            // ("Consultando OEE...", "Analizando causas de paro..."). Si el canal no
+            // esta disponible (proxy que bufferea, version vieja del backend), se
+            // recurre al endpoint clasico sin que el usuario note el cambio.
+            let data = null;
+            try {
+              data = await this.enviarPorStream(cuerpo);
+            } catch (errStream) {
+              console.warn("Streaming no disponible, se usa el endpoint clasico:", errStream);
+              data = null;
+            }
+
+            if (!data) {
+              const res = await fetchConTimeout("chat/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: cuerpo
+              });
+              data = await res.json();
+            }
+            this.setEstadoAgente("");
             this.showTyping(false);
 
             if (data.thread_id) {
