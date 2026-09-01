@@ -59,7 +59,8 @@ AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-0
 AZURE_OPENAI_WHISPER_DEPLOYMENT = os.environ.get("AZURE_OPENAI_WHISPER_DEPLOYMENT", "Duma_Planta_Whisper")
 AZURE_OPENAI_WHISPER_ENDPOINT = os.environ.get("AZURE_OPENAI_WHISPER_ENDPOINT", "")
 AZURE_OPENAI_WHISPER_KEY = os.environ.get("AZURE_OPENAI_WHISPER_KEY", "")
-ASSISTANT_ID = os.environ["ASSISTANT_ID"]
+# ASSISTANT_ID quedo obsoleto: la Assistants API fue retirada por Azure.
+ASSISTANT_ID = os.environ.get("ASSISTANT_ID", "")
 
 SQL_SERVER   = os.getenv("SQL_SERVER")
 SQL_DB       = os.getenv("SQL_DB")
@@ -222,13 +223,7 @@ def run_thread_cleanup():
 
     logging.info(f"Se encontraron {len(threads_to_delete)} hilos antiguos para purgar.")
     for t_id in threads_to_delete:
-        # 1) Eliminar de OpenAI
-        try:
-            logging.info(f"Purgando hilo {t_id} de los servidores de OpenAI...")
-            client.beta.threads.delete(t_id)
-        except Exception as oe:
-            logging.warning(f"No se pudo eliminar el hilo {t_id} de OpenAI (posiblemente ya no existe): {oe}")
-            
+        # (Ya no existe thread remoto en OpenAI que purgar.)
         # 2) Eliminar de la base de datos local
         try:
             logging.info(f"Eliminando hilo {t_id} de la base de datos local...")
@@ -897,6 +892,203 @@ WHERE wse.Status='closed' AND wse.Active = 1 AND wses.Active = 1
 
 
 
+# ---------- Herramientas locales (antes vivian en el objeto Assistant de Azure) ----------
+# La Assistants API fue retirada; las definiciones de funciones ahora se envian en cada
+# llamada a Chat Completions, y el cookbook/esquema (antes en file_search) se inyectan
+# en el system prompt.
+
+MAX_TOOL_ITERATIONS = int(os.getenv("DUMA_MAX_TOOL_ITERATIONS", "8"))
+CHAT_HISTORY_TURNS = int(os.getenv("DUMA_CHAT_HISTORY_TURNS", "20"))
+
+_DUMA_KB_CACHE = {"text": None}
+
+
+def duma_knowledge_base() -> str:
+    """Cookbook + esquema como texto para el system prompt (reemplazo de file_search)."""
+    if _DUMA_KB_CACHE["text"] is not None:
+        return _DUMA_KB_CACHE["text"]
+    parts = []
+    for fname, titulo in (("duma_cookbook.txt", "COOKBOOK DE CONSULTAS (duma_cookbook.txt)"),
+                          ("schema.md", "ESQUEMA DE BASE DE DATOS (schema.md)")):
+        try:
+            with open(fname, "r", encoding="utf-8") as fh:
+                parts.append("===== %s =====\r\n%s" % (titulo, fh.read()))
+        except Exception as e:
+            logging.warning("No se pudo cargar %s para el system prompt: %s" % (fname, e))
+    _DUMA_KB_CACHE["text"] = "\r\n\r\n".join(parts)
+    return _DUMA_KB_CACHE["text"]
+
+
+def load_thread_history(thread_id: str, limit: int = 20) -> List[dict]:
+    """Recupera los ultimos mensajes de la conversacion desde dbo.duma_messages."""
+    history: List[dict] = []
+    if not thread_id:
+        return history
+    try:
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT TOP (?) role, text FROM dbo.duma_messages "
+                "WHERE thread_id = ? ORDER BY message_id DESC",
+                (int(limit), thread_id),
+            )
+            rows = cursor.fetchall()
+        for row in reversed(rows):
+            role = (row[0] or "").lower()
+            if role not in ("user", "assistant"):
+                continue
+            text = (row[1] or "").strip()
+            if not text or text.startswith("[system_date=") or text.startswith("[system:"):
+                continue
+            history.append({"role": role, "content": text})
+    except Exception as e:
+        logging.warning("No se pudo cargar el historial de %s: %s" % (thread_id, e))
+    return history
+
+
+def _fn(name, description, properties, required=None):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required or [],
+            },
+        },
+    }
+
+
+_DAY = {"type": "string", "description": "Fecha en formato YYYY-MM-DD"}
+_SHIFT = {"type": "string", "description": "Primer Turno | Segundo Turno | Tercer Turno"}
+
+DUMA_TOOLS = [
+    _fn(
+        "sql_query",
+        "Consulta OEE, disponibilidad, desempeno, producto conforme, produccion y tiempos "
+        "de turno. Usa 'realtime' para el ultimo snapshot de la linea, 'hist_turno_dia' para "
+        "un dia por turno y 'hist_turno_rango' para un rango de fechas.",
+        {
+            "mode": {
+                "type": "string",
+                "enum": ["realtime", "hist_turno_dia", "hist_turno_rango"],
+                "description": "Modo de consulta.",
+            },
+            "day": _DAY,
+            "from_day": {"type": "string", "description": "YYYY-MM-DD (inicio del rango)"},
+            "to_day": {"type": "string", "description": "YYYY-MM-DD (fin del rango)"},
+            "shift_name": _SHIFT,
+        },
+        ["mode"],
+    ),
+    _fn(
+        "get_oee_historical_charts",
+        "Herramienta PRINCIPAL para graficar el OEE DIARIO CONSOLIDADO (sin segmentar por "
+        "turnos). Reproduce exactamente el modulo OEE Historico del dashboard.",
+        {
+            "from_day": {"type": "string", "description": "YYYY-MM-DD (inicio)"},
+            "to_day": {"type": "string", "description": "YYYY-MM-DD (fin, opcional)"},
+            "shift_name": _SHIFT,
+        },
+        ["from_day"],
+    ),
+    _fn(
+        "get_stopages_pareto",
+        "Pareto de paros: causas mas frecuentes, eventos y minutos perdidos, programados y "
+        "no programados. Usalo para preguntas de causas de paro y analisis 80/20.",
+        {
+            "from_day": {"type": "string", "description": "YYYY-MM-DD (inicio)"},
+            "to_day": {"type": "string", "description": "YYYY-MM-DD (fin)"},
+            "shift_name": _SHIFT,
+            "type": {
+                "type": "string",
+                "description": "Tipo de paro: todos | programado | no programado",
+            },
+        },
+        ["from_day", "to_day"],
+    ),
+    _fn(
+        "get_control_variables",
+        "Resumen de variables de control (sensores: Chiller, IQF, etc.) de un dia especifico.",
+        {"day": _DAY},
+        ["day"],
+    ),
+    _fn(
+        "get_control_variables_correlation",
+        "Correlaciona las lecturas de sensores con los paros y el OEE de un dia. Usalo cuando "
+        "se pregunte por variables de control, sensores o causas fisicas.",
+        {"day": _DAY},
+        ["day"],
+    ),
+    _fn(
+        "list_control_variables",
+        "Lista el catalogo de variables de control / sensores disponibles.",
+        {},
+    ),
+    _fn(
+        "plot_variable",
+        "Grafica la serie de tiempo de una variable de control en un dia o rango.",
+        {
+            "var_id": {"type": "string", "description": "Identificador de la variable."},
+            "variable_name": {"type": "string", "description": "Nombre de la variable (alternativa a var_id)."},
+            "start_day": {"type": "string", "description": "YYYY-MM-DD (inicio)"},
+            "end_day": {"type": "string", "description": "YYYY-MM-DD (fin, opcional)"},
+            "day": _DAY,
+        },
+    ),
+    _fn(
+        "viz_render",
+        "Renderiza una grafica solo si el usuario la pide explicitamente. Para OEE diario "
+        "consolidado usa get_oee_historical_charts en su lugar.",
+        {
+            "columns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Nombres de columnas si se pasan datos tabulares manualmente.",
+            },
+            "rows": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": ["string", "number", "boolean", "null"]}},
+                "description": "Filas de datos tabulares, alineadas con 'columns'.",
+            },
+            "select_sql": {
+                "type": "string",
+                "description": "SELECT que devuelve los datos a graficar (alternativa a columns+rows).",
+            },
+            "spec": {
+                "type": "object",
+                "description": "Especificacion del grafico.",
+                "properties": {
+                    "chart": {"type": "string", "enum": ["line", "bar", "heatmap", "corr"]},
+                    "title": {"type": "string"},
+                    "x": {"type": "string"},
+                    "ys": {"type": "array", "items": {"type": "string"}},
+                    "hue": {"type": "string", "description": "Columna para segmentar series (ej. Turno)."},
+                    "agg": {"type": "string", "enum": ["none", "sum", "mean", "max", "min"]},
+                    "pivot": {
+                        "type": "object",
+                        "properties": {
+                            "index": {"type": "string"},
+                            "columns": {"type": "string"},
+                            "values": {"type": "string"},
+                        },
+                    },
+                    "normalize": {"type": "boolean"},
+                    "style": {
+                        "type": "object",
+                        "properties": {"height": {"type": "integer"}, "width": {"type": "integer"}},
+                    },
+                },
+                "required": ["chart"],
+            },
+        },
+        ["spec"],
+    ),
+]
+
+
 # ---------- Core assistant step ----------
 def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "es") -> dict:
     """
@@ -941,30 +1133,55 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
     tool_used = False
 
     # --- Helper: manejador del ciclo de un run (poll + tools) ----------------
-    def handle_run(thread_id: str, run_id: str) -> bool:
-        """Sondea el run y atiende tool calls hasta completar o fallar. Devuelve True si se usó alguna tool."""
+    def handle_run(messages: List[dict]) -> str:
+        """
+        Ejecuta el ciclo de razonamiento con Chat Completions + tool calling local.
+        Sustituye al antiguo run/poll de la Assistants API (retirada por Azure).
+        Devuelve el texto final del modelo.
+        """
         nonlocal tool_used, images_out, captions_out
         start_time = time.time()
+        final_text = ""
 
-        while True:
-            r = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
-            status = r.status or "unknown"
-
-            if status in ("completed", "failed", "expired", "cancelled", "incomplete"):
-                break
-
-            # Timeout para evitar ciclos infinitos
+        for _iteration in range(MAX_TOOL_ITERATIONS):
             if time.time() - start_time > MAX_WAIT_SECONDS:
-                logging.warning("⏳ Timeout esperando respuesta del asistente.")
-                try:
-                    client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run_id)
-                except Exception:
-                    pass
+                logging.warning("Timeout esperando respuesta del modelo.")
                 break
 
-            if status == "requires_action":
+            try:
+                completion = client.chat.completions.create(
+                    model=AZURE_OPENAI_DEPLOYMENT,
+                    messages=messages,
+                    tools=DUMA_TOOLS,
+                    tool_choice="auto",
+                    temperature=0.2,
+                    max_tokens=4000,
+                )
+            except Exception as e:
+                logging.error("Error llamando a Chat Completions: %s" % e)
+                break
+
+            reply = completion.choices[0].message
+            tool_calls = list(reply.tool_calls or [])
+
+            if tool_calls:
+                messages.append({
+                    "role": "assistant",
+                    "content": reply.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments or "{}",
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                })
                 tool_outputs = []
-                for tool in r.required_action.submit_tool_outputs.tool_calls:
+                for tool in tool_calls:
                     name = tool.function.name
                     tool_used = True  # <<-- ¡Se usó una herramienta!
 
@@ -1634,80 +1851,43 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
                             "output": json.dumps({"error": str(ex)}, ensure_ascii=False)
                         })
 
-                # Enviar outputs con pequeños reintentos defensivos
-                last_err = None
-                for _ in range(1 + TOOL_SUBMIT_RETRIES):
-                    try:
-                        client.beta.threads.runs.submit_tool_outputs(
-                            thread_id=thread_id, run_id=run_id, tool_outputs=tool_outputs
-                        )
-                        last_err = None
-                        break
-                    except Exception as e:
-                        last_err = e
-                        time.sleep(0.4)
-                if last_err:
-                    logging.error(f"Error enviando tool_outputs: {last_err}")
+                for out in tool_outputs:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": out["tool_call_id"],
+                        "content": out["output"],
+                    })
+                continue
 
-            time.sleep(POLL_INTERVAL_SEC)
+            final_text = (reply.content or "").strip()
+            messages.append({"role": "assistant", "content": final_text})
+            break
 
-        return tool_used
+        return final_text
 
 
     # ------------------------ Cuerpo principal -------------------------------
     try:
-        # 1) Thread
-        if thread_id and str(thread_id).startswith("thread_"):
-            t_id = thread_id
-            # Cancelar cualquier run activo previo en este thread para evitar bloqueos
-            try:
-                runs = client.beta.threads.runs.list(thread_id=t_id)
-                for prev_run in runs.data:
-                    if prev_run.status in ("queued", "in_progress", "requires_action", "cancelling"):
-                        logging.info(f"Cancelando run previo activo {prev_run.id} en thread {t_id}")
-                        try:
-                            client.beta.threads.runs.cancel(thread_id=t_id, run_id=prev_run.id)
-                        except Exception as ce:
-                            logging.warning(f"Error al solicitar cancelación de run {prev_run.id}: {ce}")
-                        # Esperar activamente hasta que el run quede cancelado (máx 15s)
-                        cancel_wait = 0
-                        while cancel_wait < 15:
-                            time.sleep(1)
-                            cancel_wait += 1
-                            try:
-                                check = client.beta.threads.runs.retrieve(thread_id=t_id, run_id=prev_run.id)
-                                if check.status in ("cancelled", "completed", "failed", "expired"):
-                                    logging.info(f"Run {prev_run.id} terminó con status={check.status} tras {cancel_wait}s")
-                                    break
-                            except Exception:
-                                break
-                        else:
-                            logging.warning(f"Run {prev_run.id} no se canceló en 15s, continuando de todas formas")
-            except Exception as re:
-                logging.warning(f"Error listando runs en thread {t_id}: {re}")
+        # 1) Identificador de conversacion.
+        #    Ya no es un thread remoto de OpenAI: es una clave local que tambien usa
+        #    dbo.duma_conversations / dbo.duma_messages para persistir el historial.
+        if thread_id and str(thread_id).strip():
+            t_id = str(thread_id).strip()
         else:
-            t = client.beta.threads.create()
-            t_id = t.id
+            t_id = "thread_" + uuid.uuid4().hex
 
-        # 2) Mensajes hacia el thread: primero una marca de fecha del backend, luego el mensaje real
+        # 2) Historial previo (desde SQL Server) + marca de fecha del backend
+        system_date = date.today().isoformat()
+        prior_history = load_thread_history(t_id, limit=CHAT_HISTORY_TURNS)
 
-        # Fecha actual del backend en formato YYYY-MM-DD
-        system_date = date.today().isoformat()  # Ejemplo: "2025-12-05"
-        system_date_msg = f"[system_date={system_date}]"
-
-        # Enviar mensaje invisible/técnico con la fecha del backend
-        client.beta.threads.messages.create(
-            thread_id=t_id,
-            role="user",
-            content=system_date_msg
-        )
-
-        # Enviar luego el mensaje real del usuario
-        client.beta.threads.messages.create(
-            thread_id=t_id,
-            role="user",
-            content=user_text
-        )
+        def run_turn(instructions: str) -> str:
+            """Arma system + historial + turno actual y ejecuta el ciclo de herramientas."""
+            system_content = instructions + "\r\n\r\n" + duma_knowledge_base()
+            msgs_payload = [{"role": "system", "content": system_content}]
+            msgs_payload.extend(prior_history)
+            msgs_payload.append({"role": "user", "content": "[system_date=%s]" % system_date})
+            msgs_payload.append({"role": "user", "content": user_text})
+            return handle_run(msgs_payload)
 
 
         # 3) Instrucciones base (Carga desde archivo + saludo mínimo + reglas SQL por turno)
@@ -1826,28 +2006,8 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
         if is_pure_greeting:
             extra_instructions += " Puedes incluir un solo saludo breve en este turno."
 
-        # 4) Primer run
-        run = client.beta.threads.runs.create(
-            thread_id=t_id,
-            assistant_id=ASSISTANT_ID,
-            instructions=extra_instructions
-        )
-        handle_run(t_id, run.id)
-
-        # 5) Leer último mensaje de asistente
-        try:
-            msgs = client.beta.threads.messages.list(thread_id=t_id, order="desc", limit=10)
-            for m in msgs.data:
-                if m.role == "assistant":
-                    chunks = []
-                    for c in m.content:
-                        if getattr(c, "type", "") == "text":
-                            chunks.append(c.text.value)
-                    last_text = "\r\n".join(chunks).strip()
-                    if last_text:
-                        break
-        except Exception as e:
-            logging.error(f"Error leyendo mensajes del hilo: {e}")
+        # 4) Primer ciclo de razonamiento + herramientas
+        last_text = run_turn(extra_instructions) or last_text
 
         # 6) Paracaídas A: si NO usó tools y la pregunta amerita SQL, forzar segundo run
         msg_low = (user_text or "").lower()
@@ -1869,27 +2029,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
                 "NO muestres la consulta SQL en el mensaje final."
             )
 
-            run2 = client.beta.threads.runs.create(
-                thread_id=t_id,
-                assistant_id=ASSISTANT_ID,
-                instructions=forced_instructions
-            )
-            handle_run(t_id, run2.id)
-
-            # releer mensaje después del run forzado
-            try:
-                msgs = client.beta.threads.messages.list(thread_id=t_id, order="desc", limit=10)
-                for m in msgs.data:
-                    if m.role == "assistant":
-                        chunks = []
-                        for c in m.content:
-                            if getattr(c, "type", "") == "text":
-                                chunks.append(c.text.value)
-                        last_text = "\r\n".join(chunks).strip()
-                        if last_text:
-                            break
-            except Exception as e:
-                logging.error(f"Error leyendo mensajes del hilo (run2 forzado por no usar tools): {e}")
+            last_text = run_turn(forced_instructions) or last_text
 
         # 7) Paracaídas B: si devolvió SQL literal o error de objeto inválido, forzar otro run
         text_low = (last_text or "").lower()
@@ -1908,27 +2048,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
                 "Finalmente responde con KPIs en % (2 decimales) y menciona el nombre del turno."
             )
 
-            run3 = client.beta.threads.runs.create(
-                thread_id=t_id,
-                assistant_id=ASSISTANT_ID,
-                instructions=forced_instructions_2
-            )
-            handle_run(t_id, run3.id)
-
-            # volver a leer
-            try:
-                msgs = client.beta.threads.messages.list(thread_id=t_id, order="desc", limit=10)
-                for m in msgs.data:
-                    if m.role == "assistant":
-                        chunks = []
-                        for c in m.content:
-                            if getattr(c, "type", "") == "text":
-                                chunks.append(c.text.value)
-                        last_text = "\r\n".join(chunks).strip()
-                        if last_text:
-                            break
-            except Exception as e:
-                logging.error(f"Error leyendo mensajes del hilo (run3 por SQL literal/error): {e}")
+            last_text = run_turn(forced_instructions_2) or last_text
 
         # 8) Scanner de imágenes post-proceso: mueve links de plots a la lista de imágenes para que el frontend los embeba
         if last_text:
@@ -4436,13 +4556,7 @@ async def rename_thread(thread_id: str, request: Request):
 @app.delete("/chat/threads/{thread_id}")
 async def delete_thread(thread_id: str):
     try:
-        # Delete from OpenAI
-        try:
-            logging.info(f"Deleting thread {thread_id} from OpenAI API...")
-            client.beta.threads.delete(thread_id)
-        except Exception as oe:
-            logging.warning(f"Error deleting thread {thread_id} from OpenAI: {oe}")
-            
+        # Ya no hay thread remoto que borrar: la conversacion vive solo en SQL Server.
         # Delete from database (foreign key cascade deletes messages automatically)
         with pyodbc.connect(HISTORY_CONN_STR) as conn:
             cursor = conn.cursor()
@@ -4485,24 +4599,8 @@ async def get_chat_history(thread_id: str):
         except Exception as dbe:
             logging.error(f"Error cargando historial de la base de datos local para {thread_id}: {dbe}")
             
-        # Fallback a OpenAI API si no hay historial local
-        if not history:
-            logging.info(f"Hilo {thread_id} sin historial local. Buscando en OpenAI...")
-            msgs = client.beta.threads.messages.list(thread_id=thread_id, order="asc", limit=50)
-            for m in msgs.data:
-                content_value = ""
-                for c in m.content:
-                    if getattr(c, "type", "") == "text":
-                        content_value += c.text.value
-                
-                # Ocultar mensajes de sistema/inicialización
-                if content_value.startswith("[system_date=") or content_value.startswith("[system:"):
-                    continue
-                
-                history.append({
-                    "role": m.role,
-                    "text": content_value
-                })
+        # (El fallback a la Assistants API se elimino: esa API fue retirada por Azure.
+        #  Todo el historial vive ahora en dbo.duma_messages.)
         return JSONResponse({"history": history})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
