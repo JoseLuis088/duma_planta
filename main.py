@@ -1526,6 +1526,8 @@ def build_intraday_buckets(day: str, from_hour=None, to_hour=None,
         "kg_totales": round(float(df["d_KgTurno"].sum()), 1),
         "min_paro_no_programado": round(float(df["d_ParoNPMin"].sum()), 1),
         "min_paro_programado": round(float(df["d_ParoPMin"].sum()), 1),
+        "paro_no_programado_legible": format_duration_es(float(df["d_ParoNPMin"].sum())),
+        "paro_programado_legible": format_duration_es(float(df["d_ParoPMin"].sum())),
         "nota": (
             "OEE_del_periodo es el KPI calculado SOLO con lo ocurrido en esa hora "
             "(deltas de los contadores). OEE_acumulado_turno es el valor corrido del "
@@ -1780,7 +1782,19 @@ def oee_global_from_rows(rows_dicts):
         "produccion_real_kg": round(real, 1),
         "produccion_esperada_kg": round(esperado, 1),
         "brecha_vs_plan_kg": round(esperado - real, 1),
+        "tiempo_productivo": format_duration_es(productivo),
+        "tiempo_disponible": format_duration_es(disponible),
         "turnos_considerados": len(rows_dicts),
+        # Frase lista para copiar. El modelo sumaba las brechas por su cuenta y
+        # devolvia cifras que no salen de ningun calculo valido (7,807 kg "perdidos"
+        # en una semana donde la planta SUPERO el plan por 1,531 kg).
+        "kilos_perdidos_frase": (
+            "La planta SUPERO el plan en %s kg en este periodo: NO hubo kilos perdidos, "
+            "aunque haya habido paros." % f"{abs(esperado - real):,.1f}"
+            if (esperado - real) <= 0 else
+            "Se dejaron de producir %s kg contra el plan en este periodo." %
+            f"{esperado - real:,.1f}"
+        ),
         "nota": (
             "Calculado sumando los datos crudos de todos los turnos del periodo (regla de "
             "oro: nunca promediar porcentajes). Usa estas cifras y este semaforo tal cual; "
@@ -1841,6 +1855,28 @@ def aviso_linea_inexistente(texto_usuario: str):
             "con ese nombre." % (coincidencia, ", ".join(lineas_registradas()))
         )
     return None
+
+
+# Columnas cuyo valor son minutos: se acompañan de su version legible para que el
+# agente no tenga que convertir (ni el usuario leer "265 minutos").
+_COLUMNAS_DURACION = (
+    "TiempoProductivoMin", "TiempoDisponibleMin", "DuracionTurnoMin",
+    "TiempoNoProdNoProgramadoMin", "TiempoNoProdProgramadoMin",
+    "ProductiveTimeMin", "AvailableTimeMin", "UnscheduledStopageMin",
+    "ScheduledStopageMin", "Duracion_Min", "Duracion_Promedio_Min",
+)
+
+
+def duraciones_legibles(fila: dict, lang: str = "es") -> dict:
+    """Version en horas/dias de las columnas de minutos de una fila."""
+    salida = {}
+    for col in _COLUMNAS_DURACION:
+        if col in fila and fila[col] is not None:
+            try:
+                salida[col] = format_duration_es(float(fila[col]), lang)
+            except (TypeError, ValueError):
+                continue
+    return salida
 
 
 def _normalize_stop_type(value) -> str:
@@ -2022,6 +2058,53 @@ DUMA_TOOLS = [
 ]
 
 
+# ---------- Contexto de datos por conversacion ----------
+# Que se guarda: los payloads que devolvieron las herramientas en el ultimo turno.
+# Para que: resolver referencias ("ese dia", "y el mejor?") sin que el modelo tenga que
+# adivinar. Vive en memoria del proceso; si el servidor reinicia se pierde y el agente
+# simplemente vuelve a consultar, que es el comportamiento correcto.
+_CONTEXTO_HILO = {}
+CONTEXTO_MAX_CHARS = int(os.getenv("DUMA_CONTEXTO_MAX_CHARS", "6000"))
+CONTEXTO_MAX_HILOS = 200
+
+
+def guardar_contexto_hilo(thread_id: str, payloads: list):
+    if not thread_id or not payloads:
+        return
+    texto = "\r\n".join(str(p) for p in payloads)
+    if len(texto) > CONTEXTO_MAX_CHARS:
+        texto = texto[:CONTEXTO_MAX_CHARS] + " ...(recortado)"
+    if len(_CONTEXTO_HILO) > CONTEXTO_MAX_HILOS:
+        _CONTEXTO_HILO.clear()
+    _CONTEXTO_HILO[thread_id] = texto
+
+
+def contexto_hilo(thread_id: str):
+    return _CONTEXTO_HILO.get(thread_id) if thread_id else None
+
+
+# Ultimas graficas entregadas en cada hilo, para poder volver a mostrarlas.
+_GRAFICAS_HILO = {}
+_RE_PIDE_GRAFICA = re.compile(
+    r"\b(gra[fp]ic|gr[aá]fica|graficam|graf[ií]came|mu[eé]stra(me)?\s+la\s+gr|"
+    r"chart|plot|visualiza|diagrama)", re.IGNORECASE)
+
+
+def pide_grafica(texto: str) -> bool:
+    return bool(_RE_PIDE_GRAFICA.search(texto or ""))
+
+
+def guardar_graficas_hilo(thread_id: str, imagenes, titulos):
+    if thread_id and imagenes:
+        if len(_GRAFICAS_HILO) > CONTEXTO_MAX_HILOS:
+            _GRAFICAS_HILO.clear()
+        _GRAFICAS_HILO[thread_id] = (list(imagenes), list(titulos))
+
+
+def graficas_hilo(thread_id: str):
+    return _GRAFICAS_HILO.get(thread_id, ([], [])) if thread_id else ([], [])
+
+
 # ---------- Estados visibles del agente ----------
 # Lo que ve el usuario mientras el ciclo trabaja. Sin esto la espera de 30-90 s era
 # una pantalla con puntos suspensivos y ninguna senal de avance.
@@ -2052,6 +2135,8 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
     """
     import logging, time, json, re
     logging.basicConfig(level=logging.INFO)
+
+    payloads_turno = []   # resultados de herramientas de este turno, para el siguiente
 
     def avisar(evento: dict):
         """Publica un evento de progreso si hay un consumidor escuchando (SSE)."""
@@ -2435,14 +2520,45 @@ ORDER BY Fecha, Turno;
                                 continue
 
                             filas_dict = [dict(zip(columns, r)) for r in rows]
+                            legibles = [duraciones_legibles(f, lang) for f in filas_dict]
+
+                            # KPIs oficiales de cada turno, tal como los reporta el MES.
+                            # El modelo los recalculaba (real/esperado) y devolvia 106.03%
+                            # donde la columna dice 104.76%, dejandolo peleado con el tablero.
+                            kpis_turno = []
+                            for f in filas_dict:
+                                if "Turno" in f and "OEE" in f:
+                                    kpis_turno.append({
+                                        "Fecha": str(f.get("Fecha"))[:10],
+                                        "Turno": f.get("Turno"),
+                                        "OEE": f.get("OEE"),
+                                        "Disponibilidad": f.get("Disponibilidad"),
+                                        "Desempeno": f.get("Desempeno"),
+                                        "Producto_Conforme": f.get("Producto Conforme"),
+                                    })
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
                                 "output": json.dumps(
                                     {
                                         "status": "ok",
                                         "kpis_globales": oee_global_from_rows(filas_dict),
+                                        "kpis_por_turno": kpis_turno,
+                                        "nota_kpis": (
+                                            "Para el OEE, disponibilidad, desempeno o producto "
+                                            "conforme de UN turno, copia el valor de "
+                                            "kpis_por_turno tal cual. NO lo recalcules "
+                                            "dividiendo produccion real entre esperada: da un "
+                                            "numero distinto al del tablero."
+                                        ),
                                         "columns": columns,
                                         "rows": rows,
+                                        # Misma posicion que rows: los minutos ya
+                                        # convertidos a horas y dias.
+                                        "duraciones_legibles": legibles,
+                                        "nota_tiempos": (
+                                            "Al citar cualquier duracion usa el texto de "
+                                            "duraciones_legibles, no los minutos crudos."
+                                        ),
                                     },
                                     ensure_ascii=False,
                                     default=str
@@ -2670,6 +2786,26 @@ ORDER BY Fecha DESC, Turno;
                                         ),
                                     })
                                     continue
+                                # Si en todo el periodo no hubo operacion (jornada de
+                                # paro programado), graficar produce cuatro cuadros
+                                # vacios con ejes de 0 a 1: ruido que confunde.
+                                _kpis_h = oee_global_from_rows(rows_dicts_h)
+                                if (_kpis_h or {}).get("sin_operacion"):
+                                    tool_outputs.append({
+                                        "tool_call_id": tool.id,
+                                        "output": json.dumps({
+                                            "status": "sin_operacion",
+                                            "kpis_globales": _kpis_h,
+                                            "from_day": from_day_h, "to_day": to_day_h,
+                                            "nota": (
+                                                "No se generaron graficas porque no hubo "
+                                                "operacion en el periodo. Informa que la "
+                                                "linea no trabajo y no menciones ninguna grafica."
+                                            ),
+                                        }, ensure_ascii=False),
+                                    })
+                                    continue
+
                                 plots_h = plot_oee_historical_comparison(from_day_h, rows_dicts_h, False)
                                 for p in plots_h:
                                     images_out.append(p["url"])
@@ -2790,8 +2926,19 @@ ORDER BY Duracion_Min DESC;
                                 cumsum_t += dur
                                 r["Pct_Total"]     = round(dur / total_min * 100, 1) if total_min > 0 else 0
                                 r["Pct_Acumulado"] = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
+                                r["Duracion_legible"] = format_duration_es(dur, lang)
                                 if rate_kg_h:
                                     r["Kg_teoricos_a_velocidad_nominal"] = round(dur * (rate_kg_h / 60.0), 1)
+                            # Subtotales por clasificacion, calculados aqui y no por el modelo.
+                            _min_np = sum(float(r.get("Duracion_Min") or 0) for r in sp_data
+                                          if str(r.get("Clasificacion", "")).upper() == "NP")
+                            _ev_np = sum(int(r.get("Eventos") or 0) for r in sp_data
+                                         if str(r.get("Clasificacion", "")).upper() == "NP")
+                            _min_p = sum(float(r.get("Duracion_Min") or 0) for r in sp_data
+                                         if str(r.get("Clasificacion", "")).upper() == "P")
+                            _ev_p = sum(int(r.get("Eventos") or 0) for r in sp_data
+                                        if str(r.get("Clasificacion", "")).upper() == "P")
+
                             plots_sp = []
                             if args.get("chart"):
                                 periodo_lbl = day_from if day_from == day_to else f"{day_from} a {day_to}"
@@ -2809,6 +2956,28 @@ ORDER BY Duracion_Min DESC;
                                     "tipo": stop_type,
                                     "plots": plots_sp,
                                     "total_paro_min": round(total_min, 1),
+                                    "total_paro_legible": format_duration_es(total_min, lang),
+                                    # Subtotales por clasificacion. Sin ellos el modelo
+                                    # tomaba la causa principal como si fuera el total:
+                                    # reporto "15 eventos / 5h37" (solo Sin Clasificar)
+                                    # cuando los paros no programados del dia fueron
+                                    # 28 eventos y 8h09.
+                                    "no_programados": {
+                                        "minutos": round(_min_np, 1),
+                                        "duracion": format_duration_es(_min_np, lang),
+                                        "eventos": _ev_np,
+                                    },
+                                    "programados": {
+                                        "minutos": round(_min_p, 1),
+                                        "duracion": format_duration_es(_min_p, lang),
+                                        "eventos": _ev_p,
+                                    },
+                                    "nota_totales": (
+                                        "Al citar cuantos paros no programados hubo usa "
+                                        "no_programados.eventos y no_programados.duracion. "
+                                        "Las filas de stop_reasons son causas individuales: "
+                                        "la primera NO es el total."
+                                    ),
                                     "velocidad_nominal_kg_h": rate_kg_h,
                                     # Los totales se entregan calculados: dejar la suma al
                                     # modelo producia una cifra distinta en cada corrida.
@@ -3006,6 +3175,7 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
                         "tool_call_id": out["tool_call_id"],
                         "content": out["output"],
                     })
+                    payloads_turno.append(out["output"])
                 continue
 
             final_text = (reply.content or "").strip()
@@ -3040,6 +3210,24 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             msgs_payload = [{"role": "system", "content": system_content}]
             msgs_payload.extend(prior_history)
             msgs_payload.append({"role": "user", "content": "[system_date=%s]" % system_date})
+            datos_previos = contexto_hilo(t_id)
+            if datos_previos:
+                msgs_payload.append({
+                    "role": "system",
+                    "content": (
+                        "DATOS QUE YA CONSULTASTE EN EL TURNO ANTERIOR de esta misma "
+                        "conversacion. Uselos para resolver referencias como 'ese dia', "
+                        "'esa semana', '¿y el mejor?' o '¿y cuantos minutos fueron?'. "
+                        "Si la pregunta necesita algo que no este aqui, VUELVE A LLAMAR "
+                        "LA HERRAMIENTA: esta terminantemente prohibido responder una "
+                        "cifra de memoria o deducirla.\r\n"
+                        "ESTE BLOQUE NO CONTIENE IMAGENES. Si el usuario pide una "
+                        "grafica ('graficamelo', 'muestrame la grafica'), TIENES que "
+                        "llamar la herramienta otra vez aunque los datos ya esten aqui; "
+                        "de lo contrario anuncias graficas que el usuario no vera.\r\n"
+                        + datos_previos
+                    ),
+                })
             if aviso_linea:
                 msgs_payload.append({"role": "system", "content": aviso_linea})
             msgs_payload.append({"role": "user", "content": user_text})
@@ -3182,6 +3370,21 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             last_text = last_text.replace("()", "").replace("[]", "").replace("![]", "").strip()
             # Limpiar posibles dobles saltos de línea generados por la eliminación
             last_text = re.sub(r"\r\n\s*\r\n", "\r\n\r\n", last_text)
+
+        guardar_contexto_hilo(t_id, payloads_turno)
+
+        # El usuario pidio una grafica y el modelo no llamo a ninguna herramienta: se
+        # vuelven a mostrar las del turno anterior en vez de anunciar imagenes que no
+        # existen. Si el modelo si genero graficas nuevas, estas mandan.
+        if not images_out and pide_grafica(user_text):
+            previas, titulos_previos = graficas_hilo(t_id)
+            vivas = [u for u in previas if os.path.exists(str(u).split("?")[0])]
+            if vivas:
+                images_out = vivas
+                captions_out = titulos_previos[:len(vivas)]
+                logging.info("Se reutilizaron %d graficas del turno anterior.", len(vivas))
+
+        guardar_graficas_hilo(t_id, images_out, captions_out)
 
         if not last_text:
             last_text = "No se recibió respuesta del asistente."
