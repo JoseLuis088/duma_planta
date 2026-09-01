@@ -521,36 +521,71 @@ async def startup_event():
     asyncio.create_task(periodic_cleanup_task())
 
 # ---------- Helpers SQL ----------
-def run_sql(select_sql: str):
+class SqlExecutionError(RuntimeError):
+    """La consulta falló en el motor. NO es lo mismo que "no hay datos"."""
+
+
+class EmptyResultError(ValueError):
+    """La consulta corrió bien pero no devolvió datos utilizables."""
+
+
+SQL_DEBUG = os.getenv("SQL_DEBUG", "1").strip().lower() not in ("0", "false", "no")
+SQL_MAX_ROWS = int(os.getenv("SQL_MAX_ROWS", "5000"))
+SQL_TIMEOUT_S = int(os.getenv("SQL_TIMEOUT_S", "60"))
+
+
+def run_sql(select_sql: str, raise_on_error: bool = False,
+            max_rows: int = None, timeout_s: int = None):
     """
     Ejecuta un SELECT y regresa (rows, columns).
-    Garantiza el retorno de ([], []) incluso en caso de error tras reintentos.
+
+    raise_on_error=False (por defecto) conserva el comportamiento histórico de los
+    endpoints del dashboard: ante un fallo devuelve ([], []).
+
+    raise_on_error=True lo usan las herramientas del agente. Sin esto, un error de
+    SQL era indistinguible de "no hay filas", y el modelo terminaba narrando cifras
+    sobre un resultado vacío.
     """
-    print("\r\n====== EJECUTANDO EN SQL SERVER ======")
-    print(select_sql)
-    print("======================================")
+    max_rows = SQL_MAX_ROWS if max_rows is None else max_rows
+    timeout_s = SQL_TIMEOUT_S if timeout_s is None else timeout_s
+
+    if SQL_DEBUG:
+        print("\r\n====== EJECUTANDO EN SQL SERVER ======")
+        print(select_sql)
+        print("======================================")
 
     rows_raw = None
     cols = []
     MAX_RETRIES = 3
-    
+    last_error = None
+
     for attempt in range(MAX_RETRIES):
         try:
-            with pyodbc.connect(CONN_STR) as conn:
+            with pyodbc.connect(CONN_STR, timeout=timeout_s) as conn:
                 cur = conn.cursor()
+                try:
+                    cur.timeout = timeout_s
+                except Exception:
+                    pass
                 cur.execute(select_sql)
-                # Si la consulta no devuelve resultados (ej. UPDATE/DECLARE sin SELECT final), description es None
+                # Si la consulta no devuelve resultados (ej. DECLARE sin SELECT final), description es None
                 if cur.description:
                     cols = [c[0] for c in cur.description]
-                    rows_raw = cur.fetchall()
-                break # Éxito
-        except (pyodbc.OperationalError, pyodbc.ProgrammingError) as e:
-            print(f"⚠️ Error SQL en intento {attempt+1}/{MAX_RETRIES}: {e}")
+                    rows_raw = cur.fetchmany(max_rows)
+            last_error = None
+            break  # Éxito
+        except pyodbc.Error as e:
+            last_error = e
+            print(f"Error SQL en intento {attempt+1}/{MAX_RETRIES}: {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(1)
                 continue
-            # Si fallan todos los intentos, devolvemos vacío para no tirar el server
-            return [], []
+
+    if last_error is not None:
+        if raise_on_error:
+            raise SqlExecutionError(str(last_error))
+        # Compatibilidad: los endpoints del dashboard esperan ([], []) y no un 500.
+        return [], []
 
     # Convertir tipos a algo serializable
     rows = []
@@ -568,8 +603,148 @@ def run_sql(select_sql: str):
                         out_row.append(str(v))
             rows.append(out_row)
 
+    if len(rows) >= max_rows:
+        logging.warning("Consulta truncada en %d filas (SQL_MAX_ROWS).", max_rows)
+
     print(f"--> Filas devueltas: {len(rows)}")
     return rows, cols
+
+
+# ---------- Guardarrailes para el SQL que escribe el modelo ----------
+# La allowlist vive aquí, en código. Antes existía solo como texto dentro del prompt,
+# así que en la práctica no restringía nada.
+AGENT_SQL_ALLOWED_TABLES = {
+    "dbo.productionlineintervals",
+    "dbo.productionlines",
+    "dbo.workshiftexecutions",
+    "dbo.workshifttemplates",
+    "ind.workshiftexecutionsummaries",
+    "dbo.stopages",
+    "dbo.motives",
+    "dbo.motivestype",
+    "ind.productionlinecontrolvariables",
+}
+
+_SQL_FORBIDDEN = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|truncate|merge|exec|execute|grant|revoke|"
+    r"backup|restore|shutdown|waitfor|openrowset|openquery|opendatasource|bulk|into)\b"
+    r"|\bxp_\w+|\bsp_\w+",
+    re.IGNORECASE,
+)
+_SQL_TABLE_REF = re.compile(r"\b(?:from|join)\s+([A-Za-z0-9_\[\]\.]+)", re.IGNORECASE)
+_SQL_COMMENTS = re.compile(r"/\*.*?\*/|--[^\r\n]*", re.DOTALL)
+
+
+def validate_agent_sql(select_sql: str) -> str:
+    """
+    Valida el SQL generado por el modelo antes de ejecutarlo contra producción.
+    Devuelve el SQL si es aceptable; lanza ValueError con el motivo si no lo es.
+    """
+    if not select_sql or not select_sql.strip():
+        raise ValueError("Consulta vacía.")
+
+    clean = _SQL_COMMENTS.sub(" ", select_sql)
+    lowered = clean.lower()
+
+    forbidden = _SQL_FORBIDDEN.search(clean)
+    if forbidden:
+        raise ValueError(
+            "Operación no permitida en la consulta: '%s'. Solo se permiten SELECT de lectura."
+            % forbidden.group(0)
+        )
+
+    first_token = ""
+    for token in re.split(r"\s+", clean.strip()):
+        if token:
+            first_token = token.lower().lstrip("(")
+            break
+    if first_token not in ("select", "declare", "with"):
+        raise ValueError("La consulta debe iniciar con SELECT, WITH o DECLARE.")
+
+    if "select" not in lowered:
+        raise ValueError("La consulta no contiene un SELECT.")
+
+    referenced = set()
+    for raw in _SQL_TABLE_REF.findall(clean):
+        ref = raw.replace("[", "").replace("]", "").strip().lower()
+        if not ref or ref.startswith("(") or ref.startswith("@"):
+            continue  # subconsulta o variable de tabla
+        parts = [p for p in ref.split(".") if p]
+        if len(parts) >= 2:
+            ref = ".".join(parts[-2:])
+        referenced.add(ref)
+
+    not_allowed = sorted(t for t in referenced if t not in AGENT_SQL_ALLOWED_TABLES)
+    if not_allowed:
+        raise ValueError(
+            "Tabla no permitida: %s. Tablas disponibles: %s"
+            % (", ".join(not_allowed), ", ".join(sorted(AGENT_SQL_ALLOWED_TABLES)))
+        )
+
+    return select_sql
+
+
+def tool_empty(message: str, **extra) -> str:
+    """
+    Respuesta estándar cuando una herramienta corre bien pero no hay datos.
+    El modelo debe informarlo, nunca rellenar el hueco con cifras propias.
+    """
+    payload = {
+        "status": "empty",
+        "message": message,
+        "instruccion": (
+            "No hay datos para ese criterio. Dilo explícitamente al usuario, sugiere otro "
+            "rango o turno, y NO inventes cifras ni describas una gráfica inexistente."
+        ),
+    }
+    payload.update(extra)
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def expected_rate_kg_h(from_day: str, to_day: str = None, shift_name: str = None):
+    """
+    Velocidad esperada real (kg/h) del periodo, calculada desde los resúmenes de turno.
+
+    Base: producción esperada / TIEMPO PRODUCTIVO. Es la velocidad a la que la línea
+    habría corrido durante los minutos que estuvo parada, que es justo el
+    contrafactual de "kilos perdidos por paro". Dividir entre el tiempo disponible
+    daría ~831 kg/h porque ese tiempo ya incluye los paros, subestimando la pérdida.
+    Verificado contra el nominal de la línea (ExpectedRate = 1492 kg/h).
+
+    Devuelve None si no hay datos: preferimos omitir la estimación antes que usar una
+    constante que contradiga al dato real de la línea.
+    """
+    to_day = to_day or from_day
+    shift_filter = ""
+    if shift_name and str(shift_name).strip().lower() not in ("todos", "(todos)", "all", "(all)"):
+        shift_filter = "\n    AND wst.Name = N'%s'" % str(shift_name).replace("'", "''")
+    sql = """
+DECLARE @fromDay DATE = CONVERT(date, '%s'), @toDay DATE = CONVERT(date, '%s');
+SELECT
+    SUM(CAST(wses.ExpectedProductionSummaryModified AS float)) AS ExpectedKg,
+    SUM(CAST(wses.ProductiveTimeMin AS float))                 AS ProductiveMin
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates  AS wst ON wse.WorkShiftTemplateId  = wst.WorkShiftTemplateId
+WHERE wse.Status='closed' AND wse.Active=1 AND wses.Active=1 AND wse.DayOff=0
+  AND (CASE WHEN wst.EndTime<wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date) END) BETWEEN @fromDay AND @toDay%s;
+""" % (from_day, to_day, shift_filter)
+    try:
+        rows, _cols = run_sql(sql, raise_on_error=True)
+    except Exception as e:
+        logging.warning("No se pudo calcular la velocidad esperada del periodo: %s", e)
+        return None
+    if not rows or rows[0][0] in (None, 0) or rows[0][1] in (None, 0):
+        return None
+    try:
+        expected_kg = float(rows[0][0])
+        productive_min = float(rows[0][1])
+        if productive_min <= 0:
+            return None
+        return round(expected_kg / (productive_min / 60.0), 1)
+    except Exception:
+        return None
 
 
 # ---------- Helpers gráficos ----------
@@ -617,6 +792,11 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     title = spec.get("title") or ""
     x = spec.get("x")
     ys = spec.get("ys") or []
+
+    # Sin este control, plotly dibujaba ejes vacíos y el modelo narraba cifras
+    # inexistentes sobre una gráfica sin un solo punto.
+    if df is None or len(df) == 0:
+        raise EmptyResultError("La consulta no devolvió filas: no hay nada que graficar.")
     
     y_format = spec.get("y_format")       
     y_min = spec.get("y_min")             
@@ -626,6 +806,13 @@ def render_chart_from_df(df: pd.DataFrame, spec: dict) -> str:
     for y in ys:
         if y in df.columns:
             df[y] = pd.to_numeric(df[y], errors="coerce")
+
+    _present_ys = [y for y in ys if y in df.columns]
+    if _present_ys and int(df[_present_ys].notna().to_numpy().sum()) == 0:
+        raise EmptyResultError(
+            "Las columnas solicitadas (%s) no tienen valores numéricos en este periodo."
+            % ", ".join(_present_ys)
+        )
 
     # Agrupación si se solicita en spec (ej. agg="mean" o agg="sum" para graficar OEE general sin turnos)
     agg_func = spec.get("agg")
@@ -946,6 +1133,19 @@ def load_thread_history(thread_id: str, limit: int = 20) -> List[dict]:
     return history
 
 
+def _normalize_stop_type(value) -> str:
+    """
+    El código filtra por 'NP' / 'P'. El modelo suele escribir "no programado".
+    Sin esta normalización el filtro se ignoraba en silencio y devolvía todos los paros.
+    """
+    raw = (str(value or "todos")).strip().lower()
+    if raw in ("np", "no programado", "no programados", "no_programado", "unscheduled", "no planeado"):
+        return "NP"
+    if raw in ("p", "programado", "programados", "scheduled", "planeado"):
+        return "P"
+    return "TODOS"
+
+
 def _fn(name, description, properties, required=None):
     return {
         "type": "function",
@@ -1004,7 +1204,8 @@ DUMA_TOOLS = [
             "shift_name": _SHIFT,
             "type": {
                 "type": "string",
-                "description": "Tipo de paro: todos | programado | no programado",
+                "enum": ["todos", "NP", "P"],
+                "description": "Tipo de paro: 'NP' no programado, 'P' programado, 'todos' ambos.",
             },
         },
         ["from_day", "to_day"],
@@ -1498,10 +1699,22 @@ ORDER BY Fecha, Turno;
                             if rows and columns:
                                 df = pd.DataFrame(rows, columns=columns)
                             elif select_sql:
-                                rws, cols = run_sql(select_sql)
+                                # El SQL viene del modelo: se valida antes de tocar producción.
+                                validate_agent_sql(select_sql)
+                                rws, cols = run_sql(select_sql, raise_on_error=True)
                                 df = pd.DataFrame(rws, columns=cols)
                             else:
                                 raise ValueError("Proporciona 'rows/columns' o 'select_sql'.")
+
+                            if df is None or df.empty:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": tool_empty(
+                                        "La consulta para la gráfica no devolvió datos.",
+                                        spec=spec.get("title") or spec.get("chart"),
+                                    ),
+                                })
+                                continue
 
                             print(f"DEBUG viz_render tool called with spec: {json.dumps(spec, indent=2)}")
                             print(f"DEBUG viz_render DataFrame columns: {df.columns.tolist()}")
@@ -1634,8 +1847,18 @@ WHERE wse.Status='closed' AND wse.Active=1 AND wses.Active=1 AND wse.DayOff=0
   {shift_filter_h}
 ORDER BY Fecha DESC, Turno;
 """
-                                rows_h, cols_h = run_sql(detail_sql_h)
+                                rows_h, cols_h = run_sql(detail_sql_h, raise_on_error=True)
                                 rows_dicts_h   = [dict(zip(cols_h, r)) for r in rows_h]
+                                if not rows_dicts_h:
+                                    tool_outputs.append({
+                                        "tool_call_id": tool.id,
+                                        "output": tool_empty(
+                                            f"No hay turnos cerrados entre {from_day_h} y {to_day_h}"
+                                            + (f" para {shift_h}." if shift_h else "."),
+                                            from_day=from_day_h, to_day=to_day_h,
+                                        ),
+                                    })
+                                    continue
                                 plots_h = plot_oee_historical_comparison(from_day_h, rows_dicts_h, False)
                                 for p in plots_h:
                                     images_out.append(p["url"])
@@ -1657,7 +1880,7 @@ ORDER BY Fecha DESC, Turno;
                             day_from  = args.get("from_day") or date.today().isoformat()
                             day_to    = args.get("to_day") or day_from
                             shift     = args.get("shift_name")
-                            stop_type = (args.get("type") or "todos").upper()
+                            stop_type = _normalize_stop_type(args.get("type"))
 
                             from_sql_t = f"CONVERT(date, '{day_from}')"
                             to_sql_t   = f"CONVERT(date, '{day_to}')"
@@ -1693,21 +1916,44 @@ WHERE s.Active = 1
 GROUP BY mt.Name, m.Name, m.StoppageType, s.Type
 ORDER BY Duracion_Min DESC;
 """
-                            sp_rows, sp_cols = run_sql(sp_sql)
+                            sp_rows, sp_cols = run_sql(sp_sql, raise_on_error=True)
                             sp_data = [dict(zip(sp_cols, r)) for r in sp_rows]
+                            if not sp_data:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": tool_empty(
+                                        f"No se registraron paros entre {day_from} y {day_to}"
+                                        + (f" en {shift}." if shift else "."),
+                                        from_day=day_from, to_day=day_to, tipo=stop_type,
+                                    ),
+                                })
+                                continue
+
+                            # La tasa sale del dato real del periodo. Antes era la constante
+                            # 1300 kg/h, que contradecía la velocidad esperada de la línea.
+                            rate_kg_h = expected_rate_kg_h(day_from, day_to, shift)
                             total_min = sum(float(r.get("Duracion_Min") or 0) for r in sp_data)
                             cumsum_t = 0.0
                             for r in sp_data:
                                 dur = float(r.get("Duracion_Min") or 0)
                                 cumsum_t += dur
-                                r["Pct_Total"]           = round(dur / total_min * 100, 1) if total_min > 0 else 0
-                                r["Pct_Acumulado"]       = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
-                                r["Kg_Perdidos_Estimados"] = round(dur * (1300.0 / 60.0), 1)
+                                r["Pct_Total"]     = round(dur / total_min * 100, 1) if total_min > 0 else 0
+                                r["Pct_Acumulado"] = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
+                                if rate_kg_h:
+                                    r["Kg_Perdidos_Estimados"] = round(dur * (rate_kg_h / 60.0), 1)
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
                                 "output": json.dumps({
+                                    "status": "ok",
                                     "from_day": day_from, "to_day": day_to,
+                                    "tipo": stop_type,
                                     "total_paro_min": round(total_min, 1),
+                                    "velocidad_esperada_kg_h": rate_kg_h,
+                                    "nota_kg": (
+                                        f"Kg perdidos estimados con la velocidad esperada real del periodo ({rate_kg_h} kg/h)."
+                                        if rate_kg_h else
+                                        "Sin velocidad esperada disponible para el periodo: NO estimes kilos perdidos."
+                                    ),
                                     "stop_reasons": sp_data,
                                     "pareto_80_causas": [r for r in sp_data if r.get("Pct_Acumulado", 101) <= 80]
                                 }, ensure_ascii=False, default=str)
@@ -4229,7 +4475,8 @@ async def chat(request: Request):
             return JSONResponse({"error": "input vacío"}, status_code=400)
 
         # REC-04: Inicialización proactiva con estado real-time
-        if user_text == "[init]":
+        is_init = (user_text == "[init]")
+        if is_init:
             try:
                 sql_recent = _sql_oee_realtime()
                 rows, cols = run_sql(sql_recent)
@@ -4269,7 +4516,9 @@ async def chat(request: Request):
         resolved_thread_id = out.get("thread_id")
         
         # Registrar y guardar en base de datos local si no es llamada de inicialización proactiva [init]
-        if user_text != "[init]" and resolved_thread_id:
+        # user_text ya fue reescrito arriba, por eso se compara la bandera y no el texto:
+        # antes, el saludo automático se guardaba con el título "[system: El estado actual...".
+        if (not is_init) and resolved_thread_id:
             try:
                 with pyodbc.connect(HISTORY_CONN_STR) as conn:
                     cursor = conn.cursor()
