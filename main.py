@@ -701,6 +701,55 @@ def tool_empty(message: str, **extra) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+def production_summary(from_day: str, to_day: str = None, shift_name: str = None):
+    """
+    Produccion esperada vs real y tiempo productivo del periodo, desde los turnos cerrados.
+
+    Existe para fijar la metodologia de "kilos perdidos", que no es unica:
+      - brecha vs plan  = esperado - real  -> la cifra de negocio (lo que el cliente perdio)
+      - teorico por paro = minutos_paro * velocidad nominal -> techo teorico, sirve para
+        PRIORIZAR causas, nunca para reportar una perdida.
+    Mezclarlas daba respuestas de 9,470 kg o de 80,700 kg para la misma pregunta.
+    """
+    to_day = to_day or from_day
+    shift_filter = ""
+    if shift_name and str(shift_name).strip().lower() not in ("todos", "(todos)", "all", "(all)"):
+        shift_filter = "\r\n    AND wst.Name = N'%s'" % str(shift_name).replace("'", "''")
+    sql = """
+DECLARE @fromDay DATE = CONVERT(date, '%s'), @toDay DATE = CONVERT(date, '%s');
+SELECT
+    SUM(CAST(wses.ExpectedProductionSummaryModified AS float)) AS ExpectedKg,
+    SUM(CAST(wses.CurrentProductionSummary AS float))          AS RealKg,
+    SUM(CAST(wses.ProductiveTimeMin AS float))                 AS ProductiveMin
+FROM ind.WorkShiftExecutionSummaries AS wses
+INNER JOIN dbo.WorkShiftExecutions AS wse ON wses.WorkShiftExecutionId = wse.WorkShiftExecutionId
+INNER JOIN dbo.WorkShiftTemplates  AS wst ON wse.WorkShiftTemplateId  = wst.WorkShiftTemplateId
+WHERE wse.Status='closed' AND wse.Active=1 AND wses.Active=1 AND wse.DayOff=0
+  AND (CASE WHEN wst.EndTime<wst.StartTime THEN DATEADD(day,-1,CAST(wse.EndDate AS date))
+            ELSE CAST(wse.StartDate AS date) END) BETWEEN @fromDay AND @toDay%s;
+""" % (from_day, to_day, shift_filter)
+    try:
+        rows, _cols = run_sql(sql, raise_on_error=True)
+    except Exception as e:
+        logging.warning("No se pudo resumir la produccion del periodo: %s", e)
+        return None
+    if not rows or rows[0][0] is None:
+        return None
+    try:
+        esperado = float(rows[0][0] or 0.0)
+        real = float(rows[0][1] or 0.0)
+        productivo = float(rows[0][2] or 0.0)
+    except Exception:
+        return None
+    return {
+        "produccion_esperada_kg": round(esperado, 1),
+        "produccion_real_kg": round(real, 1),
+        "brecha_vs_plan_kg": round(esperado - real, 1),
+        "tiempo_productivo_min": round(productivo, 1),
+        "velocidad_nominal_kg_h": round(esperado / (productivo / 60.0), 1) if productivo > 0 else None,
+    }
+
+
 def expected_rate_kg_h(from_day: str, to_day: str = None, shift_name: str = None):
     """
     Velocidad esperada real (kg/h) del periodo, calculada desde los resúmenes de turno.
@@ -1079,6 +1128,292 @@ WHERE wse.Status='closed' AND wse.Active = 1 AND wses.Active = 1
 
 
 
+# ---------- OEE intradia (por hora) ----------
+# dbo.ProductionLineIntervals guarda un snapshot por minuto con los contadores
+# ACUMULADOS del turno en curso. Reconstruyendo los deltas se obtiene el KPI real
+# de cada hora, que es lo que se preguntaba y el agente respondia "solo hay datos
+# por turno".
+
+def _sql_oee_intraday(day: str, line_pattern: str = None) -> str:
+    lp = "NULL" if not line_pattern else "N'" + str(line_pattern).replace("'", "''") + "'"
+    return f"""
+DECLARE @day DATE = CONVERT(date, '{day}');
+DECLARE @linePattern NVARCHAR(100) = {lp};
+
+SELECT
+    pli.IntervalBegin                                    AS Momento,
+    pl.Name                                              AS Linea,
+    pli.IntervalProductionLineStatus                     AS Estatus,
+    CAST(pli.OEE AS float)                               AS OEEAcum,
+    CAST(pli.OEEQuality AS float)                        AS CalidadAcum,
+    DATEDIFF(MINUTE, 0, pli.TimeSinceLastWorkshiftBegin) AS TurnoMin,
+    DATEDIFF(MINUTE, 0, pli.EffectiveAvailableTime)      AS ProductivoMin,
+    DATEDIFF(MINUTE, 0, pli.UnscheduledStopageTime)      AS ParoNPMin,
+    DATEDIFF(MINUTE, 0, pli.ScheduledStopageTime)        AS ParoPMin,
+    CAST(pli.CurrentShiftProduction AS float)            AS KgTurno,
+    CAST(pli.ExpectedRate AS float)                      AS VelEsperada
+FROM dbo.ProductionLineIntervals pli
+INNER JOIN dbo.ProductionLines pl ON pli.ProductionLineId = pl.ProductionLineId
+WHERE pli.IntervalBegin >= DATEADD(day, -1, CAST(@day AS datetime))
+  AND pli.IntervalBegin <  DATEADD(day,  2, CAST(@day AS datetime))
+  AND (@linePattern IS NULL OR pl.Name LIKE N'%' + @linePattern + N'%')
+ORDER BY pli.IntervalBegin ASC;
+"""
+
+
+def operational_day_window(day: str):
+    """
+    Ventana del DIA OPERATIVO en hora local: [dia + inicio del primer turno, +24h).
+
+    No es el dia calendario. La planta arranca a las 07:00 y el tercer turno cruza la
+    medianoche, asi que el dia operativo del 31/08 va del 31/08 07:00 al 01/09 07:00.
+    La hora de inicio se lee de dbo.WorkShiftTemplates, no se asume.
+
+    Ojo: wse.StartDate/EndDate estan en UTC mientras que pli.IntervalBegin esta en hora
+    local; por eso la ventana se arma con StartTime de las plantillas (hora de pared) y
+    nunca con los timestamps de las ejecuciones.
+    """
+    inicio = dt.time(0, 0)
+    try:
+        rows, _cols = run_sql(
+            "SELECT MIN(CAST(wst.StartTime AS time)) AS Inicio "
+            "FROM dbo.WorkShiftTemplates wst WHERE wst.Active = 1",
+            raise_on_error=True,
+        )
+        if rows and rows[0][0] is not None:
+            valor = rows[0][0]
+            if isinstance(valor, dt.time):
+                inicio = valor
+            else:
+                partes = str(valor).split(":")
+                inicio = dt.time(int(partes[0]), int(partes[1]) if len(partes) > 1 else 0)
+    except Exception as e:
+        logging.warning("No se pudo leer el inicio de turno, se usa 00:00: %s", e)
+
+    base = pd.to_datetime(day).to_pydatetime().replace(
+        hour=inicio.hour, minute=inicio.minute, second=0, microsecond=0
+    )
+    return base, base + timedelta(days=1)
+
+
+def build_intraday_buckets(day: str, from_hour=None, to_hour=None,
+                           granularity: str = "hora", line_pattern: str = None):
+    """
+    Reconstruye los KPIs de cada hora (o minuto) del dia a partir de los contadores
+    acumulados del turno. Devuelve (buckets, resumen).
+
+    Lanza EmptyResultError si no hay snapshots: nunca devuelve una serie vacia que
+    el modelo pueda confundir con datos.
+    """
+    rows, cols = run_sql(_sql_oee_intraday(day, line_pattern), raise_on_error=True)
+    if not rows:
+        raise EmptyResultError(f"No hay snapshots de la linea para {day}.")
+
+    df = pd.DataFrame(rows, columns=cols)
+    df["Momento"] = pd.to_datetime(df["Momento"], errors="coerce")
+    df = df.dropna(subset=["Momento"]).sort_values("Momento").reset_index(drop=True)
+
+    numericas = ["OEEAcum", "CalidadAcum", "TurnoMin", "ProductivoMin",
+                 "ParoNPMin", "ParoPMin", "KgTurno", "VelEsperada"]
+    for c in numericas:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Los contadores se reinician en cada cambio de turno: ahi el delta es el valor nuevo.
+    acumulados = ["TurnoMin", "ProductivoMin", "ParoNPMin", "ParoPMin", "KgTurno"]
+    reinicio = df["TurnoMin"].diff() < 0
+    for c in acumulados:
+        d = df[c].diff()
+        # La primera fila de la serie no tiene predecesor: su delta es 0, no el
+        # acumulado (ese venia del turno anterior y se cargaba entero a la primera hora).
+        if len(d) > 0:
+            d.iloc[0] = 0.0
+        d[reinicio] = df.loc[reinicio, c]
+        # Los deltas negativos NO se recortan: el MES reclasifica minutos hacia atras
+        # (mueve tiempo productivo a paro dentro del mismo turno). Si se recortaran a
+        # cero se contarian las subidas pero no las correcciones, y los totales del dia
+        # quedaban ~115 min por encima de los resumenes de turno.
+        df["d_" + c] = d.fillna(0.0)
+
+    # Recortar al dia operativo, ya calculados los deltas con sus predecesores.
+    ventana_ini, ventana_fin = operational_day_window(day)
+    df = df[(df["Momento"] >= ventana_ini) & (df["Momento"] < ventana_fin)]
+    if df.empty:
+        raise EmptyResultError(
+            f"No hay snapshots de la linea en el dia operativo del {day} "
+            f"({ventana_ini:%d/%m %H:%M} a {ventana_fin:%d/%m %H:%M})."
+        )
+
+    if from_hour is not None:
+        df = df[df["Momento"].dt.hour >= int(from_hour)]
+    if to_hour is not None:
+        df = df[df["Momento"].dt.hour <= int(to_hour)]
+    if df.empty:
+        raise EmptyResultError(
+            f"No hay snapshots de la linea para {day} en el rango horario solicitado."
+        )
+
+    freq = "min" if str(granularity).lower().startswith("min") else "h"
+    df["bucket"] = df["Momento"].dt.floor(freq)
+
+    buckets = []
+    for momento, g in df.groupby("bucket", sort=True):
+        natural = float(g["d_TurnoMin"].sum())
+        productivo = float(g["d_ProductivoMin"].sum())
+        kg = float(g["d_KgTurno"].sum())
+        paro_np = float(g["d_ParoNPMin"].sum())
+        paro_p = float(g["d_ParoPMin"].sum())
+
+        vel_serie = g["VelEsperada"].dropna()
+        velocidad = float(vel_serie.mean()) if len(vel_serie) else 0.0
+        cal_serie = g["CalidadAcum"].dropna()
+        calidad = float(cal_serie.iloc[-1]) if len(cal_serie) else 100.0
+        oee_serie = g["OEEAcum"].dropna()
+        oee_acum = round(float(oee_serie.iloc[-1]), 2) if len(oee_serie) else None
+
+        disponibilidad = round(productivo / natural * 100, 2) if natural > 0 else None
+        desempeno = None
+        if productivo > 0 and velocidad > 0:
+            desempeno = round(kg / (productivo / 60.0 * velocidad) * 100, 2)
+        oee_hora = None
+        if disponibilidad is not None and desempeno is not None:
+            oee_hora = round(disponibilidad * desempeno * calidad / 10000.0, 2)
+
+        # El MES reclasifica minutos hacia atras, asi que un periodo puede quedar con
+        # un delta negativo. Se conserva el valor real (los totales del dia cuadran con
+        # los resumenes de turno) y se marca la hora para que el agente pueda explicarla.
+        ajuste = (paro_np < 0) or (paro_p < 0) or (productivo < 0)
+
+        buckets.append({
+            "hora": momento.strftime("%H:%M"),
+            "momento": momento.isoformat(),
+            "ajuste_retroactivo": ajuste,
+            "OEE_del_periodo": oee_hora,
+            "OEE_acumulado_turno": oee_acum,
+            "Disponibilidad": disponibilidad,
+            "Desempeno": desempeno,
+            "Calidad": round(calidad, 2),
+            "Kg_producidos": round(kg, 1),
+            "Min_productivos": round(productivo, 1),
+            "Min_paro_no_programado": round(paro_np, 1),
+            "Min_paro_programado": round(paro_p, 1),
+            "Min_naturales": round(natural, 1),
+        })
+
+    resumen = {
+        "dia": day,
+        "dia_operativo": f"{ventana_ini:%Y-%m-%d %H:%M} a {ventana_fin:%Y-%m-%d %H:%M} (hora local)",
+        "linea": str(df["Linea"].dropna().iloc[0]) if df["Linea"].notna().any() else None,
+        "granularidad": "minuto" if freq == "min" else "hora",
+        "desde": buckets[0]["hora"] if buckets else None,
+        "hasta": buckets[-1]["hora"] if buckets else None,
+        "velocidad_esperada_kg_h": round(float(df["VelEsperada"].dropna().mean()), 1)
+                                   if df["VelEsperada"].notna().any() else None,
+        "horas_con_ajuste_retroactivo": [b["hora"] for b in buckets if b.get("ajuste_retroactivo")],
+        "kg_totales": round(float(df["d_KgTurno"].sum()), 1),
+        "min_paro_no_programado": round(float(df["d_ParoNPMin"].sum()), 1),
+        "min_paro_programado": round(float(df["d_ParoPMin"].sum()), 1),
+        "nota": (
+            "OEE_del_periodo es el KPI calculado SOLO con lo ocurrido en esa hora "
+            "(deltas de los contadores). OEE_acumulado_turno es el valor corrido del "
+            "turno al cierre de esa hora, que es el que muestra el tablero. Son dos "
+            "lecturas distintas: no las mezcles ni las presentes como la misma cifra. "
+            "El rango cubre el DIA OPERATIVO (arranca con el primer turno y cruza la "
+            "medianoche), no el dia calendario. Si una hora aparece en "
+            "horas_con_ajuste_retroactivo, el MES reclasifico minutos de esa hora "
+            "despues del hecho: menciona el ajuste en vez de presentarlo como un dato raro."
+        ),
+    }
+    return buckets, resumen
+
+
+def plot_oee_intraday(buckets: List[dict], day: str, lang: str = "es") -> List[dict]:
+    """Grafica el OEE por hora contra el acumulado del turno, y los paros por hora."""
+    import plotly.graph_objects as go
+
+    if not buckets:
+        return []
+
+    out_dir = os.path.join("static", "plots")
+    os.makedirs(out_dir, exist_ok=True)
+    plots = []
+    ts = int(time.time() * 1000)
+    is_en = (lang == "en")
+
+    horas = [b["hora"] for b in buckets]
+    oee_h = [b.get("OEE_del_periodo") for b in buckets]
+    oee_ac = [b.get("OEE_acumulado_turno") for b in buckets]
+    # En las barras no se dibujan minutos negativos (vienen de reclasificaciones del
+    # MES); el dato exacto viaja en el payload de la herramienta.
+    np_min = [max(0, b.get("Min_paro_no_programado") or 0) for b in buckets]
+    p_min = [max(0, b.get("Min_paro_programado") or 0) for b in buckets]
+    kg = [max(0, b.get("Kg_producidos") or 0) for b in buckets]
+
+    # --- 1) OEE por hora vs acumulado del turno ---
+    fig1 = go.Figure()
+    fig1.add_trace(go.Bar(
+        x=horas, y=oee_h,
+        name="OEE of the hour" if is_en else "OEE de la hora",
+        marker_color="#1abc9c",
+        hovertemplate="%{y:.1f}%<extra></extra>",
+    ))
+    fig1.add_trace(go.Scatter(
+        x=horas, y=oee_ac, mode="lines+markers",
+        name="Shift running OEE" if is_en else "OEE acumulado del turno",
+        line=dict(color="#f59e0b", width=3),
+        hovertemplate="%{y:.1f}%<extra></extra>",
+    ))
+    fig1.update_layout(
+        title=(f"OEE by hour vs shift running OEE | {day}" if is_en
+               else f"OEE por hora vs acumulado del turno | {day}"),
+        template="plotly_dark", height=380,
+        margin=dict(l=40, r=40, t=60, b=60),
+        xaxis=dict(title="Hour" if is_en else "Hora"),
+        yaxis=dict(title="%", ticksuffix="%"),
+    )
+    fname1 = f"oee_intraday_{ts}.html"
+    with open(os.path.join(out_dir, fname1), "w", encoding="utf-8") as _f:
+        _f.write(wrap_plotly_fig_for_pdf_capture(fig1, fname1))
+    plots.append({
+        "title": "\U0001F4C8 " + ("OEE by hour" if is_en else "OEE por hora"),
+        "url": f"static/plots/{fname1}",
+    })
+
+    # --- 2) Paros y produccion por hora ---
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(
+        x=horas, y=np_min, name="Unscheduled (min)" if is_en else "Paro no programado (min)",
+        marker_color="#ef4444", hovertemplate="%{y:.0f} min<extra></extra>",
+    ))
+    fig2.add_trace(go.Bar(
+        x=horas, y=p_min, name="Scheduled (min)" if is_en else "Paro programado (min)",
+        marker_color="#6366f1", hovertemplate="%{y:.0f} min<extra></extra>",
+    ))
+    fig2.add_trace(go.Scatter(
+        x=horas, y=kg, mode="lines+markers", yaxis="y2",
+        name="kg" if is_en else "Kg producidos",
+        line=dict(color="#38bdf8", width=3),
+        hovertemplate="%{y:,.0f} kg<extra></extra>",
+    ))
+    fig2.update_layout(
+        title=(f"Stoppages and output by hour | {day}" if is_en
+               else f"Paros y produccion por hora | {day}"),
+        template="plotly_dark", barmode="stack", height=380,
+        margin=dict(l=40, r=60, t=60, b=60),
+        xaxis=dict(title="Hour" if is_en else "Hora"),
+        yaxis=dict(title="Minutes" if is_en else "Minutos"),
+        yaxis2=dict(title="kg" if is_en else "Kg", overlaying="y", side="right", showgrid=False),
+    )
+    fname2 = f"oee_intraday_stops_{ts}.html"
+    with open(os.path.join(out_dir, fname2), "w", encoding="utf-8") as _f:
+        _f.write(wrap_plotly_fig_for_pdf_capture(fig2, fname2))
+    plots.append({
+        "title": "\u23F1\uFE0F " + ("Stoppages by hour" if is_en else "Paros y produccion por hora"),
+        "url": f"static/plots/{fname2}",
+    })
+
+    return plots
+
+
 # ---------- Herramientas locales (antes vivian en el objeto Assistant de Azure) ----------
 # La Assistants API fue retirada; las definiciones de funciones ahora se envian en cada
 # llamada a Chat Completions, y el cookbook/esquema (antes en file_search) se inyectan
@@ -1207,8 +1542,30 @@ DUMA_TOOLS = [
                 "enum": ["todos", "NP", "P"],
                 "description": "Tipo de paro: 'NP' no programado, 'P' programado, 'todos' ambos.",
             },
+            "chart": {
+                "type": "boolean",
+                "description": "true si el usuario pidio una GRAFICA de paros (Pareto 80/20 + mapa de categorias).",
+            },
         },
         ["from_day", "to_day"],
+    ),
+    _fn(
+        "get_oee_intraday",
+        "OEE y paros HORA POR HORA de un dia, reconstruidos desde los snapshots "
+        "minuto a minuto de la linea. Usala para 'como estuvo el OEE hoy de 10 a 13', "
+        "'OEE por hora', 'que paso en la tarde' o cualquier detalle DENTRO de un dia. "
+        "Genera la grafica automaticamente.",
+        {
+            "day": _DAY,
+            "from_hour": {"type": "integer", "description": "Hora inicial 0-23 (opcional)."},
+            "to_hour": {"type": "integer", "description": "Hora final 0-23 inclusive (opcional)."},
+            "granularity": {
+                "type": "string",
+                "enum": ["hora", "minuto"],
+                "description": "Detalle del eje. 'hora' por defecto.",
+            },
+        },
+        ["day"],
     ),
     _fn(
         "get_control_variables",
@@ -1931,7 +2288,8 @@ ORDER BY Duracion_Min DESC;
 
                             # La tasa sale del dato real del periodo. Antes era la constante
                             # 1300 kg/h, que contradecía la velocidad esperada de la línea.
-                            rate_kg_h = expected_rate_kg_h(day_from, day_to, shift)
+                            prod_periodo = production_summary(day_from, day_to, shift)
+                            rate_kg_h = (prod_periodo or {}).get("velocidad_nominal_kg_h")
                             total_min = sum(float(r.get("Duracion_Min") or 0) for r in sp_data)
                             cumsum_t = 0.0
                             for r in sp_data:
@@ -1940,23 +2298,75 @@ ORDER BY Duracion_Min DESC;
                                 r["Pct_Total"]     = round(dur / total_min * 100, 1) if total_min > 0 else 0
                                 r["Pct_Acumulado"] = round(cumsum_t / total_min * 100, 1) if total_min > 0 else 0
                                 if rate_kg_h:
-                                    r["Kg_Perdidos_Estimados"] = round(dur * (rate_kg_h / 60.0), 1)
+                                    r["Kg_teoricos_a_velocidad_nominal"] = round(dur * (rate_kg_h / 60.0), 1)
+                            plots_sp = []
+                            if args.get("chart"):
+                                periodo_lbl = day_from if day_from == day_to else f"{day_from} a {day_to}"
+                                plots_sp = plot_pareto_stop_reasons(sp_data, periodo_lbl, False, lang=lang)
+                                for p in plots_sp:
+                                    if p.get("url") and p["url"] not in images_out:
+                                        images_out.append(p["url"])
+                                        captions_out.append(p.get("title", "Pareto de paros"))
+
                             tool_outputs.append({
                                 "tool_call_id": tool.id,
                                 "output": json.dumps({
                                     "status": "ok",
                                     "from_day": day_from, "to_day": day_to,
                                     "tipo": stop_type,
+                                    "plots": plots_sp,
                                     "total_paro_min": round(total_min, 1),
-                                    "velocidad_esperada_kg_h": rate_kg_h,
-                                    "nota_kg": (
-                                        f"Kg perdidos estimados con la velocidad esperada real del periodo ({rate_kg_h} kg/h)."
-                                        if rate_kg_h else
-                                        "Sin velocidad esperada disponible para el periodo: NO estimes kilos perdidos."
+                                    "velocidad_nominal_kg_h": rate_kg_h,
+                                    # Los totales se entregan calculados: dejar la suma al
+                                    # modelo producia una cifra distinta en cada corrida.
+                                    "kg_teoricos_totales": (
+                                        round(total_min * (rate_kg_h / 60.0), 1) if rate_kg_h else None
+                                    ),
+                                    "produccion_periodo": prod_periodo,
+                                    "nota_metodologia": (
+                                        "Hay DOS cifras distintas y no debes confundirlas. "
+                                        "1) brecha_vs_plan_kg (en produccion_periodo) es lo que la planta "
+                                        "dejo de producir contra su plan: ESA es la perdida a reportar. "
+                                        "2) kg_teoricos_* es el techo teorico si cada minuto parado hubiera "
+                                        "corrido a velocidad nominal; sirve para PRIORIZAR causas de paro, "
+                                        "NO para decir cuanto se perdio. Si la produccion real alcanzo o supero "
+                                        "el plan, no afirmes que hubo kilos perdidos aunque hubiera paros."
                                     ),
                                     "stop_reasons": sp_data,
                                     "pareto_80_causas": [r for r in sp_data if r.get("Pct_Acumulado", 101) <= 80]
                                 }, ensure_ascii=False, default=str)
+                            })
+
+                        elif name == "get_oee_intraday":
+                            day_i = normalize_day_str(args.get("day") or date.today().isoformat())
+                            try:
+                                buckets_i, resumen_i = build_intraday_buckets(
+                                    day_i,
+                                    args.get("from_hour"),
+                                    args.get("to_hour"),
+                                    args.get("granularity") or "hora",
+                                )
+                            except EmptyResultError as ee:
+                                tool_outputs.append({
+                                    "tool_call_id": tool.id,
+                                    "output": tool_empty(str(ee), day=day_i),
+                                })
+                                continue
+
+                            plots_i = plot_oee_intraday(buckets_i, day_i, lang=lang)
+                            for p in plots_i:
+                                if p.get("url") and p["url"] not in images_out:
+                                    images_out.append(p["url"])
+                                    captions_out.append(p.get("title", "OEE por hora"))
+
+                            tool_outputs.append({
+                                "tool_call_id": tool.id,
+                                "output": json.dumps({
+                                    "status": "ok",
+                                    "resumen": resumen_i,
+                                    "por_hora": buckets_i,
+                                    "plots": plots_i,
+                                }, ensure_ascii=False, default=str),
                             })
 
                         elif name == "get_control_variables_correlation":
@@ -2163,8 +2573,11 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             "HERRAMIENTAS DISPONIBLES Y CUÁNDO USARLAS:\r\n"
             "  • sql_query (modos: realtime|hist_turno_dia|hist_turno_rango): Para consultar OEE, producción y tiempos de turno.\r\n"
             "  • get_oee_historical_charts (from_day, to_day?, shift_name?): HERRAMIENTA PRINCIPAL para graficar OEE DIARIO CONSOLIDADO (sin segmentar por turnos). Usa esta herramienta cuando el usuario pida una gráfica de OEE por día/semana/rango SIN segmentar por turnos. Produce exactamente los mismos valores que el módulo OEE Histórico del dashboard.\r\n"
-            "  • get_stopages_pareto (from_day, to_day, shift_name?, type?): Para responder preguntas sobre motivos de paro, "
-            "causas más frecuentes, paros no programados, análisis 80/20. ÚSALO cuando el usuario pregunte por causas de paros.\r\n"
+            "  • get_oee_intraday (day, from_hour?, to_hour?): OEE y paros HORA POR HORA dentro de un dia. "
+            "USALA para 'como estuvo el OEE hoy de 10 a 1', 'OEE por hora' o cualquier detalle intradia. "
+            "Los datos existen minuto a minuto: NUNCA respondas que solo hay informacion por turno.\r\n"
+            "  • get_stopages_pareto (from_day, to_day, shift_name?, type?, chart?): Para responder preguntas sobre motivos de paro, "
+            "causas más frecuentes, paros no programados, análisis 80/20. ÚSALO cuando el usuario pregunte por causas de paros. Pasa chart=true si pide una GRAFICA de paros.\r\n"
             "  • get_control_variables_correlation (day): Para correlacionar lecturas de sensores con paros y OEE. "
             "ÚSALO cuando el usuario pregunte por variables de control, sensores, o pida correlaciones.\r\n"
             "  • get_control_variables (day): Para ver datos detallados de sensores de un día específico.\r\n"
@@ -2174,6 +2587,15 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             "3. Si disponibilidad baja, usa get_stopages_pareto → "
             "4. Usa get_control_variables_correlation para correlacionar sensores → "
             "5. Presenta hipótesis causa-efecto y recomendaciones cuantificadas.\r\n\r\n"
+            "DEFINICION OBLIGATORIA DE 'KILOS PERDIDOS' (una sola, siempre la misma):\r\n"
+            "  Kilos perdidos = produccion esperada del periodo - produccion real del periodo, "
+            "sumando TODOS los turnos del rango (los turnos que superaron el plan tambien cuentan, en negativo). "
+            "Si el resultado es <= 0, la planta cumplio o supero su plan: dilo asi y NO reportes kilos perdidos "
+            "aunque haya habido paros.\r\n"
+            "  NUNCA calcules los kilos perdidos multiplicando minutos de paro por la velocidad nominal: eso es un "
+            "techo teorico que sirve para PRIORIZAR causas de paro, no para cuantificar la perdida. Si lo mencionas, "
+            "etiquetalo explicitamente como 'impacto teorico a velocidad nominal'.\r\n"
+            "  Tampoco sumes solo los turnos con brecha positiva: eso infla la cifra.\r\n\r\n"
             "**REGLA CRITICA DE GRAFICAS:** Si usas viz_render o get_control_variables, PROHIBIDO usar sintaxis `![]()`. "
             "El sistema detecta la imagen automaticamente. "
             "Usa rutas relativas (ej: static/plots/archivo.png) solo en herramientas, nunca en el texto final. "
@@ -2299,6 +2721,18 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
         # 8) Scanner de imágenes post-proceso: mueve links de plots a la lista de imágenes para que el frontend los embeba
         if last_text:
             import re
+
+            # El sistema ya renderiza las graficas desde `images`, asi que el texto
+            # final no debe traer SQL ni codigo. Esto se pedia por prompt y el modelo
+            # lo incumplia: era el bug "a veces lanza codigo en lugar de graficas".
+            _fence = re.compile(r"```[a-zA-Z]*\s*\n.*?```", re.DOTALL)
+            _bloques = _fence.findall(last_text)
+            if _bloques:
+                _limpio = _fence.sub("", last_text).strip()
+                if len(_limpio) >= 40:
+                    logging.warning("Se removieron %d bloques de codigo de la respuesta final.", len(_bloques))
+                    last_text = _limpio
+
             # Buscamos cualquier link que contenga /static/plots/... (incluyendo sandbox: o dominios)
             # Ahora detectamos .html, .png, .jpg, .jpeg
             plot_pattern = r"(?:(?:https?://[^\s)\]]+)|sandbox:)?(?:/)?static/plots/[^\s)\]]+\.(?:html|png|jpg|jpeg)"
