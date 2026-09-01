@@ -1365,6 +1365,20 @@
       }
     }
 
+
+    /* Fuera de movil el boton no existe */
+    .nav-toggle {
+      display: none;
+    }
+
+    .nav-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .45);
+      z-index: 999;
+    }
+
     @media (max-width: 768px) {
       .sidebar {
         position: fixed;
@@ -1385,6 +1399,32 @@
 
       .kpi-grid {
         grid-template-columns: 1fr;
+      }
+
+      /* Boton de menu: sin el, la barra lateral quedaba fuera de pantalla y no
+         habia manera de entrar a "Duma AI Agent" desde un telefono. */
+      .nav-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        width: 44px;
+        height: 44px;
+        border: none;
+        border-radius: 12px;
+        background: var(--brand, #12a37f);
+        color: #fff;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        z-index: 1100;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+      }
+
+      .nav-backdrop.visible {
+        display: block;
       }
     }
 
@@ -3161,6 +3201,10 @@
 </head>
 
 <body>
+  <!-- Navegacion movil (<=768px): la barra lateral se oculta fuera de pantalla -->
+  <button class="nav-toggle" id="navToggle" aria-label="Abrir menú" aria-expanded="false">☰</button>
+  <div class="nav-backdrop" id="navBackdrop"></div>
+
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="brand" id="brandToggle">
@@ -7128,6 +7172,38 @@
         document.addEventListener('touchend', function() { isResizing = false; });
       })();
     </script>
+  <script>
+    // Abre y cierra la barra lateral en movil. Al elegir una seccion se cierra sola,
+    // que es lo que espera cualquiera que use el dashboard desde el telefono.
+    (function () {
+      var boton = document.getElementById("navToggle");
+      var velo = document.getElementById("navBackdrop");
+      var barra = document.querySelector(".sidebar");
+      if (!boton || !barra) return;
+
+      function alternar(abrir) {
+        barra.classList.toggle("open", abrir);
+        // La clase .open ya existia en la hoja de estilos pero no llegaba a aplicarse
+        // (la barra seguia en left:-280px). Se fija el desplazamiento por estilo en
+        // linea para no depender de la cascada.
+        barra.style.left = abrir ? "0px" : "";
+        if (velo) velo.classList.toggle("visible", abrir);
+        boton.setAttribute("aria-expanded", abrir ? "true" : "false");
+        boton.textContent = abrir ? "✕" : "☰";
+      }
+
+      boton.addEventListener("click", function () {
+        alternar(!barra.classList.contains("open"));
+      });
+      if (velo) velo.addEventListener("click", function () { alternar(false); });
+      barra.addEventListener("click", function (e) {
+        if (e.target.closest(".nav-item, .side-item, a, button")) alternar(false);
+      });
+      window.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") alternar(false);
+      });
+    })();
+  </script>
 </body>
 
 </html>

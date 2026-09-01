@@ -1507,6 +1507,21 @@ def build_intraday_buckets(day: str, from_hour=None, to_hour=None,
         "hasta": buckets[-1]["hora"] if buckets else None,
         "velocidad_esperada_kg_h": round(float(df["VelEsperada"].dropna().mean()), 1)
                                    if df["VelEsperada"].notna().any() else None,
+        # Extremos ya resueltos. Preguntado por "la hora con mas paro", el modelo
+        # escaneaba las 24 filas y devolvia la segunda mas alta (18:00 con 61 min en
+        # lugar de 03:00 con 63). Rankear no es tarea suya.
+        "hora_con_mas_paro_no_programado": (
+            max(buckets, key=lambda b: b["Min_paro_no_programado"] or 0)["hora"] if buckets else None),
+        "minutos_de_esa_hora": (
+            max((b["Min_paro_no_programado"] or 0) for b in buckets) if buckets else None),
+        "hora_con_menor_oee": (
+            min([b for b in buckets if b["OEE_del_periodo"] is not None],
+                key=lambda b: b["OEE_del_periodo"], default={}).get("hora")),
+        "hora_con_mayor_oee": (
+            max([b for b in buckets if b["OEE_del_periodo"] is not None],
+                key=lambda b: b["OEE_del_periodo"], default={}).get("hora")),
+        "hora_con_mas_produccion": (
+            max(buckets, key=lambda b: b["Kg_producidos"] or 0)["hora"] if buckets else None),
         "horas_con_ajuste_retroactivo": [b["hora"] for b in buckets if b.get("ajuste_retroactivo")],
         "kg_totales": round(float(df["d_KgTurno"].sum()), 1),
         "min_paro_no_programado": round(float(df["d_ParoNPMin"].sum()), 1),
@@ -1730,7 +1745,26 @@ def oee_global_from_rows(rows_dicts):
         conforme += r * num(fila.get(nombres["calidad"])) / 100.0
 
     if disponible <= 0 or esperado <= 0 or real <= 0:
-        return None
+        # Jornada sin operacion (lavado, mantenimiento, descanso): el tiempo disponible
+        # o la produccion esperada es cero. El MES guarda Oee=100 en esos turnos por
+        # dividir entre cero; reportarlo como un dia perfecto seria el peor error
+        # posible, asi que se devuelve el caso explicado en vez de un numero.
+        return {
+            "OEE_global": None,
+            "estado": None,
+            "sin_operacion": True,
+            "produccion_real_kg": round(real, 1),
+            "produccion_esperada_kg": round(esperado, 1),
+            "tiempo_disponible_min": round(disponible, 1),
+            "turnos_considerados": len(rows_dicts),
+            "nota": (
+                "La linea NO OPERO en este periodo: el tiempo disponible o la produccion "
+                "esperada es cero, tipicamente una jornada completa de paro programado. "
+                "NO reportes ningun OEE, ni siquiera el 100% que traen los turnos: ese "
+                "valor es un artefacto de dividir entre cero. Informa que no hubo "
+                "operacion y, si aplica, el motivo del paro programado."
+            ),
+        }
 
     disp = productivo / disponible * 100.0
     desemp = real / esperado * 100.0
@@ -1753,6 +1787,60 @@ def oee_global_from_rows(rows_dicts):
             "no los recalcules ni los reetiquetes."
         ),
     }
+
+
+_LINEAS_CACHE = {"nombres": None}
+# La preposicion es obligatoria: sin ella, "la linea contra la esperada" hacia que el
+# agente respondiera que no existe ninguna linea llamada "contra" y no contestara la
+# pregunta. Es preferible dejar pasar algun caso que bloquear preguntas legitimas.
+_RE_LINEA = re.compile(r"l[íi]nea\s+(?:de|del)\s+([a-záéíóúñ]{4,})", re.IGNORECASE)
+_PALABRAS_NEUTRAS = {"produccion", "produ", "actual", "completa", "principal",
+                     "hamburguesas", "trabajo", "envasado", "proceso", "planta",
+                     "ayer", "hoy", "esta", "este", "nuestra", "nuestro", "arriba",
+                     "abajo", "tiempo", "datos", "control", "carne", "manera"}
+
+
+def _sin_acentos(t: str) -> str:
+    tabla = str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU")
+    return (t or "").translate(tabla).lower()
+
+
+def lineas_registradas():
+    """Nombres de linea que existen en la planta (cacheado)."""
+    if _LINEAS_CACHE["nombres"] is None:
+        try:
+            filas, _c = run_sql("SELECT Name FROM dbo.ProductionLines", raise_on_error=True)
+            _LINEAS_CACHE["nombres"] = [str(f[0]) for f in filas if f and f[0]]
+        except Exception as e:
+            logging.warning("No se pudo leer el catalogo de lineas: %s", e)
+            _LINEAS_CACHE["nombres"] = []
+    return _LINEAS_CACHE["nombres"]
+
+
+def aviso_linea_inexistente(texto_usuario: str):
+    """
+    Detecta que el usuario nombro una linea que no existe.
+
+    Sin esto, preguntar por "la linea de salchichas" devolvia los KPIs de la unica
+    linea real ETIQUETADOS con ese nombre: un jefe de planta tomaria decisiones sobre
+    una linea equivocada. El prompt por si solo no lo evitaba.
+    """
+    conocidas = [_sin_acentos(n) for n in lineas_registradas()]
+    if not conocidas:
+        return None
+    for coincidencia in _RE_LINEA.findall(texto_usuario or ""):
+        token = _sin_acentos(coincidencia)
+        if token in _PALABRAS_NEUTRAS:
+            continue
+        if any(token in nombre for nombre in conocidas):
+            continue
+        return (
+            "AVISO DEL SISTEMA: el usuario nombro la linea '%s', que NO existe en la "
+            "planta. Las unicas lineas registradas son: %s. Antes de dar cualquier "
+            "cifra, acláralo. PROHIBIDO entregar los datos de otra linea etiquetados "
+            "con ese nombre." % (coincidencia, ", ".join(lineas_registradas()))
+        )
+    return None
 
 
 def _normalize_stop_type(value) -> str:
@@ -2586,13 +2674,50 @@ ORDER BY Fecha DESC, Turno;
                                 for p in plots_h:
                                     images_out.append(p["url"])
                                     captions_out.append(p.get("title", "OEE Historico"))
+                                # Serie por dia: sin esto el modelo recibia solo las
+                                # graficas y el agregado del periodo. Preguntado por el
+                                # peor dia del rango, o inventaba una fecha o remitia al
+                                # dibujo, porque no tenia los valores diarios.
+                                serie_dias = []
+                                agrupado_dia = {}
+                                for fila in rows_dicts_h:
+                                    clave = str(fila.get("Fecha"))[:10]
+                                    agrupado_dia.setdefault(clave, []).append(fila)
+                                for fecha_d in sorted(agrupado_dia):
+                                    k_dia = oee_global_from_rows(agrupado_dia[fecha_d]) or {}
+                                    serie_dias.append({
+                                        "fecha": fecha_d,
+                                        # None cuando la linea no opero ese dia; se
+                                        # conserva la fila para que la serie no tenga
+                                        # huecos silenciosos.
+                                        "OEE": k_dia.get("OEE_global"),
+                                        "estado": k_dia.get("estado"),
+                                        "sin_operacion": k_dia.get("sin_operacion", False),
+                                        "Disponibilidad": k_dia.get("Disponibilidad"),
+                                        "Desempeno": k_dia.get("Desempeno"),
+                                        "produccion_real_kg": k_dia.get("produccion_real_kg"),
+                                        "produccion_esperada_kg": k_dia.get("produccion_esperada_kg"),
+                                    })
+                                # Los extremos solo consideran dias con operacion real.
+                                con_oee = [d for d in serie_dias if d["OEE"] is not None]
+                                mejor_d = max(con_oee, key=lambda d: d["OEE"]) if con_oee else None
+                                peor_d = min(con_oee, key=lambda d: d["OEE"]) if con_oee else None
+
                                 tool_outputs.append({
                                     "tool_call_id": tool.id,
                                     "output": json.dumps({
                                         "status": "ok",
                                         "kpis_globales": oee_global_from_rows(rows_dicts_h),
+                                        "por_dia": serie_dias,
+                                        "mejor_dia": mejor_d,
+                                        "peor_dia": peor_d,
                                         "plots": plots_h,
                                         "from_day": from_day_h, "to_day": to_day_h,
+                                        "nota": (
+                                            "por_dia trae el OEE ponderado de cada dia y mejor_dia/peor_dia "
+                                            "ya vienen resueltos. Usalos tal cual para responder cual dia fue "
+                                            "mejor o peor; NUNCA deduzcas esa respuesta mirando la grafica."
+                                        ),
                                         "message": f"Se generaron {len(plots_h)} graficas de OEE del {from_day_h} al {to_day_h} con calculo identico al modulo OEE Historico."
                                     }, ensure_ascii=False)
                                 })
@@ -2904,12 +3029,19 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
         system_date = date.today().isoformat()
         prior_history = load_thread_history(t_id, limit=CHAT_HISTORY_TURNS)
 
+        # Guardarrail de linea inexistente. Va como mensaje propio inmediatamente antes
+        # de la pregunta: al final de un system prompt de 16 KB el modelo lo ignoraba y
+        # seguia entregando los datos de la unica linea con el nombre equivocado.
+        aviso_linea = aviso_linea_inexistente(user_text)
+
         def run_turn(instructions: str) -> str:
             """Arma system + historial + turno actual y ejecuta el ciclo de herramientas."""
             system_content = instructions + "\r\n\r\n" + duma_knowledge_base()
             msgs_payload = [{"role": "system", "content": system_content}]
             msgs_payload.extend(prior_history)
             msgs_payload.append({"role": "user", "content": "[system_date=%s]" % system_date})
+            if aviso_linea:
+                msgs_payload.append({"role": "system", "content": aviso_linea})
             msgs_payload.append({"role": "user", "content": user_text})
             return handle_run(msgs_payload)
 
@@ -2956,6 +3088,9 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
                 "El usuario sólo saludó: responde con un saludo breve y pregunta en qué "
                 "puedes ayudarlo. No consultes datos ni generes informes.\r\n"
             )
+
+        # (El aviso de línea inexistente se inyecta en run_turn, justo antes de la
+        #  pregunta: ahí sí lo atiende. Ver aviso_linea más arriba.)
 
         # 4) Primer ciclo de razonamiento + herramientas
         last_text = run_turn(extra_instructions) or last_text
@@ -5726,6 +5861,15 @@ async def get_chat_history(thread_id: str, owner_key: str = ""):
                 )
                 rows = cursor.fetchall()
                 for r in rows:
+                    # Los mensajes tecnicos jamas se muestran. El saludo proactivo se
+                    # envia como "[init]" y el backend lo reescribe a un bloque
+                    # "[system: ...]"; la version anterior lo guardaba como mensaje del
+                    # usuario y el chat lo pintaba como si el operador lo hubiera
+                    # escrito. Ya no se guarda, y aqui se filtra por si quedan filas.
+                    texto = (r[1] or "").lstrip()
+                    if texto.startswith("[system:") or texto.startswith("[system_date=") \
+                            or texto == "[init]":
+                        continue
                     images_list = []
                     if r[2]:
                         try:

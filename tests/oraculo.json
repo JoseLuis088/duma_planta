@@ -1,0 +1,235 @@
+{
+  "dia": "2026-08-31",
+  "desde": "2026-08-25",
+  "hasta": "2026-08-31",
+  "turnos_dia": [
+    {
+      "Turno": "Primer Turno",
+      "OEE": 41.18,
+      "Disponibilidad": 48.04,
+      "Desempeno": 85.72,
+      "Conforme": 100.0,
+      "DisponibleMin": 510.0,
+      "ProductivoMin": 245.0,
+      "RealKg": 5222.64,
+      "EsperadoKg": 6092.41,
+      "ParoNPMin": 265.0,
+      "ParoPMin": 0.0,
+      "ParoNPCont": 9,
+      "ParoPCont": 0
+    },
+    {
+      "Turno": "Segundo Turno",
+      "OEE": 64.43,
+      "Disponibilidad": 65.58,
+      "Desempeno": 98.25,
+      "Conforme": 100.0,
+      "DisponibleMin": 398.0,
+      "ProductivoMin": 261.0,
+      "RealKg": 6376.96,
+      "EsperadoKg": 6490.29,
+      "ParoNPMin": 137.0,
+      "ParoPMin": 52.0,
+      "ParoNPCont": 12,
+      "ParoPCont": 1
+    },
+    {
+      "Turno": "Tercer Turno",
+      "OEE": 82.9,
+      "Disponibilidad": 79.14,
+      "Desempeno": 104.76,
+      "Conforme": 100.0,
+      "DisponibleMin": 417.0,
+      "ProductivoMin": 330.0,
+      "RealKg": 8700.64,
+      "EsperadoKg": 8206.11,
+      "ParoNPMin": 87.0,
+      "ParoPMin": 63.0,
+      "ParoNPCont": 7,
+      "ParoPCont": 2
+    }
+  ],
+  "global_dia": {
+    "OEE": 61.61,
+    "Disponibilidad": 63.09,
+    "Desempeno": 97.65,
+    "Conforme": 100.0,
+    "RealKg": 20300.2,
+    "EsperadoKg": 20788.8,
+    "BrechaKg": 488.6,
+    "ProductivoMin": 836.0,
+    "DisponibleMin": 1325.0
+  },
+  "global_semana": {
+    "OEE": 70.73,
+    "Disponibilidad": 69.74,
+    "Desempeno": 101.46,
+    "Conforme": 99.95,
+    "RealKg": 106109.8,
+    "EsperadoKg": 104578.8,
+    "BrechaKg": -1531.0,
+    "ProductivoMin": 4262.0,
+    "DisponibleMin": 6111.0
+  },
+  "oee_por_dia": {
+    "2026-08-25": 51.02,
+    "2026-08-26": 73.71,
+    "2026-08-27": 98.06,
+    "2026-08-28": 71.99,
+    "2026-08-29": null,
+    "2026-08-30": null,
+    "2026-08-31": 61.61
+  },
+  "peor_dia": [
+    "2026-08-25",
+    51.02
+  ],
+  "mejor_dia": [
+    "2026-08-27",
+    98.06
+  ],
+  "paros_dia": {
+    "np_min": 489.0,
+    "np_eventos": 28,
+    "p_min": 115.0,
+    "p_eventos": 3,
+    "top": [
+      {
+        "motivo": "Sin Clasificar",
+        "clase": "NP",
+        "min": 337.0,
+        "eventos": 15
+      },
+      {
+        "motivo": "Deshiele IQF",
+        "clase": "P",
+        "min": 65.0,
+        "eventos": 2
+      },
+      {
+        "motivo": "Comida",
+        "clase": "P",
+        "min": 50.0,
+        "eventos": 1
+      },
+      {
+        "motivo": "IQF2 Gota activada / falla gota",
+        "clase": "NP",
+        "min": 29.0,
+        "eventos": 4
+      },
+      {
+        "motivo": "Formax Golpea papel",
+        "clase": "NP",
+        "min": 29.0,
+        "eventos": 1
+      }
+    ]
+  },
+  "paros_semana": {
+    "np_min": 1849.0,
+    "np_eventos": 127,
+    "total_min": 5833.0,
+    "top": [
+      {
+        "motivo": "Lavado",
+        "clase": "P",
+        "tipo": "Operación",
+        "min": 1687.0,
+        "eventos": 5
+      },
+      {
+        "motivo": "Mantenimiento",
+        "clase": "P",
+        "tipo": "Operación",
+        "min": 1440.0,
+        "eventos": 3
+      },
+      {
+        "motivo": "Sin Clasificar",
+        "clase": "NP",
+        "tipo": "Sin Clasificar",
+        "min": 706.0,
+        "eventos": 30
+      },
+      {
+        "motivo": "Comida",
+        "clase": "P",
+        "tipo": "Operación",
+        "min": 470.0,
+        "eventos": 8
+      },
+      {
+        "motivo": "Deshiele IQF",
+        "clase": "P",
+        "tipo": "Operación",
+        "min": 242.0,
+        "eventos": 5
+      },
+      {
+        "motivo": "Formax Falla papelero",
+        "clase": "NP",
+        "tipo": "Mantenimiento maquinaria",
+        "min": 151.0,
+        "eventos": 14
+      },
+      {
+        "motivo": "Falta de Ingredientes",
+        "clase": "NP",
+        "tipo": "Operación",
+        "min": 128.0,
+        "eventos": 5
+      },
+      {
+        "motivo": "Formax Piezas incompletas",
+        "clase": "NP",
+        "tipo": "Mantenimiento maquinaria",
+        "min": 108.0,
+        "eventos": 6
+      }
+    ]
+  },
+  "tiempo_real": {
+    "LineName": "Línea de Hamburguesas",
+    "SnapshotAtLocal": "2026-09-01 14:27:00",
+    "OEE": "53.08",
+    "Availability": "63.17",
+    "Performance": "84.02",
+    "Producto Conforme": "100.00",
+    "ParosNoProgramadosCont": 14.0,
+    "UnscheduledStopageMin": 165.0,
+    "ParosProgramadosCont": 0.0,
+    "ScheduledStopageMin": 0.0,
+    "StatusCode": "Paro No Programado",
+    "StatusTimeMin": 0.0,
+    "NaturalTimeMin": 448.0,
+    "ProductiveTimeMin": 283.0,
+    "CurrentRate": "1654.320",
+    "ExpectedRate": "1492.000",
+    "CurrentShiftProduction": "5996.560",
+    "ExpectedShiftProduction": "7037.361",
+    "CurrentProduction": "1762.800",
+    "ExpectedDayProduction": "4898.550"
+  },
+  "intradia_dia": {
+    "horas": 24,
+    "kg_total": 20300.3,
+    "hora_mas_paro": "03:00",
+    "max_paro_min": 63.0,
+    "ventana": "2026-08-31 07:00 a 2026-09-01 07:00 (hora local)"
+  },
+  "sensores": {
+    "total": 9,
+    "nombres": [
+      "0F0BB3AE-FC1F-4748-ACC1-1C9A4DA94DA7",
+      "11A4996C-FA1B-47D9-9A60-125D66F41F84",
+      "3AB4E612-5987-432C-8EF0-28EE3D74C313",
+      "5EF87231-BD89-41F1-B0D6-C5371B237684",
+      "7AA64D76-1AE9-41DA-85AA-F53A9B5F0162",
+      "9057486C-3A01-417D-B5E0-33F848EB19FB",
+      "AB2D10BC-B497-4049-AD39-554C2E4BCC24",
+      "D592EFE2-94FF-4DBF-95C8-C1C01FE37D4F",
+      "F71768ED-3006-4880-A2FD-9F62344870CC"
+    ]
+  }
+}
