@@ -289,6 +289,11 @@ GENERATED_DIRS = [
 ]
 PLOTS_RETENTION_DAYS = int(os.getenv("PLOTS_RETENTION_DAYS", "30"))
 PLOTS_MAX_GB = float(os.getenv("PLOTS_MAX_GB", "5"))
+# La purga automatica es opt-in y se activa en el despliegue (deploy_vm.py pasa
+# PLOTS_PURGE_ENABLED=1). Arrancar la app en una maquina de desarrollo no debe borrar
+# archivos: levantar el servidor local para una prueba borro 3.6 GB de graficas.
+# La purga manual por /api/admin/storage?purge=true sigue disponible siempre.
+PLOTS_PURGE_ENABLED = os.getenv("PLOTS_PURGE_ENABLED", "0").strip().lower() in ("1", "true", "yes", "si")
 _PURGE_MIN_AGE_S = 86400  # el tope de tamano nunca toca lo generado hoy
 
 
@@ -366,7 +371,10 @@ async def periodic_cleanup_task():
         except Exception as e:
             logging.error(f"Error en tarea de limpieza periódica: {e}")
         try:
-            purge_generated_files()
+            if PLOTS_PURGE_ENABLED:
+                purge_generated_files()
+            else:
+                logging.info("Purga automatica desactivada (PLOTS_PURGE_ENABLED=0).")
         except Exception as e:
             logging.error(f"Error purgando archivos generados: {e}")
         # Esperar 24 horas

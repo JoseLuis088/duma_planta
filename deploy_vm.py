@@ -141,6 +141,9 @@ def main():
             f"--restart always "
             f"-p 80:8000 -p 8002:8000 "
             f"{volumenes} "
+            # La purga automatica solo se activa en produccion, donde el crecimiento
+            # sin limite si es un problema. En desarrollo queda apagada por defecto.
+            f"-e PLOTS_PURGE_ENABLED=1 "
             f"--env-file /home/{USER}/{APP_NAME}/.env "
             f"{APP_NAME}"
         )
