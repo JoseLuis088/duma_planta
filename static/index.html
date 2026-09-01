@@ -49,14 +49,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Duma - Dashboard Analítico</title>
 
-  <!-- Chart.js para Pareto -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- html2canvas -->
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-  <!-- Flatpickr para rangos de fecha -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Librerias servidas localmente: la red de planta puede no tener salida a
+       internet, y con el CDN el chat se quedaba sin markdown ni graficas.
+       Versiones fijas en static/vendor/ (chart.js 4.4.3, html2canvas 1.4.1,
+       flatpickr 4.6.13, marked 12.0.2). -->
+  <script src="static/vendor/chart.umd.js"></script>
+  <script src="static/vendor/html2canvas.min.js"></script>
+  <link rel="stylesheet" href="static/vendor/flatpickr.min.css">
+  <script src="static/vendor/flatpickr.min.js"></script>
+  <script src="static/vendor/marked.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
@@ -3707,6 +3708,33 @@
         }
       };
 
+      // Clave de propietario: identifica a este navegador como dueño de sus
+      // conversaciones. No es autenticación, pero evita que cualquiera lea el
+      // historial de otra persona con solo escribir su nombre.
+      function ownerKey() {
+        let k = safeStorage.getItem("duma_owner_key");
+        if (!k) {
+          k = (window.crypto && window.crypto.randomUUID)
+            ? window.crypto.randomUUID()
+            : String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+          safeStorage.setItem("duma_owner_key", k);
+        }
+        return k;
+      }
+
+      // fetch con límite de tiempo: sin esto, una consulta atorada dejaba el chat
+      // con los puntos suspensivos para siempre.
+      const FETCH_TIMEOUT_MS = 180000;
+      async function fetchConTimeout(url, opciones = {}, ms = FETCH_TIMEOUT_MS) {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), ms);
+        try {
+          return await fetch(url, { ...opciones, signal: ctrl.signal });
+        } finally {
+          clearTimeout(t);
+        }
+      }
+
       // ===========================
       // Theme Toggle
       // ===========================
@@ -5923,7 +5951,7 @@
           }
 
           try {
-            const res = await fetch(`chat/threads/${encodeURIComponent(username)}`);
+            const res = await fetch(`chat/threads/${encodeURIComponent(username)}?owner_key=${encodeURIComponent(ownerKey())}`);
             if (res.ok) {
               const data = await res.json();
               const listEl = el("agentConversationsList");
@@ -6024,7 +6052,7 @@
             const res = await fetch(`chat/threads/${threadId}`, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title: cleanTitle })
+              body: JSON.stringify({ title: cleanTitle, owner_key: ownerKey() })
             });
             if (res.ok) {
               this.loadConversations();
@@ -6042,7 +6070,7 @@
           if (!confirm(currentLang === 'en' ? "Are you sure you want to delete this conversation? It will be deleted from the database and AI servers." : "¿Estás seguro de que deseas eliminar esta conversación? Se borrará de la base de datos y de los servidores de la IA.")) return;
           
           try {
-            const res = await fetch(`chat/threads/${threadId}`, {
+            const res = await fetch(`chat/threads/${threadId}?owner_key=${encodeURIComponent(ownerKey())}`, {
               method: "DELETE"
             });
             if (res.ok) {
@@ -6079,7 +6107,7 @@
               chatHeaderTitle.textContent = "Duma Agent";
             }
 
-            const res = await fetch(`chat/history/${this.threadId}`);
+            const res = await fetch(`chat/history/${this.threadId}?owner_key=${encodeURIComponent(ownerKey())}`);
             if (res.ok) {
               const data = await res.json();
               if (data.history && data.history.length > 0) {
@@ -6122,7 +6150,7 @@
             const initRes = await fetch("chat/", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ input: "[init]", lang: currentLang })
+              body: JSON.stringify({ input: "[init]", lang: currentLang, owner_key: ownerKey() })
             });
 
             if (initRes.ok) {
@@ -6290,6 +6318,16 @@
 
           const username = safeStorage.getItem("duma_user_name") || "Anónimo";
 
+          // Pedido de los clientes: avisar que sin nombre no se guarda el historial.
+          // Se muestra una sola vez por sesión para no volverse molesto.
+          if ((username === "Anónimo" || username === "Definir Nombre")
+              && !safeStorage.getItem("duma_aviso_nombre")) {
+            safeStorage.setItem("duma_aviso_nombre", "1");
+            this.addMessage("bot", currentLang === 'en'
+              ? "Before we start: set your name at the bottom left to keep your conversation history. Without it this chat will not be saved."
+              : "Antes de empezar: define tu nombre abajo a la izquierda para conservar tu historial. Sin nombre, esta conversación no se guarda.");
+          }
+
           this.isChatInitialized = true;
           const loadingEl = el("chatLoadingGreeting");
           if (loadingEl) loadingEl.remove();
@@ -6305,13 +6343,14 @@
           if (el("chatSuggestions")) el("chatSuggestions").style.display = "none";
 
           try {
-            const res = await fetch("chat/", {
+            const res = await fetchConTimeout("chat/", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 input: input,
                 thread_id: this.threadId,
                 username: username,
+                owner_key: ownerKey(),
                 lang: currentLang
               })
             });
@@ -6337,7 +6376,14 @@
 
           } catch (err) {
             this.showTyping(false);
-            this.addMessage("bot", "⚠️ Error de conexión con el servidor.");
+            const agotado = err && err.name === "AbortError";
+            this.addMessage("bot", agotado
+              ? (currentLang === 'en'
+                  ? "The query took too long. Please try again with a shorter date range."
+                  : "La consulta tardó demasiado. Inténtalo de nuevo acotando el rango de fechas.")
+              : (currentLang === 'en'
+                  ? "I could not reach the server. Check your connection and try again."
+                  : "No pude comunicarme con el servidor. Revisa tu conexión e inténtalo de nuevo."));
           }
         },
 
@@ -6404,10 +6450,12 @@
             formData.append('thread_id', this.threadId);
           }
           formData.append('username', username);
+          formData.append('owner_key', ownerKey());
+          formData.append('lang', currentLang);
 
           try {
             const prefix = window.location.pathname.includes("/Bafar") ? "Bafar/" : "";
-            const res = await fetch(`${prefix}chat/audio/`, {
+            const res = await fetchConTimeout(`${prefix}chat/audio/`, {
               method: "POST",
               body: formData
             });

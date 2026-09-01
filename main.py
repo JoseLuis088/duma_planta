@@ -194,9 +194,48 @@ def init_history_db():
                     END
                 END
             """)
+
+            # owner_key: clave del navegador que creo la conversacion. Sin ella, listar
+            # el historial de otra persona era tan facil como escribir su nombre.
+            # Las conversaciones anteriores quedan con NULL y siguen siendo visibles por
+            # nombre; a los 30 dias la purga las retira y el filtro queda completo.
+            cursor.execute("""
+                IF COL_LENGTH('dbo.duma_conversations', 'owner_key') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.duma_conversations ADD owner_key VARCHAR(64) NULL;
+                END
+            """)
             logging.info("Tablas de historial duma_conversations y duma_messages (con columna 'images') verificadas/creadas con éxito.")
     except Exception as e:
         logging.error(f"Error al verificar/crear tablas en la base de datos Duma_Planta: {e}")
+
+
+def thread_owner_key(thread_id: str):
+    """Devuelve la owner_key de una conversacion, o None si es antigua/no existe."""
+    try:
+        with pyodbc.connect(HISTORY_CONN_STR) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT owner_key FROM dbo.duma_conversations WHERE thread_id = ?",
+                        (thread_id,))
+            fila = cur.fetchone()
+            return fila[0] if fila else None
+    except Exception as e:
+        logging.warning("No se pudo leer owner_key de %s: %s", thread_id, e)
+        return None
+
+
+def owner_allowed(thread_id: str, owner_key: str) -> bool:
+    """
+    Autoriza el acceso a una conversacion.
+
+    No es autenticacion: es una clave por navegador que impide el caso real de leer
+    el historial de otro escribiendo su nombre. Las conversaciones sin owner_key
+    (anteriores a este cambio) siguen abiertas hasta que la purga de 30 dias las retire.
+    """
+    dueno = thread_owner_key(thread_id)
+    if not dueno:
+        return True
+    return str(owner_key or "") == str(dueno)
 
 
 def run_thread_cleanup():
@@ -896,7 +935,10 @@ def wrap_plotly_fig_for_pdf_capture(fig, fname_html: str) -> str:
         </style>
     </head>
     <body data-chart-url="{fname_html}" style="height: 100vh; margin: 0; min-height: 100vh; display: flex; flex-direction: column;">
-        {fig.to_html(include_plotlyjs="cdn", full_html=False, default_height="100vh", default_width="100%")}
+        <!-- plotly.js local (../vendor resuelve desde static/plots/). Con el CDN, una
+             planta sin salida a internet veia el iframe en blanco. -->
+        <script src="../vendor/plotly.min.js"></script>
+        {fig.to_html(include_plotlyjs=False, full_html=False, default_height="100vh", default_width="100%")}
         <script>
             window.addEventListener("message", async (e) => {{
                 if (e.data && e.data.action === "GET_PNG") {{
@@ -2883,10 +2925,17 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
         }
 
     except Exception as e:
+        # El detalle va al log; al operador de planta se le da un mensaje accionable.
+        # Antes se le mostraba el texto crudo de la excepcion (incluido el 410 de la
+        # Assistants API), que no le dice nada y parece que el sistema esta roto.
         logging.exception("Error en run_assistant_cycle")
         return {
             "thread_id": thread_id or "",
-            "message": f"⚠️ Ocurrió un error al procesar tu solicitud: {e}",
+            "message": (
+                "⚠️ No pude completar la consulta en este momento. "
+                "Vuelve a intentarlo en unos segundos; si sigue ocurriendo, avisa a "
+                "sistemas indicando la hora exacta para revisar la bitácora."
+            ),
             "images": images_out,
             "captions": captions_out
         }
@@ -3137,7 +3186,10 @@ def plot_variable_polars(
         safe_dev  = re.sub(r"[^a-z0-9_]", "_", device.lower().strip())
         fname     = f"agente_{start_day}_{end_day}_{safe_dev}_{safe_var}.html"
         out_path  = os.path.join(PLOTS_DIR, fname)
-        fig.write_html(out_path, include_plotlyjs="cdn", full_html=True)
+        # plotly.js local: ../vendor resuelve desde static/plots/ (ver
+        # wrap_plotly_fig_for_pdf_capture). Sin esto el iframe queda en blanco en una
+        # red sin salida a internet.
+        fig.write_html(out_path, include_plotlyjs="../vendor/plotly.min.js", full_html=True)
 
         # 9. Guardar PNG
         try:
@@ -5010,6 +5062,7 @@ async def chat(request: Request):
         user_text = (body.get("input") or "").strip()
         thread_id = body.get("thread_id")
         username = (body.get("username") or "").strip() or "Anónimo"
+        owner_key = (body.get("owner_key") or "").strip()[:64]
         lang = (body.get("lang") or "es").strip().lower()
 
         if not user_text:
@@ -5073,8 +5126,9 @@ async def chat(request: Request):
                         clean_title = user_text.replace("\n", " ").replace("\r", " ").strip()
                         title = clean_title[:47] + "..." if len(clean_title) > 47 else clean_title
                         cursor.execute(
-                            "INSERT INTO dbo.duma_conversations (thread_id, user_name, title) VALUES (?, ?, ?)",
-                            (resolved_thread_id, username, title)
+                            "INSERT INTO dbo.duma_conversations (thread_id, user_name, title, owner_key) "
+                            "VALUES (?, ?, ?, ?)",
+                            (resolved_thread_id, username, title, owner_key or None)
                         )
                     
                     # Guardar mensaje de usuario
@@ -5202,7 +5256,9 @@ async def chat_speak(request: Request):
 async def chat_audio(
     file: UploadFile = File(...),
     thread_id: str = Form(None),
-    username: str = Form("Anónimo")
+    username: str = Form("Anónimo"),
+    owner_key: str = Form(""),
+    lang: str = Form("es")
 ):
     """
     Recibe un archivo de audio asíncronamente, lo transcribe usando Azure OpenAI Whisper
@@ -5244,7 +5300,7 @@ async def chat_audio(
             return JSONResponse({"error": "No se detectó voz o texto en el archivo de audio proporcionado."}, status_code=400)
 
         # 3. Procesar el texto transcrito como si fuera un input de texto tradicional en Duma
-        out = await asyncio.to_thread(run_assistant_cycle, user_text, thread_id)
+        out = await asyncio.to_thread(run_assistant_cycle, user_text, thread_id, lang)
         resolved_thread_id = out.get("thread_id")
         
         # Registrar y guardar en base de datos local (historial de chat)
@@ -5261,8 +5317,9 @@ async def chat_audio(
                         clean_title = user_text.replace("\n", " ").replace("\r", " ").strip()
                         title = clean_title[:47] + "..." if len(clean_title) > 47 else clean_title
                         cursor.execute(
-                            "INSERT INTO dbo.duma_conversations (thread_id, user_name, title) VALUES (?, ?, ?)",
-                            (resolved_thread_id, username, title)
+                            "INSERT INTO dbo.duma_conversations (thread_id, user_name, title, owner_key) "
+                            "VALUES (?, ?, ?, ?)",
+                            (resolved_thread_id, username, title, owner_key or None)
                         )
                     
                     # Guardar mensaje de usuario (transcripción de voz)
@@ -5331,16 +5388,19 @@ async def api_storage_status(purge: bool = False):
 
 
 @app.get("/chat/threads/{username}")
-async def get_user_threads(username: str):
+async def get_user_threads(username: str, owner_key: str = ""):
     try:
         threads = []
         with pyodbc.connect(HISTORY_CONN_STR) as conn:
             cursor = conn.cursor()
+            # Solo las conversaciones de este navegador. Las anteriores al cambio
+            # (owner_key NULL) siguen visibles por nombre hasta que la purga las retire.
             cursor.execute(
                 "SELECT thread_id, title, created_at FROM dbo.duma_conversations "
                 "WHERE user_name = ? AND active = 1 "
+                "  AND (owner_key IS NULL OR owner_key = ?) "
                 "ORDER BY created_at DESC",
-                (username,)
+                (username, (owner_key or "")[:64])
             )
             rows = cursor.fetchall()
             for r in rows:
@@ -5362,6 +5422,9 @@ async def rename_thread(thread_id: str, request: Request):
         new_title = (body.get("title") or "").strip()
         if not new_title:
             return JSONResponse({"error": "Título vacío"}, status_code=400)
+
+        if not owner_allowed(thread_id, (body.get("owner_key") or "")):
+            return JSONResponse({"error": "Conversación de otro usuario"}, status_code=403)
         
         with pyodbc.connect(HISTORY_CONN_STR) as conn:
             cursor = conn.cursor()
@@ -5377,8 +5440,11 @@ async def rename_thread(thread_id: str, request: Request):
 
 
 @app.delete("/chat/threads/{thread_id}")
-async def delete_thread(thread_id: str):
+async def delete_thread(thread_id: str, owner_key: str = ""):
     try:
+        if not owner_allowed(thread_id, owner_key):
+            return JSONResponse({"error": "Conversación de otro usuario"}, status_code=403)
+
         # Ya no hay thread remoto que borrar: la conversacion vive solo en SQL Server.
         # Delete from database (foreign key cascade deletes messages automatically)
         with pyodbc.connect(HISTORY_CONN_STR) as conn:
@@ -5393,10 +5459,13 @@ async def delete_thread(thread_id: str):
 
 
 @app.get("/chat/history/{thread_id}")
-async def get_chat_history(thread_id: str):
+async def get_chat_history(thread_id: str, owner_key: str = ""):
     try:
         if not thread_id.startswith("thread_"):
             return JSONResponse({"error": "Thread ID inválido"}, status_code=400)
+
+        if not owner_allowed(thread_id, owner_key):
+            return JSONResponse({"error": "Conversación de otro usuario"}, status_code=403)
         
         history = []
         try:
@@ -5446,15 +5515,17 @@ async def chat_bafar(request: Request):
 async def chat_audio_bafar(
     file: UploadFile = File(...),
     thread_id: str = Form(None),
-    username: str = Form("Anónimo")
+    username: str = Form("Anónimo"),
+    owner_key: str = Form(""),
+    lang: str = Form("es")
 ):
-    return await chat_audio(file, thread_id, username)
+    return await chat_audio(file, thread_id, username, owner_key, lang)
 
 
 
 @app.get("/Bafar/chat/threads/{username}")
-async def get_user_threads_bafar(username: str):
-    return await get_user_threads(username)
+async def get_user_threads_bafar(username: str, owner_key: str = ""):
+    return await get_user_threads(username, owner_key)
 
 
 @app.put("/Bafar/chat/threads/{thread_id}")
@@ -5463,13 +5534,13 @@ async def rename_thread_bafar(thread_id: str, request: Request):
 
 
 @app.delete("/Bafar/chat/threads/{thread_id}")
-async def delete_thread_bafar(thread_id: str):
-    return await delete_thread(thread_id)
+async def delete_thread_bafar(thread_id: str, owner_key: str = ""):
+    return await delete_thread(thread_id, owner_key)
 
 
 @app.get("/Bafar/chat/history/{thread_id}")
-async def get_chat_history_bafar(thread_id: str):
-    return await get_chat_history(thread_id)
+async def get_chat_history_bafar(thread_id: str, owner_key: str = ""):
+    return await get_chat_history(thread_id, owner_key)
 
 
 # =========================================================
