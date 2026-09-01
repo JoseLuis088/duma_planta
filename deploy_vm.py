@@ -11,6 +11,10 @@ REPO_URL = "https://github.com/JoseLuis088/duma_planta.git"
 APP_NAME = "duma_planta"
 PORT = 8000
 
+# Almacenamiento persistente: vive en el host, sobrevive al contenedor.
+DATA_DIR = f"/home/{USER}/duma_data"
+DATA_SUBDIRS = ["plots", "report_imgs", "temp_snaps", "tmp_parquets"]
+
 def run_command(ssh, command, sudo=False):
     if sudo:
         # Use -S to read password from stdin
@@ -113,6 +117,14 @@ def main():
             print("Build failed.")
             return
 
+        # 4.b Directorios persistentes en el host
+        # Las graficas se generan dentro del contenedor. Sin estos volumenes, cada
+        # despliegue recreaba el contenedor y borraba los archivos, dejando con marcos
+        # rotos todas las conversaciones anteriores (sus URLs siguen en duma_messages).
+        print("\n--- Preparando almacenamiento persistente ---")
+        for sub in DATA_SUBDIRS:
+            run_command(ssh, f"mkdir -p {DATA_DIR}/{sub} && chmod 777 {DATA_DIR}/{sub}", sudo=True)
+
         # 5. Stop/Remove Old Container
         print("\n--- Restarting Container ---")
         run_command(ssh, f"docker stop {APP_NAME} || true", sudo=True)
@@ -120,11 +132,15 @@ def main():
 
         # 6. Run New Container
         print("\n--- Running New Container ---")
+        volumenes = " ".join(
+            f"-v {DATA_DIR}/{sub}:/usr/local/app/static/{sub}" for sub in DATA_SUBDIRS
+        )
         cmd_run = (
             f"docker run -d "
             f"--name {APP_NAME} "
             f"--restart always "
             f"-p 80:8000 -p 8002:8000 "
+            f"{volumenes} "
             f"--env-file /home/{USER}/{APP_NAME}/.env "
             f"{APP_NAME}"
         )

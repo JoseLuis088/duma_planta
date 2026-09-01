@@ -236,6 +236,88 @@ def run_thread_cleanup():
             logging.error(f"Error al eliminar el hilo {t_id} de la base de datos local: {e}")
 
 
+# ---------- Purga de archivos generados ----------
+# Las graficas, los PNG de reporte y los snapshots se acumulaban sin limite: 3.7 GB en
+# el entorno de desarrollo y ~166 MB por cada dos horas de uso en la VM. La retencion se
+# alinea con la de las conversaciones (30 dias): una grafica mas vieja que la
+# conversacion que la referencia ya no le sirve a nadie.
+
+GENERATED_DIRS = [
+    os.path.join("static", "plots"),
+    os.path.join("static", "report_imgs"),
+    os.path.join("static", "temp_snaps"),
+    os.path.join("static", "tmp_parquets"),
+]
+PLOTS_RETENTION_DAYS = int(os.getenv("PLOTS_RETENTION_DAYS", "30"))
+PLOTS_MAX_GB = float(os.getenv("PLOTS_MAX_GB", "5"))
+_PURGE_MIN_AGE_S = 86400  # el tope de tamano nunca toca lo generado hoy
+
+
+def purge_generated_files() -> dict:
+    """Borra por antiguedad y, si aun se excede el tope de tamano, por tamano."""
+    ahora = time.time()
+    corte = ahora - PLOTS_RETENTION_DAYS * 86400
+    borrados = 0
+    liberados = 0
+    vivos = []
+
+    for carpeta in GENERATED_DIRS:
+        if not os.path.isdir(carpeta):
+            continue
+        try:
+            entradas = list(os.scandir(carpeta))
+        except OSError as e:
+            logging.warning("No se pudo leer %s: %s", carpeta, e)
+            continue
+        for entrada in entradas:
+            try:
+                if not entrada.is_file():
+                    continue
+                st = entrada.stat()
+            except OSError:
+                continue
+            if st.st_mtime < corte:
+                try:
+                    os.remove(entrada.path)
+                    borrados += 1
+                    liberados += st.st_size
+                except OSError as e:
+                    logging.warning("No se pudo borrar %s: %s", entrada.path, e)
+            else:
+                vivos.append((st.st_mtime, st.st_size, entrada.path))
+
+    limite = PLOTS_MAX_GB * (1024 ** 3)
+    total = sum(v[1] for v in vivos)
+    if total > limite:
+        # Se borran los mas antiguos primero, nunca los de las ultimas 24 h: podrian
+        # ser las graficas de la conversacion que el usuario tiene abierta.
+        for mtime, size, ruta in sorted(vivos):
+            if total <= limite:
+                break
+            if ahora - mtime < _PURGE_MIN_AGE_S:
+                continue
+            try:
+                os.remove(ruta)
+                total -= size
+                borrados += 1
+                liberados += size
+            except OSError:
+                pass
+
+    if borrados:
+        logging.info("Purga de archivos generados: %d archivos, %.1f MB liberados.",
+                     borrados, liberados / 1024 / 1024)
+    else:
+        logging.info("Purga de archivos generados: nada que borrar (%.1f MB en uso).",
+                     total / 1024 / 1024)
+    return {
+        "archivos_borrados": borrados,
+        "mb_liberados": round(liberados / 1024 / 1024, 1),
+        "mb_en_uso": round(total / 1024 / 1024, 1),
+        "retencion_dias": PLOTS_RETENTION_DAYS,
+    }
+
+
 async def periodic_cleanup_task():
     # Esperar 10 segundos tras el inicio para no interferir con el arranque
     await asyncio.sleep(10)
@@ -244,6 +326,10 @@ async def periodic_cleanup_task():
             run_thread_cleanup()
         except Exception as e:
             logging.error(f"Error en tarea de limpieza periódica: {e}")
+        try:
+            purge_generated_files()
+        except Exception as e:
+            logging.error(f"Error purgando archivos generados: {e}")
         # Esperar 24 horas
         await asyncio.sleep(86400)
 
@@ -5211,6 +5297,39 @@ async def chat_audio(
 
 
 
+@app.get("/api/admin/storage")
+async def api_storage_status(purge: bool = False):
+    """Uso de disco de los archivos generados. Con purge=true fuerza la limpieza."""
+    try:
+        if purge:
+            return JSONResponse(purge_generated_files())
+        detalle = {}
+        total = 0
+        for carpeta in GENERATED_DIRS:
+            if not os.path.isdir(carpeta):
+                continue
+            n = 0
+            tam = 0
+            for entrada in os.scandir(carpeta):
+                try:
+                    if entrada.is_file():
+                        n += 1
+                        tam += entrada.stat().st_size
+                except OSError:
+                    continue
+            detalle[carpeta] = {"archivos": n, "mb": round(tam / 1024 / 1024, 1)}
+            total += tam
+        return JSONResponse({
+            "total_mb": round(total / 1024 / 1024, 1),
+            "tope_gb": PLOTS_MAX_GB,
+            "retencion_dias": PLOTS_RETENTION_DAYS,
+            "detalle": detalle,
+        })
+    except Exception as e:
+        logging.error(f"Error consultando uso de disco: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/chat/threads/{username}")
 async def get_user_threads(username: str):
     try:
@@ -5295,6 +5414,10 @@ async def get_chat_history(thread_id: str):
                             images_list = json.loads(r[2])
                         except Exception:
                             pass
+                        # Se descartan las graficas cuyo archivo ya no existe (purgadas o
+                        # perdidas en un redespliegue): el frontend mostraba marcos rotos.
+                        images_list = [u for u in images_list
+                                       if os.path.exists(str(u).split("?")[0])]
                     history.append({
                         "role": r[0],
                         "text": r[1],
