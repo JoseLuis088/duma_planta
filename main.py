@@ -1016,7 +1016,7 @@ def wrap_plotly_fig_for_pdf_capture(fig, fname_html: str) -> str:
                     const gd = document.querySelector('.plotly-graph-div');
                     if (gd) {{
                         try {{
-                            const dataUrl = await Plotly.toImage(gd, {{format: 'jpeg', width: 900, height: 450}});
+                            const dataUrl = await Plotly.toImage(gd, {{format: 'png', width: 1100, height: 550}});
                             window.parent.postMessage({{ action: "PNG_RESULT", src: document.body.getAttribute('data-chart-url'), dataUrl: dataUrl }}, "*");
                         }} catch (err) {{
                             console.error("Error toImage:", err);
@@ -6755,6 +6755,39 @@ def _build_pdf_bytes(
 
 
 
+_RE_DATA_URL = re.compile(r"^data:image/(png|jpe?g|webp);base64,", re.IGNORECASE)
+
+
+def guardar_imagen_base64(data_url: str, prefijo: str = "tmp_img"):
+    """
+    Guarda una captura recibida como data URL y devuelve su ruta, o None.
+
+    Acepta png, jpeg y webp: el iframe de las graficas captura con Plotly.toImage y
+    durante mucho tiempo devolvio jpeg mientras aqui solo se admitia png, asi que
+    todas las capturas se descartaban y el PDF salia sin visuales.
+    """
+    if not data_url:
+        return None
+    if not _RE_DATA_URL.match(data_url):
+        return None
+    try:
+        datos = base64.b64decode(data_url.split(",", 1)[1])
+        # No se confia en la etiqueta del data URL: se abre con Pillow y se normaliza
+        # a PNG. Asi da igual si el navegador declaro jpeg y mando otra cosa, y una
+        # captura corrupta se descarta aqui en vez de tumbar la generacion del PDF.
+        from PIL import Image
+        with Image.open(io.BytesIO(datos)) as im:
+            im.load()
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            ruta = os.path.join(PLOTS_DIR, f"{prefijo}_{uuid.uuid4().hex[:8]}.png")
+            im.save(ruta, format="PNG")
+        return ruta
+    except Exception as e:
+        logging.warning("Se descarta una imagen ilegible del PDF: %s", e)
+        return None
+
+
 def _as_file_response(content: bytes, filename: str, media_type: str):
     tmp_path = os.path.join("static", "reports")
     os.makedirs(tmp_path, exist_ok=True)
@@ -7143,17 +7176,10 @@ async def report_oee_realtime(payload: dict):
     provided_images = payload.get("images") or []
     
     if provided_images:
-        import base64, uuid
         for b64 in provided_images:
-            if b64.startswith("data:image/png;base64,"):
-                try:
-                    img_data = base64.b64decode(b64.split(",")[1])
-                    tmp_path = os.path.join(PLOTS_DIR, f"tmp_oee_rt_{uuid.uuid4().hex[:8]}.png")
-                    with open(tmp_path, "wb") as bf:
-                        bf.write(img_data)
-                    image_paths.append(tmp_path)
-                except Exception as e:
-                    print(f"Error decodificando imagen dashboard RT: {e}")
+            guardada = guardar_imagen_base64(b64, "tmp_oee_rt")
+            if guardada:
+                image_paths.append(guardada)
     
     if not image_paths:
         try:
@@ -7257,17 +7283,10 @@ async def report_oee_day(payload: dict):
     provided_images = payload.get("images") or []
 
     if provided_images:
-        import base64, uuid
         for b64 in provided_images:
-            if b64.startswith("data:image/png;base64,"):
-                try:
-                    img_data = base64.b64decode(b64.split(",")[1])
-                    tmp_path = os.path.join(PLOTS_DIR, f"tmp_oee_hist_{uuid.uuid4().hex[:8]}.png")
-                    with open(tmp_path, "wb") as bf:
-                        bf.write(img_data)
-                    image_paths.append(tmp_path)
-                except Exception as e:
-                    print(f"Error decodificando imagen dashboard HIST: {e}")
+            guardada = guardar_imagen_base64(b64, "tmp_oee_hist")
+            if guardada:
+                image_paths.append(guardada)
 
     if not image_paths:
         try:
@@ -7406,16 +7425,9 @@ async def chat_report_pdf(payload: dict):
         
         pngs = []
         for i in imgs:
-            if i.startswith("data:image/png;base64,"):
-                import base64
-                import uuid
-                import os
-                b64_data = i.split(",")[1]
-                img_data = base64.b64decode(b64_data)
-                tmp_path = os.path.join(PLOTS_DIR, f"tmp_b64_{uuid.uuid4().hex[:8]}.png")
-                with open(tmp_path, "wb") as bf:
-                    bf.write(img_data)
-                pngs.append(tmp_path)
+            guardada = guardar_imagen_base64(i, "tmp_chat")
+            if guardada:
+                pngs.append(guardada)
             else:
                 clean_path = i.replace("sandbox:", "")
                 # Normalizar ruta: quitar diagonal inicial y prefijo Bafar si existe
