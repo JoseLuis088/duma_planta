@@ -99,11 +99,24 @@ def coincide_con(clave, tol=0.7):
     return f
 
 
+import datetime as _dt
+_AYER = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
+
 CONVERSACIONES = [
+    ("0. Fechas relativas", [
+        # No compara un KPI fijo: comprueba que "ayer" apunta al dia correcto, que es
+        # lo unico que no debe cambiar con el paso de los dias.
+        ("¿De qué fecha exacta son los datos si te pregunto por ayer? Responde solo la fecha.",
+         dice(_AYER), "ayer = %s" % _AYER),
+        ("Ahora dame el OEE de ese día", sin_codigo(), "usa esa misma fecha"),
+        ("¿Y el de hoy?", sin_codigo(), "cambia correctamente a hoy"),
+        ("¿Cuál de los dos días fue mejor?", sin_codigo(), "compara los dos"),
+    ]),
     ("1. Arranque de turno del supervisor", [
         ("¿Cómo viene la línea ahorita?", todos(sin_codigo(), dice("oee")), "estado actual"),
         ("¿Eso es bueno o malo?", sin_codigo(), "interpreta sin inventar"),
-        ("¿Y ayer cómo cerramos?", tiene(GD["OEE"], 0.7), "OEE del 31: 61.61"),
+        ("¿Y el 31 de agosto de 2026 cómo cerramos?", tiene(GD["OEE"], 0.7),
+         "OEE del 31: 61.61"),
         ("¿Qué turno la libró mejor?", dice("tercer"), "el tercer turno"),
     ]),
     ("2. Diagnostico encadenado de un turno", [

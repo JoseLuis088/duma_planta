@@ -62,7 +62,7 @@ def ninguno(*fns):
 
 CONVERSACIONES = [
     ("OEE del dia y luego detalle", [
-        ("Dame el OEE de ayer desglosado por turnos",
+        ("Dame el OEE del 31 de agosto de 2026 desglosado por turnos",
          todos(tiene(TD["Primer Turno"]["OEE"], 0.7),
                tiene(TD["Tercer Turno"]["OEE"], 0.7)),
          "los tres turnos con su OEE"),

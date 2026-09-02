@@ -1636,6 +1636,8 @@ def plot_oee_intraday(buckets: List[dict], day: str, lang: str = "es") -> List[d
 # en el system prompt.
 
 MAX_TOOL_ITERATIONS = int(os.getenv("DUMA_MAX_TOOL_ITERATIONS", "8"))
+# Reintentos ante 429 / cortes de red de Azure antes de darse por vencido.
+MAX_REINTENTOS_API = int(os.getenv("DUMA_MAX_REINTENTOS_API", "3"))
 CHAT_HISTORY_TURNS = int(os.getenv("DUMA_CHAT_HISTORY_TURNS", "20"))
 
 _DUMA_KB_CACHE = {"text": None}
@@ -2238,8 +2240,9 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
         nonlocal tool_used, images_out, captions_out
         start_time = time.time()
         final_text = ""
+        _reintentos = 0
 
-        for _iteration in range(MAX_TOOL_ITERATIONS):
+        for _iteration in range(MAX_TOOL_ITERATIONS + MAX_REINTENTOS_API):
             if time.time() - start_time > MAX_WAIT_SECONDS:
                 logging.warning("Timeout esperando respuesta del modelo.")
                 break
@@ -2278,6 +2281,22 @@ def run_assistant_cycle(user_text: str, thread_id: Optional[str], lang: str = "e
                             if getattr(fn, "arguments", None):
                                 ranura["arguments"] += fn.arguments
             except Exception as e:
+                # Azure limita la tasa (429) cuando hay varias consultas seguidas. Sin
+                # reintento, el ciclo cortaba y el operador veia "No se recibio respuesta
+                # del asistente". Se reintenta con espera creciente antes de rendirse.
+                mensaje = str(e)
+                recuperable = any(s in mensaje.lower() for s in
+                                  ("429", "rate limit", "timeout", "timed out",
+                                   "connection", "temporarily", "503", "502", "500"))
+                if recuperable and _reintentos < MAX_REINTENTOS_API:
+                    _reintentos += 1
+                    espera = 2 ** _reintentos
+                    logging.warning("Chat Completions fallo (%s). Reintento %d/%d en %ds.",
+                                    mensaje[:120], _reintentos, MAX_REINTENTOS_API, espera)
+                    avisar({"type": "status", "tool": "reintento",
+                            "text": "El servicio esta ocupado, reintentando..."})
+                    time.sleep(espera)
+                    continue
                 logging.error("Error llamando a Chat Completions: %s" % e)
                 break
 
@@ -3014,17 +3033,28 @@ ORDER BY Duracion_Min DESC;
                                     # reporto "15 eventos / 5h37" (solo Sin Clasificar)
                                     # cuando los paros no programados del dia fueron
                                     # 28 eventos y 8h09.
-                                    "no_programados": {
+                                    "filtro_aplicado": stop_type,
+                                    # Cuando la consulta se filtro por clasificacion, la
+                                    # clase excluida va en null y NO en cero: con el cero,
+                                    # el modelo concluyo "no hubo paros programados" en una
+                                    # semana con 1,687 min de lavado y 1,440 de mantenimiento.
+                                    "no_programados": ({
                                         "minutos": round(_min_np, 1),
                                         "duracion": format_duration_es(_min_np, lang),
                                         "eventos": _ev_np,
-                                    },
-                                    "programados": {
+                                    } if stop_type in ("TODOS", "NP") else None),
+                                    "programados": ({
                                         "minutos": round(_min_p, 1),
                                         "duracion": format_duration_es(_min_p, lang),
                                         "eventos": _ev_p,
-                                    },
+                                    } if stop_type in ("TODOS", "P") else None),
                                     "nota_totales": (
+                                        ("ESTA CONSULTA ESTA FILTRADA a '%s': las demas "
+                                         "clasificaciones NO se consultaron y aparecen en null. "
+                                         "PROHIBIDO concluir que no existen; si te preguntan por "
+                                         "ellas, vuelve a consultar sin filtro. " % stop_type)
+                                        if stop_type != "TODOS" else ""
+                                    ) + (
                                         "Al citar cuantos paros no programados hubo usa "
                                         "no_programados.eventos y no_programados.duracion. "
                                         "Las filas de stop_reasons son causas individuales: "
