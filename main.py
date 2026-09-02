@@ -1879,6 +1879,58 @@ def duraciones_legibles(fila: dict, lang: str = "es") -> dict:
     return salida
 
 
+_DIAS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+
+
+def bloque_fechas(hoy=None) -> str:
+    """
+    Fechas relativas ya resueltas para el prompt de sesión.
+
+    Antes solo se entregaba [system_date=...] y el modelo tenia que restar los dias:
+    preguntado por "ayer" grafico HOY y escribio "el dia operativo de ayer
+    (01 de septiembre)". Restar fechas no es tarea suya.
+    """
+    hoy = hoy or date.today()
+    ayer = hoy - timedelta(days=1)
+    anteayer = hoy - timedelta(days=2)
+    lunes_actual = hoy - timedelta(days=hoy.weekday())
+    lunes_pasado = lunes_actual - timedelta(days=7)
+    domingo_pasado = lunes_actual - timedelta(days=1)
+    hace_7 = hoy - timedelta(days=6)
+    primero_mes = hoy.replace(day=1)
+    fin_mes_pasado = primero_mes - timedelta(days=1)
+    primero_mes_pasado = fin_mes_pasado.replace(day=1)
+
+    def f(d):
+        return d.isoformat()
+
+    return (
+        "FECHAS DE ESTA SESIÓN — sirven SOLO para traducir expresiones relativas\r\n"
+        "(\"ayer\", \"la semana pasada\", \"este mes\"). Si el usuario escribe fechas\r\n"
+        "explícitas, usa EXACTAMENTE esas: está prohibido sustituirlas por un rango de\r\n"
+        "esta lista. Preguntado por \"del 25 al 31 de agosto\" llegaste a responder por el\r\n"
+        "24 al 30, y las cifras salieron de otra semana sin que nadie lo notara.\r\n"
+        "  hoy               = %s (%s)\r\n"
+        "  ayer              = %s (%s)\r\n"
+        "  anteayer          = %s\r\n"
+        "  esta semana       = %s a %s\r\n"
+        "  la semana pasada  = %s a %s\r\n"
+        "  últimos 7 días    = %s a %s\r\n"
+        "  este mes          = %s a %s\r\n"
+        "  el mes pasado     = %s a %s\r\n"
+        "Si el usuario dice \"ayer\", la fecha es %s. Nunca uses la de hoy en su lugar.\r\n"
+        % (f(hoy), _DIAS_ES[hoy.weekday()],
+           f(ayer), _DIAS_ES[ayer.weekday()],
+           f(anteayer),
+           f(lunes_actual), f(hoy),
+           f(lunes_pasado), f(domingo_pasado),
+           f(hace_7), f(hoy),
+           f(primero_mes), f(hoy),
+           f(primero_mes_pasado), f(fin_mes_pasado),
+           f(ayer))
+    )
+
+
 def _normalize_stop_type(value) -> str:
     """
     El código filtra por 'NP' / 'P'. El modelo suele escribir "no programado".
@@ -3265,7 +3317,10 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
             "════════════════════════════════════════════════════════════\r\n"
             "SESIÓN\r\n"
             "════════════════════════════════════════════════════════════\r\n"
+            f"{bloque_fechas()}\r\n"
             f"{idioma}\r\n"
+            "Los rangos horarios (from_hour / to_hour) NO se heredan entre preguntas: "
+            "si el usuario no vuelve a acotar la hora, consulta el día completo.\r\n"
             "Aplica la regla de longitud de la sección 1: el tamaño de la respuesta lo "
             "determina la pregunta, no tu entusiasmo. Sólo despliega el informe completo "
             "de 4 secciones si el usuario pidió explícitamente un informe o reporte.\r\n"
