@@ -27,8 +27,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pyodbc  # noqa: E402
 import main as duma  # noqa: E402
 
-# Usuarios de las baterias: no son uso real y ensucian la revision.
-USUARIOS_DE_PRUEBA = ("QA_", "Test", "Deploy_Check", "Anónimo", "Anonimo")
+# Los usuarios del piloto no se declaran en ningun lado: salen de la propia base. Aqui
+# solo se listan los mios, y el informe SIEMPRE dice a quien excluyo, porque una lista
+# negra esconde lo que se te olvida meter (Deploy_Check paso por usuario real hasta que
+# lo vi de casualidad).
+USUARIOS_DE_PRUEBA = ("QA_", "Test", "Deploy_Check")
+
+# "Anonimo" es el nombre por defecto cuando nadie lo escribio: son personas reales, y de
+# hecho el grupo mas activo. Cuentan como uso real, pero se marcan aparte porque sus
+# conversaciones no se pueden atribuir ni seguir con nadie.
+SIN_NOMBRE = ("Anónimo", "Anonimo")
 
 # Una respuesta con cifras que no consulto nada es la senal mas peligrosa: el modelo
 # puede estar recitando de memoria del turno anterior en vez de mirar los datos.
@@ -111,22 +119,29 @@ def main():
     dia = args[0] if args else datetime.now().strftime("%Y-%m-%d")
 
     convs = conversaciones_del_dia(dia)
-    reales = [c for c in convs if not any(c[1].startswith(p) for p in USUARIOS_DE_PRUEBA)]
+    es_prueba = lambda u: any(u.startswith(p) for p in USUARIOS_DE_PRUEBA)
+    reales = [c for c in convs if not es_prueba(c[1])]
 
     print("REVISION DEL PILOTO — %s" % dia)
     print("=" * 78)
     print("conversaciones: %d (%d de usuarios reales, %d de pruebas)"
           % (len(convs), len(reales), len(convs) - len(reales)))
 
-    usuarios = {}
-    preguntas = 0
+    usuarios, preguntas = {}, 0
     for _, usuario, _, turnos in reales:
         n = sum(1 for r, _, _ in turnos if r == "user")
         preguntas += n
         usuarios[usuario] = usuarios.get(usuario, 0) + n
     print("preguntas de usuarios reales: %d" % preguntas)
     for u, n in sorted(usuarios.items(), key=lambda x: -x[1]):
-        print("   %-28s %3d preguntas" % (u, n))
+        nota = "  <- sin nombre: no se puede saber quien pregunto" if u in SIN_NOMBRE else ""
+        print("   %-28s %3d preguntas%s" % (u, n, nota))
+
+    # Siempre a la vista: si algun dia excluyo por error a alguien de verdad, se ve aqui
+    # en vez de desaparecer en silencio.
+    excluidos = sorted({c[1] for c in convs if es_prueba(c[1])})
+    if excluidos:
+        print("excluidos por ser de prueba: %s" % ", ".join(excluidos))
 
     print("\nPARA REVISAR A MANO")
     print("=" * 78)
