@@ -186,3 +186,34 @@ def test_avisa_brevedad_en_preguntas_de_definicion(duma, pregunta):
 ])
 def test_no_acorta_las_preguntas_de_datos(duma, pregunta):
     assert duma.aviso_pregunta_conceptual(pregunta) == ""
+
+
+# ---------- El saludo de bienvenida no se guarda como pregunta ----------
+# La pagina dispara sola un saludo al cargar y en el historial aparecian 25 mensajes de
+# usuario que en realidad eran el bloque "[system: El estado actual en tiempo real...".
+# /chat/ lo filtraba con su bandera is_init; /chat/stream no, asi que la regla se movio
+# a guardar_conversacion, por donde pasan todos.
+
+@pytest.mark.parametrize("texto", [
+    "[init]",
+    "  [init]  ",
+    "[system: El estado actual en tiempo real de la línea es: - OEE: 60.96% ...]",
+])
+def test_no_guarda_el_saludo_automatico(duma, monkeypatch, texto):
+    def no_deberia_conectar(*a, **k):
+        raise AssertionError("intento guardar el saludo automatico: %r" % texto)
+    monkeypatch.setattr(duma.pyodbc, "connect", no_deberia_conectar)
+    duma.guardar_conversacion("thread_x", "alex", "k", texto, {"message": "hola"})
+
+
+def test_si_guarda_una_pregunta_de_verdad(duma, monkeypatch):
+    """El filtro no debe tragarse los mensajes legitimos."""
+    intentos = []
+    monkeypatch.setattr(duma.pyodbc, "connect",
+                        lambda *a, **k: intentos.append(1) or (_ for _ in ()).throw(RuntimeError("corte")))
+    try:
+        duma.guardar_conversacion("thread_x", "alex", "k",
+                                  "¿Cuál fue el OEE de ayer?", {"message": "63%"})
+    except Exception:
+        pass
+    assert intentos, "una pregunta real si tiene que intentar guardarse"

@@ -3773,6 +3773,15 @@ def guardar_conversacion(thread_id: str, username: str, owner_key: str,
     """
     if not thread_id:
         return
+
+    # El saludo de bienvenida no es una pregunta de nadie: la pagina lo dispara sola al
+    # cargar. Guardado, aparece en el historial como si el usuario hubiera escrito el
+    # bloque "[system: El estado actual en tiempo real...", y hay 25 asi en la base.
+    # /chat/ ya lo filtraba con su propia bandera is_init, pero /chat/stream no, asi que
+    # la regla vive aqui: es el unico punto por el que pasan todos los que guardan.
+    limpio = (texto_usuario or "").strip()
+    if limpio == "[init]" or limpio.startswith("[system:"):
+        return
     try:
         with pyodbc.connect(HISTORY_CONN_STR) as conn:
             cursor = conn.cursor()
