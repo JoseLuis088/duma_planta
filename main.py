@@ -2237,6 +2237,44 @@ def referencia_de_fecha(user_text: str, historial: list) -> str:
     return ""
 
 
+# ---------- Preguntas conceptuales ----------
+# "Que significa disponibilidad?" pide una definicion, no un curso. Sin este aviso la
+# respuesta traia formula, vinetas, un "en resumen" y un ejemplo practico: mil
+# caracteres para una pregunta de una linea.
+
+_RE_CONCEPTUAL = re.compile(
+    r"(\bqu[eé]\s+(es|son|significa|significan|quiere\s+decir)\b"
+    r"|\ba\s+qu[eé]\s+se\s+refiere\b"
+    r"|\bc[oó]mo\s+se\s+calcula\b"
+    r"|\b(expl[ií]came|def[ií]neme|definici[oó]n\s+de)\b)", re.IGNORECASE)
+
+_AVISO_CONCEPTUAL = (
+    "ESTA ES UNA PREGUNTA CONCEPTUAL: piden una definicion, no datos. "
+    "Responde en 2 o 3 frases con lenguaje de planta y PARA. "
+    "PROHIBIDO: formulas, vinetas, encabezados en negrita, un bloque \"En resumen\" "
+    "y ejemplos numericos inventados. "
+    "Cierra ofreciendo el dato real: \"¿Quieres que revisemos ese indicador de algun "
+    "periodo?\". "
+    "A \"¿que significa disponibilidad en el OEE?\" llegaste a contestar mil "
+    "caracteres con formula, dos vinetas, un resumen y un ejemplo practico."
+)
+
+
+def aviso_pregunta_conceptual(user_text: str) -> str:
+    """
+    Aviso de brevedad para preguntas de definicion, o cadena vacia.
+
+    No se activa si la pregunta trae una fecha o un periodo: ahi no piden el concepto
+    sino el dato ("¿que fue el OEE de ayer?"), y acortar la respuesta seria un error.
+    """
+    texto = (user_text or "").strip()
+    if not texto or not _RE_CONCEPTUAL.search(texto):
+        return ""
+    if _RE_FECHA_NOMBRADA.search(texto) or _RE_DIA_RELATIVO.search(texto):
+        return ""
+    return _AVISO_CONCEPTUAL
+
+
 # ---------- Filtro de alcance ----------
 # Duma es un agente de planta, no un asistente general. Este clasificador corre antes
 # del ciclo principal y solo emite DENTRO o FUERA: al no redactar ni consultar nada,
@@ -3501,6 +3539,9 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
         # A que dia apunta "ese dia" cuando el usuario no lo nombra.
         aviso_fecha = referencia_de_fecha(user_text, prior_history)
 
+        # Brevedad en las preguntas de definicion.
+        aviso_concepto = aviso_pregunta_conceptual(user_text)
+
         def run_turn(instructions: str) -> str:
             """Arma system + historial + turno actual y ejecuta el ciclo de herramientas."""
             system_content = instructions + "\r\n\r\n" + duma_knowledge_base()
@@ -3535,6 +3576,8 @@ GROUP BY mt.Name, m.Name, m.StoppageType, s.Type ORDER BY Duracion_Min DESC;
                 })
             if aviso_fecha:
                 msgs_payload.append({"role": "system", "content": aviso_fecha})
+            if aviso_concepto:
+                msgs_payload.append({"role": "system", "content": aviso_concepto})
             if aviso_linea:
                 msgs_payload.append({"role": "system", "content": aviso_linea})
             msgs_payload.append({"role": "user", "content": user_text})

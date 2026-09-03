@@ -158,3 +158,31 @@ def test_solo_la_anulacion_cuenta_como_senal(duma):
     assert duma._anulacion_detectada(anulacion)
     assert not duma._anulacion_detectada(otro)
     assert not duma._anulacion_detectada(TimeoutError("se agoto el tiempo"))
+
+
+# ---------- Brevedad en las preguntas de definicion ----------
+# "Que significa disponibilidad en el OEE?" devolvia mil caracteres con formula, dos
+# vinetas, un "en resumen" y un ejemplo practico inventado. Reforzar la regla dentro del
+# prompt lo empeoro (1051 -> 1126); el aviso pegado a la pregunta lo bajo a 418.
+
+@pytest.mark.parametrize("pregunta", [
+    "¿Qué significa disponibilidad en el OEE?",
+    "¿Qué es el tiempo productivo?",
+    "¿Cómo se calcula el desempeño?",
+    "Explícame qué es un paro no programado",
+    "¿A qué se refiere el producto conforme?",
+])
+def test_avisa_brevedad_en_preguntas_de_definicion(duma, pregunta):
+    assert duma.aviso_pregunta_conceptual(pregunta)
+
+
+@pytest.mark.parametrize("pregunta", [
+    # Con fecha o periodo piden el dato, no el concepto: acortar seria el error.
+    "¿Cuál fue el OEE del 31 de agosto de 2026?",
+    "¿Qué OEE tuvimos ayer?",
+    "¿Qué turno fue el peor el 31 de agosto de 2026?",
+    "Dame el informe del 31 de agosto de 2026",
+    "¿Qué sensores tenemos monitoreados?",
+])
+def test_no_acorta_las_preguntas_de_datos(duma, pregunta):
+    assert duma.aviso_pregunta_conceptual(pregunta) == ""
