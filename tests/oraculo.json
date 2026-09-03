@@ -5,18 +5,18 @@
   "turnos_dia": [
     {
       "Turno": "Primer Turno",
-      "OEE": 41.18,
-      "Disponibilidad": 48.04,
+      "OEE": 44.59,
+      "Disponibilidad": 52.02,
       "Desempeno": 85.72,
       "Conforme": 100.0,
-      "DisponibleMin": 510.0,
+      "DisponibleMin": 471.0,
       "ProductivoMin": 245.0,
       "RealKg": 5222.64,
       "EsperadoKg": 6092.41,
-      "ParoNPMin": 265.0,
-      "ParoPMin": 0.0,
-      "ParoNPCont": 9,
-      "ParoPCont": 0
+      "ParoNPMin": 226.0,
+      "ParoPMin": 39.0,
+      "ParoNPCont": 8,
+      "ParoPCont": 2
     },
     {
       "Turno": "Segundo Turno",
@@ -50,35 +50,35 @@
     }
   ],
   "global_dia": {
-    "OEE": 61.61,
-    "Disponibilidad": 63.09,
+    "OEE": 63.48,
+    "Disponibilidad": 65.01,
     "Desempeno": 97.65,
     "Conforme": 100.0,
     "RealKg": 20300.2,
     "EsperadoKg": 20788.8,
     "BrechaKg": 488.6,
     "ProductivoMin": 836.0,
-    "DisponibleMin": 1325.0
+    "DisponibleMin": 1286.0
   },
   "global_semana": {
-    "OEE": 70.73,
-    "Disponibilidad": 69.74,
+    "OEE": 71.31,
+    "Disponibilidad": 70.33,
     "Desempeno": 101.46,
     "Conforme": 99.95,
-    "RealKg": 106109.8,
+    "RealKg": 106102.3,
     "EsperadoKg": 104578.8,
-    "BrechaKg": -1531.0,
-    "ProductivoMin": 4262.0,
-    "DisponibleMin": 6111.0
+    "BrechaKg": -1523.5,
+    "ProductivoMin": 4247.0,
+    "DisponibleMin": 6039.0
   },
   "oee_por_dia": {
     "2026-08-25": 51.02,
     "2026-08-26": 73.71,
-    "2026-08-27": 98.06,
-    "2026-08-28": 71.99,
+    "2026-08-27": 99.16,
+    "2026-08-28": 72.38,
     "2026-08-29": null,
     "2026-08-30": null,
-    "2026-08-31": 61.61
+    "2026-08-31": 63.48
   },
   "peor_dia": [
     "2026-08-25",
@@ -86,49 +86,49 @@
   ],
   "mejor_dia": [
     "2026-08-27",
-    98.06
+    99.16
   ],
   "paros_dia": {
-    "np_min": 489.0,
-    "np_eventos": 28,
-    "p_min": 115.0,
-    "p_eventos": 3,
+    "np_min": 450.0,
+    "np_eventos": 27,
+    "p_min": 154.0,
+    "p_eventos": 5,
     "top": [
       {
-        "motivo": "Sin Clasificar",
+        "motivo": "Formax Falla papelero",
         "clase": "NP",
-        "min": 337.0,
-        "eventos": 15
+        "min": 96.0,
+        "eventos": 1
+      },
+      {
+        "motivo": "Formax Falla Formax",
+        "clase": "NP",
+        "min": 90.0,
+        "eventos": 4
+      },
+      {
+        "motivo": "Comida",
+        "clase": "P",
+        "min": 89.0,
+        "eventos": 3
+      },
+      {
+        "motivo": "Formax Golpea papel",
+        "clase": "NP",
+        "min": 85.0,
+        "eventos": 2
       },
       {
         "motivo": "Deshiele IQF",
         "clase": "P",
         "min": 65.0,
         "eventos": 2
-      },
-      {
-        "motivo": "Comida",
-        "clase": "P",
-        "min": 50.0,
-        "eventos": 1
-      },
-      {
-        "motivo": "IQF2 Gota activada / falla gota",
-        "clase": "NP",
-        "min": 29.0,
-        "eventos": 4
-      },
-      {
-        "motivo": "Formax Golpea papel",
-        "clase": "NP",
-        "min": 29.0,
-        "eventos": 1
       }
     ]
   },
   "paros_semana": {
-    "np_min": 1849.0,
-    "np_eventos": 127,
+    "np_min": 1792.0,
+    "np_eventos": 124,
     "total_min": 5833.0,
     "top": [
       {
@@ -146,18 +146,25 @@
         "eventos": 3
       },
       {
-        "motivo": "Sin Clasificar",
-        "clase": "NP",
-        "tipo": "Sin Clasificar",
-        "min": 706.0,
-        "eventos": 30
-      },
-      {
         "motivo": "Comida",
         "clase": "P",
         "tipo": "Operación",
-        "min": 470.0,
-        "eventos": 8
+        "min": 509.0,
+        "eventos": 10
+      },
+      {
+        "motivo": "Formax Copas flojas / topan / se caen",
+        "clase": "NP",
+        "tipo": "Mantenimiento maquinaria",
+        "min": 271.0,
+        "eventos": 2
+      },
+      {
+        "motivo": "Formax Falla papelero",
+        "clase": "NP",
+        "tipo": "Mantenimiento maquinaria",
+        "min": 253.0,
+        "eventos": 16
       },
       {
         "motivo": "Deshiele IQF",
@@ -167,13 +174,6 @@
         "eventos": 5
       },
       {
-        "motivo": "Formax Falla papelero",
-        "clase": "NP",
-        "tipo": "Mantenimiento maquinaria",
-        "min": 151.0,
-        "eventos": 14
-      },
-      {
         "motivo": "Falta de Ingredientes",
         "clase": "NP",
         "tipo": "Operación",
@@ -181,35 +181,35 @@
         "eventos": 5
       },
       {
-        "motivo": "Formax Piezas incompletas",
+        "motivo": "IQF2 Gota activada / falla gota",
         "clase": "NP",
-        "tipo": "Mantenimiento maquinaria",
-        "min": 108.0,
-        "eventos": 6
+        "tipo": "Mantenimiento refrigeración",
+        "min": 120.0,
+        "eventos": 14
       }
     ]
   },
   "tiempo_real": {
     "LineName": "Línea de Hamburguesas",
-    "SnapshotAtLocal": "2026-09-01 14:27:00",
-    "OEE": "53.08",
-    "Availability": "63.17",
-    "Performance": "84.02",
+    "SnapshotAtLocal": "2026-09-03 09:55:00",
+    "OEE": "69.32",
+    "Availability": "73.30",
+    "Performance": "94.57",
     "Producto Conforme": "100.00",
-    "ParosNoProgramadosCont": 14.0,
-    "UnscheduledStopageMin": 165.0,
+    "ParosNoProgramadosCont": 5.0,
+    "UnscheduledStopageMin": 47.0,
     "ParosProgramadosCont": 0.0,
     "ScheduledStopageMin": 0.0,
-    "StatusCode": "Paro No Programado",
+    "StatusCode": "Baja Producción",
     "StatusTimeMin": 0.0,
-    "NaturalTimeMin": 448.0,
-    "ProductiveTimeMin": 283.0,
-    "CurrentRate": "1654.320",
-    "ExpectedRate": "1492.000",
-    "CurrentShiftProduction": "5996.560",
-    "ExpectedShiftProduction": "7037.361",
-    "CurrentProduction": "1762.800",
-    "ExpectedDayProduction": "4898.550"
+    "NaturalTimeMin": 176.0,
+    "ProductiveTimeMin": 129.0,
+    "CurrentRate": "511.360",
+    "ExpectedRate": "1393.000",
+    "CurrentShiftProduction": "2985.280",
+    "ExpectedShiftProduction": "3156.693",
+    "CurrentProduction": "526.400",
+    "ExpectedDayProduction": "5515.920"
   },
   "intradia_dia": {
     "horas": 24,

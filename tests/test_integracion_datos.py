@@ -67,6 +67,21 @@ WHERE wse.Status='closed' AND wse.Active=1 AND wses.Active=1 AND wse.DayOff=0
     assert productivo == pytest.approx(float(turnos["Productivo"]), rel=0.02)
 
 
+def test_ninguna_hora_tiene_mas_productivo_que_reloj(duma, bd, dia_cerrado):
+    """
+    Invariante elemental: una hora no puede acumular mas minutos productivos que
+    minutos que pasaron. Al cerrar un turno el MES reescribe su ultimo snapshot y ahi
+    EffectiveAvailableTime pasa a ser tiempo disponible en vez de productivo; sumandolo
+    tal cual, la hora del cambio de turno del 31/08 daba 276 min productivos de 60.
+    El test de totales solo lo veia ya acumulado en el dia; este senala la hora.
+    """
+    buckets, _ = duma.build_intraday_buckets(dia_cerrado)
+    excedidas = [(b["hora"], b["Min_productivos"], b["Min_naturales"])
+                 for b in buckets
+                 if b["Min_naturales"] > 0 and b["Min_productivos"] > b["Min_naturales"] + 1]
+    assert not excedidas, "horas con mas productivo que reloj: %s" % excedidas
+
+
 def test_el_dia_operativo_arranca_con_el_primer_turno(duma, bd, dia_cerrado):
     """No es el dia calendario: cruza la medianoche."""
     inicio, fin = duma.operational_day_window(dia_cerrado)

@@ -55,3 +55,40 @@ def test_el_mensaje_de_error_nombra_la_tabla(duma):
 def test_normaliza_el_tipo_de_paro(duma, entrada, esperado):
     """El codigo filtra por NP/P; el modelo escribe 'no programado'."""
     assert duma._normalize_stop_type(entrada) == esperado
+
+
+# ---------- A que dia apunta "ese dia" ----------
+# Secuencia real que fallaba: se pregunto por el 31 de agosto, luego por el estado
+# actual de la linea y despues "cuanto tiempo productivo hubo ese dia?". Como el turno
+# anterior era de tiempo real, el agente contestaba del dia de hoy sin avisar.
+
+def _hist(*mensajes):
+    return [{"role": "user", "content": m} for m in mensajes]
+
+
+@pytest.mark.parametrize("mensaje,historial,apunta_a", [
+    ("¿Cuánto tiempo productivo hubo ese día?",
+     _hist("Dame el OEE del 31 de agosto de 2026", "Ahora dime el estado actual de la línea"),
+     "31 de agosto de 2026"),
+    ("¿Y el OEE de ese día?", _hist("¿Cómo estuvo el 2026-08-27?"), "2026-08-27"),
+    ("¿Cuántos paros hubo ese día?", _hist("¿Cómo nos fue ayer?"), "ayer"),
+    ("Compara ese periodo contra el plan",
+     _hist("Dame el resumen del 25 al 31 de agosto de 2026"), "31 de agosto de 2026"),
+])
+def test_resuelve_a_que_dia_apunta_el_demostrativo(duma, mensaje, historial, apunta_a):
+    aviso = duma.referencia_de_fecha(mensaje, historial)
+    assert aviso and apunta_a in aviso
+
+
+@pytest.mark.parametrize("mensaje,historial", [
+    # Trae fecha propia: no hay nada que desambiguar.
+    ("¿Cuál fue el OEE del 31 de agosto de 2026?", _hist("hola")),
+    ("Dame el OEE de ese día, 30 de agosto de 2026", _hist("¿Cómo va hoy?")),
+    # Sin demostrativo, el seguimiento se resuelve solo con el contexto del hilo.
+    ("¿Y el mejor?", _hist("OEE de la semana del 25 al 31 de agosto de 2026")),
+    ("¿Qué es el OEE?", _hist()),
+    # Sin historial no hay dia al que apuntar: mejor callar que inventar uno.
+    ("¿Cuánto produjimos ese día?", _hist()),
+])
+def test_no_mete_ruido_cuando_no_hace_falta(duma, mensaje, historial):
+    assert duma.referencia_de_fecha(mensaje, historial) == ""

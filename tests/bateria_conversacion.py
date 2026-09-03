@@ -30,8 +30,23 @@ CLAVE = "qa-conversacional"
 
 O = json.load(io.open(os.path.join(BASE, "oraculo.json"), encoding="utf-8"))
 GD, GS = O["global_dia"], O["global_semana"]
+PD = O["paros_dia"]
 TD = {t["Turno"]: t for t in O["turnos_dia"]}
 NUM = re.compile(r"-?\d[\d,]*\.?\d*")
+
+
+# Un numero pequeno escrito con letra ("nueve sensores") es redaccion correcta, no un
+# dato ausente: la primera version de estas baterias solo leia digitos y lo reprobaba.
+_LETRAS = {
+    "cero": 0, "un": 1, "uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4,
+    "cinco": 5, "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+    "once": 11, "doce": 12, "trece": 13, "catorce": 14, "quince": 15,
+    "dieciseis": 16, "dieciséis": 16, "diecisiete": 17, "dieciocho": 18,
+    "diecinueve": 19, "veinte": 20, "treinta": 30, "cuarenta": 40,
+    "cincuenta": 50, "sesenta": 60,
+}
+_RE_LETRAS = re.compile(r"\b(" + "|".join(sorted(_LETRAS, key=len, reverse=True)) + r")\b",
+                        re.IGNORECASE)
 
 
 def numeros(t):
@@ -41,6 +56,8 @@ def numeros(t):
             out.append(float(b.replace(",", "")))
         except ValueError:
             pass
+    for p in _RE_LETRAS.findall(t or ""):
+        out.append(float(_LETRAS[p.lower()]))
     return out
 
 
@@ -58,6 +75,31 @@ def todos(*fns):
 
 def ninguno(*fns):
     return lambda t: not any(f(t) for f in fns)
+
+
+def top_np(paros):
+    """Motivo del paro no programado mas largo, segun el oraculo del dia."""
+    for t in paros["top"]:
+        if t["clase"] == "NP":
+            return t["motivo"]
+    return paros["top"][0]["motivo"]
+
+
+def min_np(paros):
+    """Minutos del paro no programado mas largo."""
+    for t in paros["top"]:
+        if t["clase"] == "NP":
+            return t["min"]
+    return paros["top"][0]["min"]
+
+
+def frase_duracion(minutos):
+    """Acepta la cifra en minutos o redactada como horas y minutos."""
+    h, m = divmod(int(round(minutos)), 60)
+    formas = [str(int(round(minutos)))]
+    if h:
+        formas += ["%d hora" % h, "%d horas" % h]
+    return formas
 
 
 CONVERSACIONES = [
@@ -79,11 +121,11 @@ CONVERSACIONES = [
     ]),
     ("Paros encadenados con referencias", [
         ("¿Cuántos paros no programados hubo el 31 de agosto de 2026?",
-         tiene(28, 1), "28 eventos"),
+         tiene(PD["np_eventos"], 1), "%d eventos" % PD["np_eventos"]),
         ("¿Y cuántos minutos fueron?",
-         dice("8 horas", "489"), "debe entender que habla de esos paros"),
+         dice(*frase_duracion(PD["np_min"])), "los minutos de esos paros (%d)" % PD["np_min"]),
         ("¿Cuál fue la causa principal?",
-         dice("sin clasificar"), "Sin Clasificar"),
+         dice(top_np(PD)), top_np(PD)),
         ("¿Cuántos kilos representó esa pérdida?",
          dice("teóric", "teoric", "nominal", "brecha", "plan"),
          "distinguir techo teorico de brecha real"),
