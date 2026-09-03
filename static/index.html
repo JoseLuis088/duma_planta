@@ -6420,16 +6420,30 @@
           const input = el("chatInput").value.trim();
           if (!input || this.isTyping || this.isTypingEffectRunning) return;
 
-          const username = safeStorage.getItem("duma_user_name") || "Anónimo";
+          let username = safeStorage.getItem("duma_user_name") || "";
 
-          // Pedido de los clientes: avisar que sin nombre no se guarda el historial.
-          // Se muestra una sola vez por sesión para no volverse molesto.
-          if ((username === "Anónimo" || username === "Definir Nombre")
-              && !safeStorage.getItem("duma_aviso_nombre")) {
-            safeStorage.setItem("duma_aviso_nombre", "1");
-            this.addMessage("bot", currentLang === 'en'
-              ? "Before we start: set your name at the bottom left to keep your conversation history. Without it this chat will not be saved."
-              : "Antes de empezar: define tu nombre abajo a la izquierda para conservar tu historial. Sin nombre, esta conversación no se guarda.");
+          // El nombre se pide antes de la primera pregunta, una sola vez por navegador.
+          //
+          // Antes solo se avisaba y se dejaba pasar, asi que casi la mitad del uso real
+          // quedaba como "Anonimo": 39 de las 82 preguntas del historial, sin forma de
+          // saber quien pregunto ni de volver a preguntarle que esperaba. El aviso ademas
+          // decia que sin nombre la conversacion no se guardaba, y si se guardaba: hay 30
+          // conversaciones de "Anonimo" en la base que lo desmienten.
+          if (!username || username === "Anónimo" || username === "Definir Nombre") {
+            const pedido = prompt(currentLang === 'en'
+              ? "Before we start, what is your name? It identifies your conversation history."
+              : "Antes de empezar, ¿cómo te llamas? Con eso identifico tu historial.");
+            const limpio = (pedido || "").trim();
+            if (!limpio) {
+              this.addMessage("bot", currentLang === 'en'
+                ? "I need your name before I can answer. Set it at the bottom left and ask me again."
+                : "Necesito tu nombre para poder responderte. Defínelo abajo a la izquierda y vuelve a preguntarme.");
+              return;   // se sale antes de limpiar el cuadro: no pierde lo que escribio
+            }
+            username = limpio;
+            safeStorage.setItem("duma_user_name", username);
+            this.setUserName(username);
+            this.loadConversations();
           }
 
           this.isChatInitialized = true;
