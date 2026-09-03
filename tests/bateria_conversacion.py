@@ -112,7 +112,7 @@ CONVERSACIONES = [
          dice("03:00", "3:00", "3 de la mañana", "madrugada"),
          "la hora correcta es 03:00, no 08:00"),
         ("¿Cuál fue el OEE del 29 de agosto de 2026?",
-         dice("no oper", "no trabaj", "paro programado", "sin operación", "sin operacion"),
+         dice("no oper", "no trabaj", "no produjo", "no hubo produccion", "no hubo producción", "paro programado", "paros programados", "sin operación", "sin operacion", "detenida", "detenido", "lavado"),
          "el 29 la linea no opero"),
         ("¿Cuántos kilos se perdieron del 25 al 31 de agosto de 2026?",
          todos(dice("super", "por encima", "no hubo", "no se perdieron"),

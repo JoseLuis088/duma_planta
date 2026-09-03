@@ -187,7 +187,7 @@ CONVERSACIONES = [
     ]),
     ("5. Correccion a media conversacion", [
         ("Dame los paros del 30 de agosto de 2026",
-         dice("no oper", "no hubo", "paro programado", "sin operación", "sin operacion"),
+         dice("no oper", "no trabaj", "no produjo", "no hubo produccion", "no hubo producción", "paro programado", "paros programados", "sin operación", "sin operacion", "detenida", "detenido", "lavado"),
          "el 30 no hubo operacion"),
         ("Perdón, quise decir del 31", tiene(PD["np_eventos"], 1),
          "%d paros NP" % PD["np_eventos"]),
