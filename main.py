@@ -1539,6 +1539,11 @@ def build_intraday_buckets(day: str, from_hour=None, to_hour=None,
         "min_paro_programado": round(float(df["d_ParoPMin"].sum()), 1),
         "paro_no_programado_legible": format_duration_es(float(df["d_ParoNPMin"].sum())),
         "paro_programado_legible": format_duration_es(float(df["d_ParoPMin"].sum())),
+        "nota_por_encima_de_cien": nota_por_encima_de_cien(
+            oee=max([b["OEE_del_periodo"] for b in buckets
+                     if b["OEE_del_periodo"] is not None] or [0]),
+            desempeno=max([b["Desempeno"] for b in buckets
+                           if b["Desempeno"] is not None] or [0])),
         "nota": (
             "OEE_del_periodo es el KPI calculado SOLO con lo ocurrido en esa hora "
             "(deltas de los contadores). OEE_acumulado_turno es el valor corrido del "
@@ -1697,6 +1702,49 @@ def load_thread_history(thread_id: str, limit: int = 20) -> List[dict]:
     return history
 
 
+def a_numero(valor):
+    """
+    float del valor, o None si no lo es.
+
+    Las columnas de KPI del MES llegan de pyodbc como cadenas ('104.76'), asi que
+    comprobar isinstance(v, (int, float)) descarta justo los datos que interesan.
+    """
+    if valor is None or isinstance(valor, bool):
+        return None
+    try:
+        return float(str(valor).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def nota_por_encima_de_cien(desempeno=None, oee=None, real_kg=None, esperado_kg=None):
+    """
+    Explicacion de un desempeno u OEE por encima del 100%, o cadena vacia.
+
+    No es un error de calculo: significa que la linea produjo mas kilos de los que su
+    velocidad nominal preveia para el tiempo que estuvo produciendo. Va redactada aqui
+    para que el modelo la copie en vez de decidir el mismo cuando explicarlo.
+    """
+    desempeno, oee = a_numero(desempeno), a_numero(oee)
+    real_kg, esperado_kg = a_numero(real_kg), a_numero(esperado_kg)
+    alto_desemp = desempeno is not None and desempeno > 100
+    alto_oee = oee is not None and oee > 100
+    if not (alto_desemp or alto_oee):
+        return ""
+    cual = "El OEE y el desempeño superan" if (alto_oee and alto_desemp) else (
+        "El OEE supera" if alto_oee else "El desempeño supera")
+    cifras = ""
+    if real_kg is not None and esperado_kg is not None:
+        cifras = (" (%s kg reales contra %s kg que preveia la velocidad nominal)"
+                  % (f"{real_kg:,.1f}", f"{esperado_kg:,.1f}"))
+    return (
+        "%s el 100%%%s. No es un error de calculo: la linea corrio por encima de su "
+        "velocidad nominal, asi que produjo mas de lo previsto para el tiempo que "
+        "estuvo produciendo. EXPLICALO SIEMPRE que reportes esta cifra, en una frase, "
+        "para que quien la lea no piense que el dato esta mal." % (cual, cifras)
+    )
+
+
 def estado_oee(oee):
     """Semaforo de planta. Se decide en codigo: el modelo se equivocaba en el limite."""
     if oee is None:
@@ -1808,6 +1856,8 @@ def oee_global_from_rows(rows_dicts):
             "Se dejaron de producir %s kg contra el plan en este periodo." %
             f"{esperado - real:,.1f}"
         ),
+        "nota_por_encima_de_cien": nota_por_encima_de_cien(
+            desempeno=desemp, oee=oee, real_kg=real, esperado_kg=esperado),
         "nota": (
             "Calculado sumando los datos crudos de todos los turnos del periodo (regla de "
             "oro: nunca promediar porcentajes). Usa estas cifras y este semaforo tal cual; "
@@ -2859,6 +2909,17 @@ ORDER BY Fecha, Turno;
                                             "dividiendo produccion real entre esperada: da un "
                                             "numero distinto al del tablero."
                                         ),
+                                        # El desglose por turnos es justo donde asoma el
+                                        # 104.76% de desempeno sin nada que lo acompane.
+                                        "nota_por_encima_de_cien": nota_por_encima_de_cien(
+                                            desempeno=max(
+                                                [n for n in (a_numero(k.get("Desempeno"))
+                                                             for k in kpis_turno)
+                                                 if n is not None] or [0]),
+                                            oee=max(
+                                                [n for n in (a_numero(k.get("OEE"))
+                                                             for k in kpis_turno)
+                                                 if n is not None] or [0])),
                                         "columns": columns,
                                         "rows": rows,
                                         # Misma posicion que rows: los minutos ya

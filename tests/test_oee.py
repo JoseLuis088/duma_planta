@@ -96,3 +96,45 @@ def test_acepta_los_nombres_de_columna_del_dashboard(duma):
     filas = [{"AvailableTimeMin": 510, "ProductiveTimeMin": 245,
               "CurrentProduction": 5222.6, "ExpectedProduction": 6092.0, "Quality": 100.0}]
     assert duma.oee_global_from_rows(filas) is not None
+
+
+# ---------- Un KPI por encima del 100% se explica ----------
+# El OEE de las 13:00 del 31/08 salio 102.82% y el tercer turno cerro con desempeno
+# 104.76%. Es correcto -la linea produjo mas de lo que preveia su velocidad nominal-
+# pero sin explicacion parece un error de calculo.
+
+def test_calla_cuando_los_kpis_son_normales(duma):
+    assert duma.nota_por_encima_de_cien(desempeno=95.0, oee=63.5) == ""
+    assert duma.nota_por_encima_de_cien(desempeno=100.0, oee=100.0) == ""
+    assert duma.nota_por_encima_de_cien() == ""
+
+
+def test_explica_el_desempeno_por_encima_de_cien(duma):
+    nota = duma.nota_por_encima_de_cien(desempeno=104.76, oee=82.9)
+    assert "desempeño" in nota.lower() and "oee supera" not in nota.lower()
+    assert "velocidad nominal" in nota
+
+
+def test_explica_el_oee_por_encima_de_cien(duma):
+    nota = duma.nota_por_encima_de_cien(desempeno=110.2, oee=102.82,
+                                        real_kg=8700.6, esperado_kg=8206.1)
+    assert "OEE y el desempeño superan" in nota
+    # Las cifras concretas son lo que convence a quien lee que el dato no esta mal.
+    assert "8,700.6" in nota and "8,206.1" in nota
+
+
+def test_lee_los_kpis_aunque_lleguen_como_texto(duma):
+    """
+    wses.Oee y wses.Performance salen de pyodbc como cadenas ('104.76'). Comprobar
+    isinstance(v, (int, float)) descartaba justo los datos que hacen falta y la
+    explicacion se quedaba vacia en el desglose por turnos.
+    """
+    assert duma.a_numero("104.76") == 104.76
+    assert duma.a_numero("1,234.5") == 1234.5
+    assert duma.a_numero(98) == 98.0
+    assert duma.a_numero(None) is None
+    assert duma.a_numero("") is None
+    assert duma.a_numero("sin dato") is None
+    assert duma.a_numero(True) is None          # un bool no es una medicion
+    assert duma.nota_por_encima_de_cien(desempeno="104.76", oee="82.90")
+    assert duma.nota_por_encima_de_cien(desempeno="98.25", oee="64.43") == ""
