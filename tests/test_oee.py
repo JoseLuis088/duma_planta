@@ -138,3 +138,38 @@ def test_lee_los_kpis_aunque_lleguen_como_texto(duma):
     assert duma.a_numero(True) is None          # un bool no es una medicion
     assert duma.nota_por_encima_de_cien(desempeno="104.76", oee="82.90")
     assert duma.nota_por_encima_de_cien(desempeno="98.25", oee="64.43") == ""
+
+
+# ---------- La frase de kilos contra el plan ----------
+# brecha = esperado - real, asi que NEGATIVO significa que la planta produjo de mas. Ese
+# signo se ha malinterpretado en los dos sitios donde se reportan kilos: el chat hablo de
+# 7,807 kg "perdidos" en una semana donde la planta supero el plan por 1,531, y el informe
+# del tablero publico "una perdida de 4,564.2 kg" junto a un cumplimiento del 103.9%.
+
+def test_no_llama_perdida_a_superar_el_plan(duma):
+    frase = duma.frase_kilos_vs_plan(-4232.1)
+    assert "superó el plan" in frase and "4,232.1" in frase
+    assert "no hubo kilos perdidos" in frase.lower()
+
+
+def test_reporta_la_brecha_cuando_falto_produccion(duma):
+    frase = duma.frase_kilos_vs_plan(488.6)
+    assert "dejaron de producir" in frase and "488.6" in frase
+    assert "superó" not in frase
+
+
+def test_la_frase_no_lleva_instrucciones_dentro(duma):
+    """
+    Se publica tal cual en el informe del cliente. Una version anterior terminaba en
+    "No hables de perdida de produccion" y el modelo la copio entera al PDF.
+    """
+    for brecha in (-4232.1, 488.6, 0):
+        frase = duma.frase_kilos_vs_plan(brecha)
+        for orden in ("no hables", "copia", "tal cual", "nunca", "no derives"):
+            assert orden not in frase.lower(), frase
+
+
+def test_acepta_el_cero_y_descarta_lo_que_no_es_numero(duma):
+    assert "no hubo kilos perdidos" in duma.frase_kilos_vs_plan(0).lower()
+    assert duma.frase_kilos_vs_plan(None) == ""
+    assert duma.frase_kilos_vs_plan("sin dato") == ""

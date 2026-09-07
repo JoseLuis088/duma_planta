@@ -642,12 +642,29 @@ def ai_oee_range_analysis(range_data: dict, lang: str = "es") -> str:
     total_unsch = sum(float(r.get("TiempoNoProdNoProgramadoMin") or 0) for r in details)
     total_sch = sum(float(r.get("TiempoNoProdProgramadoMin") or 0) for r in details)
 
+    # Las duraciones van ya escritas y la cifra de kilos tambien. Entregando los minutos
+    # crudos, el modelo hacia la conversion a mano y publico "3 dias, 14 horas y 24
+    # minutos" para 3444 min, que son 2 dias, 9 horas y 24. Y con gap_kg negativo -la
+    # planta SUPERO el plan- informaba "una perdida de 4564.2 kg" en el mismo parrafo
+    # donde decia que el cumplimiento fue del 103.9%.
     enriched = {
         **summary,
         "CumplimientoPlan_Pct": cumplimiento,
         "GapProduccion_Kg": gap_kg,
         "TotalParosNoProgramadosMin": round(total_unsch, 1),
         "TotalParosProgramadosMin": round(total_sch, 1),
+        "ParosNoProgramados_legible": format_duration_es(total_unsch, lang=lang),
+        "ParosProgramados_legible": format_duration_es(total_sch, lang=lang),
+        "TiempoProductivo_legible": format_duration_es(
+            float(summary.get("TotalProductiveMin") or 0), lang=lang),
+        "TiempoDisponible_legible": format_duration_es(
+            float(summary.get("TotalAvailableMin") or 0), lang=lang),
+        "kilos_frase": frase_kilos_vs_plan(gap_kg),
+        "nota_kilos": (
+            "GapProduccion_Kg es esperado menos real: NEGATIVO significa que la planta "
+            "produjo de mas. Copia kilos_frase tal cual, no derives ninguna otra cifra de "
+            "kilos perdidos y no reproduzcas esta nota en el informe."
+        ),
     }
 
     user_prompt = (
@@ -659,10 +676,14 @@ def ai_oee_range_analysis(range_data: dict, lang: str = "es") -> str:
         f"DETALLE POR TURNO ({len(details)} registros):\r\n{json.dumps(details[:20], ensure_ascii=False, indent=2)}\r\n\r\n"
         "Instrucciones:\r\n"
         "- Analiza prioritariamente los MOTIVOS DE PARO para explicar la baja disponibilidad.\r\n"
-        "- OEE<50% es estado CRÍTICO. Reporta gap en kg y % cumplimiento.\r\n"
+        "- OEE<50% es estado CRÍTICO. Reporta el % de cumplimiento y, para los "
+        "kilos, copia kilos_frase TAL CUAL: es la unica cifra de kilos valida.\r\n"
         "- Si los paros no programados son altos, correlaciona con los motivos encontrados.\r\n"
         "- HIPÓTESIS DE CONTROL: Menciona explícitamente variables de control (sensores) que podrían estar fallando (IQF, Chiller, etc.) según los tipos de paros.\r\n"
-        "- Cuantifica siempre: kg perdidos, horas de paro, % de cumplimiento.\r\n"
+        "- Para cualquier duracion usa los campos *_legible tal cual, ya vienen "
+        "convertidos a dias, horas y minutos. NUNCA conviertas minutos a horas tu "
+        "mismo: publicaste 3 dias 14 horas y 24 minutos para 3444 min, que son 2 "
+        "dias, 9 horas y 24.\r\n"
         "- Usa el término 'Producto conforme' en el reporte."
     )
     return aoai_text(OEE_AI_SYSTEM, user_prompt, temperature=0.15, max_tokens=1400)
@@ -1717,6 +1738,28 @@ def a_numero(valor):
         return None
 
 
+def frase_kilos_vs_plan(brecha_kg) -> str:
+    """
+    Frase lista para publicar sobre los kilos contra el plan, o cadena vacia.
+
+    brecha_kg es esperado - real: NEGATIVO significa que la planta produjo de mas. Ese
+    signo se ha malinterpretado en los dos sitios donde se reportan kilos. En el chat,
+    el modelo sumaba brechas por su cuenta y hablaba de 7,807 kg "perdidos" en una
+    semana donde la planta supero el plan por 1,531. En el informe del tablero llego a
+    publicar "una perdida de 4,564.2 kg" en el mismo parrafo donde decia que el
+    cumplimiento del plan fue del 103.9%.
+
+    No lleva ninguna instruccion dentro: se copia tal cual al texto que lee el cliente.
+    """
+    valor = a_numero(brecha_kg)
+    if valor is None:
+        return ""
+    if valor <= 0:
+        return ("La planta superó el plan en %s kg en este periodo: no hubo kilos "
+                "perdidos, aunque haya habido paros." % f"{abs(valor):,.1f}")
+    return "Se dejaron de producir %s kg contra el plan en este periodo." % f"{valor:,.1f}"
+
+
 def nota_por_encima_de_cien(desempeno=None, oee=None, real_kg=None, esperado_kg=None):
     """
     Explicacion de un desempeno u OEE por encima del 100%, o cadena vacia.
@@ -1846,16 +1889,7 @@ def oee_global_from_rows(rows_dicts):
         "tiempo_productivo": format_duration_es(productivo),
         "tiempo_disponible": format_duration_es(disponible),
         "turnos_considerados": len(rows_dicts),
-        # Frase lista para copiar. El modelo sumaba las brechas por su cuenta y
-        # devolvia cifras que no salen de ningun calculo valido (7,807 kg "perdidos"
-        # en una semana donde la planta SUPERO el plan por 1,531 kg).
-        "kilos_perdidos_frase": (
-            "La planta SUPERO el plan en %s kg en este periodo: NO hubo kilos perdidos, "
-            "aunque haya habido paros." % f"{abs(esperado - real):,.1f}"
-            if (esperado - real) <= 0 else
-            "Se dejaron de producir %s kg contra el plan en este periodo." %
-            f"{esperado - real:,.1f}"
-        ),
+        "kilos_perdidos_frase": frase_kilos_vs_plan(esperado - real),
         "nota_por_encima_de_cien": nota_por_encima_de_cien(
             desempeno=desemp, oee=oee, real_kg=real, esperado_kg=esperado),
         "nota": (
