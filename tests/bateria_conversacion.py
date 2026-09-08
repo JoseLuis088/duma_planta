@@ -154,11 +154,17 @@ def pedir(metodo, ruta, cuerpo=None, espera=300):
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
     req = urllib.request.Request(SERVIDOR + ruta, data=datos, method=metodo,
                                  headers={"Content-Type": "application/json"})
+    inicio = time.time()
     try:
         with urllib.request.urlopen(req, timeout=espera) as r:
             return r.status, json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
-        return e.code, {}
+        return e.code, {"message": "[HTTP %s] %s" % (e.code, e.read()[:200])}
+    except Exception as e:
+        # Devolver {} dejaba el informe con un "obtuvo:" en blanco, que no dice nada.
+        # Un turno que se colgo 300 s parecia una respuesta mala en vez de un cuelgue.
+        return 0, {"message": "[SIN RESPUESTA tras %.0f s] %s: %s"
+                              % (time.time() - inicio, type(e).__name__, e)}
 
 
 def limpiar():

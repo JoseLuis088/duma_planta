@@ -114,10 +114,18 @@ _LOGO_PATH = os.path.join("static", "images", "LOGO DUMA.png")
 
 
 # ---------- Clientes Azure ----------
+# Tiempo limite por llamada. El SDK espera 600 s por defecto, asi que una llamada
+# atascada dejaba la peticion colgada diez minutos y el usuario se quedaba mirando la
+# pantalla: en la bateria contra la VM un turno tardo 300 s y devolvio texto vacio.
+# El guardarrail MAX_WAIT_SECONDS del ciclo no cubre esto porque se comprueba ANTES de
+# cada llamada, no durante. Superado el limite, salta el reintento que ya existe.
+OPENAI_TIMEOUT_S = float(os.getenv("DUMA_OPENAI_TIMEOUT_S", "90"))
+
 client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     api_key=AZURE_OPENAI_API_KEY,
     api_version=AZURE_OPENAI_API_VERSION,
+    timeout=OPENAI_TIMEOUT_S,
 )
 
 if AZURE_OPENAI_WHISPER_ENDPOINT and AZURE_OPENAI_WHISPER_KEY:
@@ -125,6 +133,7 @@ if AZURE_OPENAI_WHISPER_ENDPOINT and AZURE_OPENAI_WHISPER_KEY:
         azure_endpoint=AZURE_OPENAI_WHISPER_ENDPOINT,
         api_key=AZURE_OPENAI_WHISPER_KEY,
         api_version=AZURE_OPENAI_API_VERSION,
+        timeout=OPENAI_TIMEOUT_S,
     )
 else:
     whisper_client = client
@@ -133,6 +142,7 @@ async_client = AsyncAzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     api_key=AZURE_OPENAI_API_KEY,
     api_version=AZURE_OPENAI_API_VERSION,
+    timeout=OPENAI_TIMEOUT_S,
 )
 
 # ---------- Inicialización y Limpieza de Historial en SQL Server ----------
