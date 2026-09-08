@@ -4319,15 +4319,50 @@ def _get_blob_service_client() -> BlobServiceClient:
     key = os.environ["ADLS_ACCOUNT_KEY"].strip()
     return BlobServiceClient(account_url=account_url, credential=key)
 
+PARQUET_CACHE_DIR = os.path.join("static", "tmp_parquets")
+
+# Listado de blobs por dia. Se pedia uno por cada turno, o sea tres por dia, cuando el
+# listado es el mismo para los tres.
+_BLOBS_POR_DIA = {}
+
+
+def _blobs_del_dia(container_client, base_prefix: str, day: str):
+    """Nombres de los parquets de ese dia, pidiendo el listado a Azure una sola vez."""
+    if day in _BLOBS_POR_DIA:
+        return _BLOBS_POR_DIA[day]
+    nombres = [b.name for b in
+               container_client.list_blobs(name_starts_with=f"{base_prefix}/{day}/")]
+    # Un dia en curso todavia recibe archivos, asi que su listado no se guarda.
+    if day < date.today().isoformat():
+        if len(_BLOBS_POR_DIA) > 400:
+            _BLOBS_POR_DIA.clear()
+        _BLOBS_POR_DIA[day] = nombres
+    return nombres
+
+
 def download_turn_parquet(day: str, shift: ShiftName) -> str:
-    """Descarga el parquet correspondiente a un día y turno. Retorna path local."""
+    """
+    Parquet de ese dia y turno en disco local. Devuelve la ruta.
+
+    Guarda lo descargado en static/tmp_parquets y lo reutiliza. Antes bajaba el archivo
+    entero de Azure en CADA llamada, a un tempfile.mkdtemp() nuevo que nadie borraba: un
+    rango de 5 dias son 15 listados y 15 descargas, y tardaba 30 s aunque acabaras de
+    pedir el mismo rango. Los dias cerrados no cambian nunca, asi que se cachean; el dia
+    en curso no, porque sigue recibiendo lecturas.
+    """
     container_name = os.environ["ADLS_CONTAINER"].strip()
     base_prefix = os.environ.get("ADLS_BASE_PREFIX", "control-variable-reads").strip().strip("/")
 
+    cacheable = day < date.today().isoformat()
+    os.makedirs(PARQUET_CACHE_DIR, exist_ok=True)
+    cache_path = os.path.join(
+        PARQUET_CACHE_DIR,
+        "%s_%s.parquet" % (re.sub(r"[^0-9-]", "", day), re.sub(r"[^A-Za-z]", "", str(shift))))
+    if cacheable and os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
+        return cache_path
+
     blob_service = _get_blob_service_client()
     container_client = blob_service.get_container_client(container_name)
-
-    day_prefix = f"{base_prefix}/{day}/"
 
     # Patrones aceptados (por si en ADLS no se llama exactamente "{shift}_Turno_...")
     shift_l = shift.lower()
@@ -4337,35 +4372,31 @@ def download_turn_parquet(day: str, shift: ShiftName) -> str:
         f"{shift}-".lower(),
     ]
 
-    blobs = container_client.list_blobs(name_starts_with=day_prefix)
-
     target_blob = None
-    for blob in blobs:
-        name_only = blob.name.split("/")[-1].lstrip()  # <-- IMPORTANTÍSIMO
-        name_l = name_only.lower()
-
+    for nombre in _blobs_del_dia(container_client, base_prefix, day):
+        name_l = nombre.split("/")[-1].lstrip().lower()  # <-- IMPORTANTÍSIMO
         if not name_l.endswith(".parquet"):
             continue
-
         # Match flexible
         if any(name_l.startswith(p) for p in acceptable_prefixes) or (shift_l in name_l):
-            target_blob = blob.name  # guarda el nombre REAL del blob
+            target_blob = nombre  # guarda el nombre REAL del blob
             break
 
     if not target_blob:
-        raise FileNotFoundError(f"No se encontró archivo parquet para {shift} turno en {day} (prefijo: {day_prefix})")
+        raise FileNotFoundError(
+            f"No se encontró archivo parquet para {shift} turno en {day} "
+            f"(prefijo: {base_prefix}/{day}/)")
 
-    tmp_dir = tempfile.mkdtemp()
+    destino = cache_path if cacheable else os.path.join(
+        tempfile.mkdtemp(), os.path.basename(target_blob).lstrip())
 
-    # Para el nombre local, quita espacio inicial si lo trae
-    local_filename = os.path.basename(target_blob).lstrip()
-    local_path = os.path.join(tmp_dir, local_filename)
-
-    with open(local_path, "wb") as f:
-        blob_client = container_client.get_blob_client(target_blob)
-        f.write(blob_client.download_blob().readall())
-
-    return local_path
+    # Se escribe aparte y se renombra: si dos peticiones piden el mismo dia a la vez,
+    # ninguna lee un archivo a medio bajar.
+    parcial = destino + ".parcial-%s" % uuid.uuid4().hex[:8]
+    with open(parcial, "wb") as f:
+        f.write(container_client.get_blob_client(target_blob).download_blob().readall())
+    os.replace(parcial, destino)
+    return destino
 
 
 def load_critical_reads_for_shift(day: str, shift: ShiftName) -> pd.DataFrame:
@@ -4413,16 +4444,42 @@ def load_critical_reads_for_day(day: str) -> pd.DataFrame:
     return df
 
 def load_critical_reads_for_range(start_day: str, end_day: str) -> pd.DataFrame:
-    drange = pd.date_range(start_day, end_day)
+    """
+    Lecturas criticas de todo el rango. Los dias se cargan en paralelo.
+
+    Cada dia son tres descargas independientes desde Azure, y se hacian una detras de
+    otra: cinco dias tardaban 28 s, lo justo para que el proxy del portal cortara la
+    peticion y el navegador recibiera una pagina de error en vez de JSON
+    ("Unexpected token '<'"). El trabajo es de red, no de CPU, asi que se solapan.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    dias = [dt.strftime("%Y-%m-%d") for dt in pd.date_range(start_day, end_day)]
+    tareas = [(d, sh) for d in dias for sh in ("Primer", "Segundo", "Tercer")]
+
+    def cargar(tarea):
+        day_str, turno = tarea
+        try:
+            return day_str, load_critical_reads_for_shift(day_str, turno)
+        except FileNotFoundError:
+            return day_str, None
+
+    # map conserva el orden de las tareas, asi que el resultado sale igual que cuando
+    # se recorrian los dias y turnos en serie.
+    por_dia = {d: [] for d in dias}
+    with ThreadPoolExecutor(max_workers=min(15, max(1, len(tareas)))) as pool:
+        for day_str, df_turno in pool.map(cargar, tareas):
+            if df_turno is not None:
+                por_dia[day_str].append(df_turno)
+
     frames = []
     missing_days = []
-    for dt in drange:
-        day_str = dt.strftime("%Y-%m-%d")
-        try:
-            frames.append(load_critical_reads_for_day(day_str))
-        except FileNotFoundError:
-            missing_days.append(day_str)
-    
+    for d in dias:
+        if por_dia[d]:
+            frames.append(pd.concat(por_dia[d], ignore_index=True))
+        else:
+            missing_days.append(d)
+
     if not frames:
         raise FileNotFoundError(f"No hubo datos para el rango {start_day} a {end_day}. Faltantes: {', '.join(missing_days)}")
     
@@ -7163,17 +7220,33 @@ def _as_file_response(content: bytes, filename: str, media_type: str):
 
 @app.post("/api/report/cv/day/")
 async def report_control_variables_day(payload: dict):
-    """Descarga reporte (PDF/DOCX) de Variables de Control para un día completo."""
-    day = normalize_day_str(payload.get("day") or "")
+    """Descarga reporte (PDF/DOCX) de Variables de Control para un día o un rango."""
     fmt = (payload.get("format") or "pdf").lower()
     provided_summary = payload.get("summary")
     provided_ai = payload.get("ai_analysis")
 
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
-        raise HTTPException(status_code=400, detail="Formato de 'day' inválido. Usa YYYY-MM-DD.")
+    # El modulo trabaja con rango, no con un dia suelto. El frontend mandaba en 'day' el
+    # valor crudo del selector ("2026-08-24 to 2026-08-28") y aqui se validaba contra
+    # YYYY-MM-DD, asi que descargar el PDF fallaba SIEMPRE que hubiera un rango elegido:
+    # "Formato de 'day' invalido". Se aceptan start_day/end_day, y 'day' se sigue
+    # admitiendo -partiendolo si trae un rango- para no romper a quien ya lo llamaba asi.
+    bruto = str(payload.get("day") or "").strip()
+    partes = re.split(r"\s+(?:to|a|hasta|-{1,2})\s+", bruto) if bruto else []
+    start_day = normalize_day_str(payload.get("start_day") or (partes[0] if partes else ""))
+    end_day = normalize_day_str(
+        payload.get("end_day") or (partes[1] if len(partes) > 1 else "") or start_day)
+
+    for etiqueta, valor in (("start_day", start_day), ("end_day", end_day)):
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", valor or ""):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Formato de '{etiqueta}' inválido ({valor or 'vacío'}). Usa YYYY-MM-DD.")
+    if end_day < start_day:
+        start_day, end_day = end_day, start_day
+    day = start_day if start_day == end_day else f"{start_day} a {end_day}"
 
     try:
-        df_day = load_critical_reads_for_day(day)
+        df_day = load_critical_reads_for_range(start_day, end_day)
         if provided_summary is not None:
             summary_rows = provided_summary
         else:

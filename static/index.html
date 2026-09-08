@@ -5688,8 +5688,15 @@
             } catch(e) { console.error("Error capturando tabla CV:", e); }
           }
 
-          await downloadFrom(`api/report/cv/day/`, `control_vars_${lastCvDay}.pdf`, {
-            day: lastCvDay,
+          // Se manda el rango ya partido. Antes iba `day: lastCvDay`, que es el valor
+          // crudo del selector ("2026-08-24 to 2026-08-28"), y el backend lo validaba
+          // como una sola fecha: descargar el PDF fallaba siempre que hubiera un rango.
+          const nombreArchivo = (lastCvStartDay === lastCvEndDay)
+            ? `control_vars_${lastCvStartDay}.pdf`
+            : `control_vars_${lastCvStartDay}_a_${lastCvEndDay}.pdf`;
+          await downloadFrom(`api/report/cv/day/`, nombreArchivo, {
+            start_day: lastCvStartDay,
+            end_day: lastCvEndDay,
             format: "pdf",
             summary: lastCvData.summary,
             ai_analysis: lastCvData.ai_analysis,
