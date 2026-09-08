@@ -5879,10 +5879,14 @@ ORDER BY Fecha DESC, Turno;
             table_by_turn.append({
                 "Fecha": range_label,
                 "Turno": s_name,
-                "OEE": f"{oee_c:.1f}%",
-                "Disponibilidad": f"{disp_c:.1f}%",
-                "Desempeno": f"{perf_c:.1f}%",
-                "Producto Conforme": f"{avg_q:.1f}%",
+                # Dos decimales, como el resto de los KPIs. Con uno solo, el segundo y
+                # el tercer turno del 31/08 al 06/09 salian los dos "110.6%" pese a ser
+                # 110.6459% y 110.5546%: quien reviso el reporte lo tomo por un fallo de
+                # calibracion y perdio tiempo persiguiendo un problema que no existia.
+                "OEE": f"{oee_c:.2f}%",
+                "Disponibilidad": f"{disp_c:.2f}%",
+                "Desempeno": f"{perf_c:.2f}%",
+                "Producto Conforme": f"{avg_q:.2f}%",
                 "Producción Real (Kg)": f"{v['real']:,.0f}",
                 "Producción Esperada (Kg)": f"{v['exp']:,.0f}",
                 "Velocidad Real vs Esperada (Kg/h)": f"{avg_vel_real:,.0f} / {avg_vel_exp:,.0f} kg/h",
