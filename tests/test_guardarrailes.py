@@ -217,3 +217,46 @@ def test_si_guarda_una_pregunta_de_verdad(duma, monkeypatch):
     except Exception:
         pass
     assert intentos, "una pregunta real si tiene que intentar guardarse"
+
+
+# ---------- Diagnostico de sensores ----------
+# Preguntado "que sensor tiene mas tiempo caido", Duma contesto que TODOS estaban
+# "caidos el 100% del tiempo" y que habia "una falla general de adquisicion de datos".
+# Ese dia hubo 8,910 lecturas sin un solo nulo: la adquisicion funcionaba. Con ese
+# diagnostico, mantenimiento habria ido a revisar la red y el PLC.
+
+def _var(points, out_pct, mn, mx, lo=-10.0, hi=10.0):
+    return {"points": points, "out_pct": out_pct, "min_value": mn, "max_value": mx,
+            "limite_min": lo, "limite_max": hi}
+
+
+def test_sin_lecturas_si_es_fallo_de_adquisicion(duma):
+    d = duma.diagnostico_variable(_var(0, 0, None, None))
+    assert "SIN LECTURAS" in d and "adquisicion" in d
+
+
+def test_un_valor_fijo_es_un_sensor_trabado(duma):
+    # Temperatura interna del IQF: 990 lecturas, todas -141.20.
+    d = duma.diagnostico_variable(_var(990, 100.0, -141.2, -141.2, -40.0, -18.0))
+    assert "TRABADO" in d and "-141.20" in d
+    # Lo importante: no debe sugerir que fallo la adquisicion, que fue el error real.
+    assert "NO de la adquisicion" in d
+
+
+def test_variando_pero_fuera_apunta_a_los_limites(duma):
+    # Tiempo de hidratacion: 1118 a 2107 contra limites [-1, 20]; son unidades distintas.
+    d = duma.diagnostico_variable(_var(990, 100.0, 1118.0, 2107.0, -1.0, 20.0))
+    assert "SIEMPRE FUERA" in d and "limites configurados" in d
+    assert "TRABADO" not in d
+
+
+def test_fuera_parcial_es_la_variable_no_el_sensor(duma):
+    d = duma.diagnostico_variable(_var(990, 59.3, -2.92, 14.11, -3.0, 2.0))
+    assert "59.3%" in d and "El sensor reporta con normalidad" in d
+
+
+def test_dentro_de_limites_no_alarma(duma):
+    d = duma.diagnostico_variable(_var(990, 0.0, 1.7, 14.9, -1.0, 26.0))
+    assert "DENTRO DE LIMITES" in d
+    for alarma in ("TRABADO", "SIN LECTURAS", "FUERA DE LIMITES el"):
+        assert alarma not in d

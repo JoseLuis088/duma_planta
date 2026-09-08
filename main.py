@@ -3022,7 +3022,19 @@ ORDER BY Fecha, Turno;
 
                                 tool_outputs.append({
                                     "tool_call_id": tool.id,
-                                    "output": json.dumps({"day": day, "summary": summary, "plots": plots}, ensure_ascii=False)
+                                    "output": json.dumps({
+                                        "day": day, "summary": summary, "plots": plots,
+                                        "nota_sensores": (
+                                            "Cada variable trae su campo 'diagnostico' ya "
+                                            "resuelto: uselo tal cual y no lo reinterpretes. "
+                                            "Si points > 0 HAY LECTURAS, asi que la "
+                                            "adquisicion de datos FUNCIONA: no digas que el "
+                                            "sensor esta 'caido' ni que hay una falla de "
+                                            "adquisicion. Un sensor clavado en un valor fijo "
+                                            "y uno cuyos limites estan mal configurados son "
+                                            "problemas distintos y se atienden distinto."
+                                        ),
+                                    }, ensure_ascii=False)
                                 })
                             except Exception as e:
                                 tool_outputs.append({
@@ -4775,6 +4787,48 @@ def plot_critical_timeseries_day_png(
     plt.close(fig)
     return out_png_path
 
+def diagnostico_variable(fila: dict) -> str:
+    """
+    Que le pasa a esta variable, decidido con los datos y no por el modelo.
+
+    Preguntado "que sensor tiene mas tiempo caido", Duma respondio que TODOS estaban
+    "caidos el 100% del tiempo" y que habia "una falla general de adquisicion de datos".
+    Era falso: ese dia hubo 8,910 lecturas sin un solo nulo. Con ese diagnostico,
+    mantenimiento habria ido a revisar la red y el PLC.
+
+    Lo que habia eran tres cosas distintas que conviene no mezclar: sensores clavados en
+    un valor fijo (esos si estan averiados), variables cuyos limites configurados no
+    corresponden a lo que miden, y una que simplemente opera fuera de especificacion.
+    """
+    puntos = int(fila.get("points") or 0)
+    if puntos == 0:
+        return ("SIN LECTURAS: aqui si hay un fallo de adquisicion, el sensor no reporto "
+                "nada en el periodo.")
+
+    fuera = float(fila.get("out_pct") or 0)
+    mn, mx = a_numero(fila.get("min_value")), a_numero(fila.get("max_value"))
+    lo, hi = a_numero(fila.get("limite_min")), a_numero(fila.get("limite_max"))
+    rango = ("" if lo is None or hi is None
+             else " Los limites configurados son [%.2f, %.2f]." % (lo, hi))
+    constante = mn is not None and mx is not None and mn == mx
+
+    if constante and fuera >= 99:
+        return ("SENSOR TRABADO: %d lecturas, todas con el mismo valor (%.2f) y fuera de "
+                "limites. Un sensor sano varia; este no. Es un fallo del propio sensor o "
+                "de su conexion al proceso, NO de la adquisicion de datos.%s"
+                % (puntos, mn, rango))
+    if fuera >= 99:
+        return ("SIEMPRE FUERA DE LIMITES pero con lecturas que varian (%.2f a %.2f en %d "
+                "lecturas). El sensor funciona; lo que hay que revisar es si los limites "
+                "configurados corresponden a esta variable y a sus unidades.%s"
+                % (mn, mx, puntos, rango))
+    if fuera > 0:
+        return ("FUERA DE LIMITES el %.1f%% del tiempo (%.2f a %.2f). El sensor reporta con "
+                "normalidad: es la variable la que se sale de especificacion.%s"
+                % (fuera, mn, mx, rango))
+    return "DENTRO DE LIMITES: %d lecturas, ninguna fuera.%s" % (puntos, rango)
+
+
 def summarize_critical_day(df_day: pd.DataFrame) -> pd.DataFrame:
     """Resumen por variable para TODO el día.
     Devuelve: puntos, puntos fuera, %, promedio, min, max (ordenado por % fuera desc).
@@ -4801,10 +4855,13 @@ def summarize_critical_day(df_day: pd.DataFrame) -> pd.DataFrame:
              avg_value=("Value","mean"),
              min_value=("Value","min"),
              max_value=("Value","max"),
+             limite_min=("CriticalMinValue","min"),
+             limite_max=("CriticalMaxValue","max"),
          )
          .reset_index())
 
     g["out_pct"] = (g["out_points"] / g["points"] * 100.0).round(2)
+    g["diagnostico"] = [diagnostico_variable(f) for f in g.to_dict(orient="records")]
 
     # Enriquecer con catálogo
     names, devices = [], []
@@ -4821,7 +4878,8 @@ def summarize_critical_day(df_day: pd.DataFrame) -> pd.DataFrame:
     # Orden (más fuera primero)
     g = g.sort_values(["out_pct","out_points"], ascending=[False,False]).reset_index(drop=True)
 
-    return g[["var_id","name","device","points","out_points","out_pct","avg_value","min_value","max_value"]]
+    return g[["var_id","name","device","points","out_points","out_pct","avg_value",
+              "min_value","max_value","limite_min","limite_max","diagnostico"]]
 
 def normalize_day_str(day: str) -> str:
     day = (day or "").strip()
