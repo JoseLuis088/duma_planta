@@ -28,3 +28,4 @@ static/reports/
 static/plots/
 static/report_imgs/
 tests/resultados*.json
+manuales/indice_manual.json
