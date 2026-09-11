@@ -2837,7 +2837,9 @@
 
     .welcome-categories {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      /* Se ajusta al numero de tarjetas en vez de fijar tres columnas: al anadir la del
+         manual, la cuarta caia a una segunda fila que quedaba fuera de la vista. */
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 16px;
       width: 100%;
       margin-bottom: 30px;
@@ -4060,6 +4062,14 @@
           sugSensorsA: "Analiza qué variables de control o sensores estuvieron fuera de rango hoy.",
           sugSensorsQ2: "Correlación Chiller vs paros",
           sugSensorsA2: "¿Existe alguna correlación entre la temperatura del Chiller y los paros registrados hoy?",
+          // Manual de usuario. Se eligieron las dos dudas que mas se repiten en el
+          // propio manual -el escalamiento de las alertas y por que falta una opcion
+          // del menu- en vez de preguntas de trivia sobre el documento.
+          catManual: "📘 CÓMO USAR EL SISTEMA",
+          sugManualQ: "¿Cómo funcionan las alertas de WhatsApp?",
+          sugManualA: "¿Cómo funciona el alertamiento por WhatsApp: cada cuánto escala, a qué perfiles y cuándo se suspende?",
+          sugManualQ2: "No veo una opción del menú",
+          sugManualA2: "No veo una opción del menú que aparece en el manual, ¿qué hago?",
           connectingStatus: "Estableciendo conexión segura con el Agente...",
           connectedStatus: "Conectado en línea",
           // Estados dinámicos
@@ -4238,6 +4248,11 @@
           sugSensorsA: "Analyze which control variables or sensors were out of range today.",
           sugSensorsQ2: "Correlation Chiller vs stops",
           sugSensorsA2: "Is there any correlation between the Chiller temperature and the stops recorded today?",
+          catManual: "📘 HOW TO USE THE SYSTEM",
+          sugManualQ: "How do WhatsApp alerts work?",
+          sugManualA: "How does WhatsApp alerting work: how often does it escalate, to which profiles, and when is it suspended?",
+          sugManualQ2: "I can't find a menu option",
+          sugManualA2: "I can't find a menu option that appears in the manual, what should I do?",
           connectingStatus: "Establishing secure connection with the Agent...",
           connectedStatus: "Connected online",
           // Estados dinámicos
@@ -6276,6 +6291,15 @@
                   </div>
                   <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugSensorsA2").replace(/'/g, "\\'")}')">
                     ${T("sugSensorsQ2")}
+                  </div>
+                </div>
+                <div class="welcome-card">
+                  <div class="welcome-card-header">${T("catManual")}</div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA").replace(/'/g, "\\'")}')">
+                    ${T("sugManualQ")}
+                  </div>
+                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA2").replace(/'/g, "\\'")}')">
+                    ${T("sugManualQ2")}
                   </div>
                 </div>
               </div>

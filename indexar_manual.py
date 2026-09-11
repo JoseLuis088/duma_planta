@@ -2,15 +2,19 @@
 """
 Construye el indice del manual para que Duma pueda responder sobre el.
 
-El manual son ~19,700 tokens en 56 secciones. Para ese tamano un servicio de busqueda
-seria desproporcionado: los vectores completos ocupan 0.3 MB y caben en memoria. Se
-calculan una vez con text-embedding-ada-002 y se guardan junto a la app.
+El manual son ~19,700 tokens. Para ese tamano un servicio de busqueda seria
+desproporcionado: los vectores caben en memoria y se comparan en microsegundos. Se
+calculan con text-embedding-ada-002 y se guardan junto a la app.
 
     python indexar_manual.py                       # indexa manuales/*.md
     python indexar_manual.py otro_manual.md        # indexa uno concreto
 
-Reindexar cuesta centavos, asi que se puede rehacer cada vez que cambie el manual. El
-indice queda en manuales/indice_manual.json y NO se versiona: se regenera.
+NO hace falta acordarse de correrlo: main.py compara al arrancar la huella de los .md
+contra la que guarda el indice, y lo reconstruye si falta o si el manual cambio. Este
+script existe para forzarlo a mano y para ver el desglose de trozos.
+
+El indice (manuales/indice_manual.json) no se versiona: son megas que se regeneran en
+un minuto y cuestan centavos.
 """
 import io
 import os
@@ -107,50 +111,62 @@ def trocear(markdown: str, fuente: str):
             for c, t, x in trozos if x.strip()]
 
 
-def vectorizar(textos, lote=64):
+def vectorizar(textos, lote=64, avisar=lambda *_: None):
     """Vectores de cada texto, en lotes para no hacer una llamada por trozo."""
     salida = []
     for i in range(0, len(textos), lote):
         parte = textos[i:i + lote]
         r = duma.client.embeddings.create(model=duma.EMBEDDING_DEPLOYMENT, input=parte)
         salida.extend([d.embedding for d in sorted(r.data, key=lambda d: d.index)])
-        print("   vectorizados %d/%d" % (min(i + lote, len(textos)), len(textos)))
+        avisar("   vectorizados %d/%d" % (min(i + lote, len(textos)), len(textos)))
     return salida
 
 
-def main():
-    archivos = sys.argv[1:]
+def construir_indice(archivos=None, avisar=lambda *_: None):
+    """
+    Construye el indice y lo escribe. Devuelve cuantos trozos quedaron.
+
+    Vive aqui y no en main.py para no cargar el indexado en cada arranque del servidor,
+    pero main.py la llama al arrancar si el indice falta o el manual cambio.
+    """
     if not archivos:
         archivos = [os.path.join(CARPETA, f) for f in sorted(os.listdir(CARPETA))
                     if f.lower().endswith(".md")]
     if not archivos:
-        print("No hay ningun .md en %s" % CARPETA)
-        return 1
+        raise FileNotFoundError("No hay ningun .md en %s" % CARPETA)
 
     trozos = []
     for ruta in archivos:
         with io.open(ruta, encoding="utf-8") as f:
             contenido = f.read()
         nuevos = trocear(contenido, os.path.basename(ruta))
-        print("%-42s %d secciones" % (os.path.basename(ruta), len(nuevos)))
+        avisar("%-42s %d secciones" % (os.path.basename(ruta), len(nuevos)))
         trozos.extend(nuevos)
 
     tam = sorted(contar_tokens(t["texto"]) for t in trozos)
-    print("\n%d trozos   tokens: minimo %d, mediana %d, maximo %d"
-          % (len(trozos), tam[0], tam[len(tam) // 2], tam[-1]))
+    avisar("%d trozos   tokens: minimo %d, mediana %d, maximo %d"
+           % (len(trozos), tam[0], tam[len(tam) // 2], tam[-1]))
 
-    print("\nVectorizando con %s..." % duma.EMBEDDING_DEPLOYMENT)
-    vectores = vectorizar([t["texto"] for t in trozos])
-
-    for t, v in zip(trozos, vectores):
+    avisar("Vectorizando con %s..." % duma.EMBEDDING_DEPLOYMENT)
+    for t, v in zip(trozos, vectorizar([t["texto"] for t in trozos], avisar=avisar)):
         t["vector"] = v
 
-    firma = hashlib.md5("".join(t["texto"] for t in trozos).encode("utf-8")).hexdigest()
+    # La firma se calcula sobre los .md, no sobre los trozos: main.py la compara al
+    # arrancar para saber si el manual cambio desde el ultimo indexado.
     with io.open(INDICE, "w", encoding="utf-8") as f:
-        json.dump({"modelo": duma.EMBEDDING_DEPLOYMENT, "firma": firma,
+        json.dump({"modelo": duma.EMBEDDING_DEPLOYMENT,
+                   "firma": duma.firma_de_los_manuales(),
                    "trozos": trozos}, f, ensure_ascii=False)
+    avisar("Indice escrito en %s (%.1f MB)" % (INDICE, os.path.getsize(INDICE) / 1e6))
+    return len(trozos)
 
-    print("\nIndice escrito en %s (%.1f MB)" % (INDICE, os.path.getsize(INDICE) / 1e6))
+
+def main():
+    try:
+        construir_indice(sys.argv[1:], avisar=print)
+    except FileNotFoundError as e:
+        print(e)
+        return 1
     return 0
 
 

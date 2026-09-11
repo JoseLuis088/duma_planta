@@ -5,6 +5,7 @@ except ImportError:
     speechsdk = None
 import io
 import uuid
+import hashlib
 import json
 import logging
 import time
@@ -726,6 +727,7 @@ async def startup_event():
     # on_event esta deprecado en FastAPI; se mantiene por compatibilidad con la
     # version fijada (0.111) y se migrara junto con el resto del arranque.
     _ensure_plotly_vendor()
+    asegurar_indice_manual()
     init_history_db()
     asyncio.create_task(periodic_cleanup_task())
 
@@ -2483,15 +2485,28 @@ def aviso_pregunta_de_manual(user_text: str) -> str:
         # arrastrarian la respuesta hacia un tema equivocado.
         return ""
 
+    # La respuesta ya no cita la fuente porque al operador le estorba, asi que la
+    # trazabilidad vive aqui: sin esto, una respuesta del manual seria indistinguible
+    # de una inventada al revisar el historial.
+    logging.warning("MANUAL | %s | %s",
+                    texto[:80].replace("\r", " ").replace("\n", " "),
+                    " ; ".join("%s (%.3f)" % (s.get("seccion", ""), s.get("similitud", 0))
+                               for s in secciones))
+
     partes = [
         "SECCIONES DEL MANUAL DE USUARIO DE SIDON INDUSTRIAL relevantes para esta "
         "pregunta. Ya estan buscadas: NO tienes que llamar a ninguna herramienta.",
         "",
-        "RESPONDE CON LO QUE DIGAN, y cita el capitulo y la seccion. Aunque creas saber "
-        "la respuesta, la del manual manda: es el sistema de este cliente y no funciona "
+        "RESPONDE CON LO QUE DIGAN, en el tono de siempre. Aunque creas saber la "
+        "respuesta, la del manual manda: es el sistema de este cliente y no funciona "
         "como los demas. Si estas secciones no cubren lo que se pregunta, dilo; no lo "
         "completes con lo que sepas por tu cuenta. Y no la declines por fuera de "
         "alcance: el manual es dominio tuyo.",
+        "",
+        "NO cierres con una linea de 'Fuente:' ni cites capitulo y seccion: al operador "
+        "que pregunta como se hace algo esa referencia le estorba. Responde y ya. "
+        "(La seccion usada queda registrada en el log del servidor, asi que se puede "
+        "verificar despues sin ensuciar la respuesta.)",
         "",
     ]
     for s in secciones:
@@ -2523,6 +2538,57 @@ def aviso_pregunta_conceptual(user_text: str) -> str:
 
 RUTA_INDICE_MANUAL = os.path.join("manuales", "indice_manual.json")
 _INDICE_MANUAL = {"cargado": False, "trozos": [], "matriz": None, "modelo": None}
+
+
+def firma_de_los_manuales() -> str:
+    """Huella del contenido de los .md, para saber si el indice esta al dia."""
+    carpeta = os.path.dirname(RUTA_INDICE_MANUAL)
+    if not os.path.isdir(carpeta):
+        return ""
+    h = hashlib.md5()
+    for nombre in sorted(f for f in os.listdir(carpeta) if f.lower().endswith(".md")):
+        with open(os.path.join(carpeta, nombre), "rb") as f:
+            h.update(nombre.encode("utf-8"))
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def asegurar_indice_manual():
+    """
+    Construye el indice al arrancar si falta o si el manual cambio.
+
+    El indice son 7.5 MB que no se versionan, asi que en la VM no existe tras un
+    despliegue. Dejarlo como paso manual era pedir que se olvidara: el dia que pasara,
+    Duma se quedaria sin manual sin avisar. Y lo mismo al actualizar el .md sin
+    reindexar, que es peor porque seguiria contestando la version vieja.
+    """
+    try:
+        from indexar_manual import construir_indice
+    except Exception as e:
+        logging.warning("No se pudo preparar el indice del manual: %s", e)
+        return
+
+    firma_actual = firma_de_los_manuales()
+    if not firma_actual:
+        return  # no hay manuales que indexar
+    try:
+        with open(RUTA_INDICE_MANUAL, "r", encoding="utf-8") as f:
+            guardado = json.load(f)
+        if (guardado.get("firma") == firma_actual
+                and guardado.get("modelo") == EMBEDDING_DEPLOYMENT):
+            return  # al dia
+        logging.warning("El manual cambio desde el ultimo indice: reindexando.")
+    except FileNotFoundError:
+        logging.warning("No hay indice del manual: construyendolo.")
+    except Exception as e:
+        logging.warning("Indice del manual ilegible (%s): se reconstruye.", e)
+
+    try:
+        construir_indice()
+        _INDICE_MANUAL.update({"cargado": False, "trozos": [],
+                               "matriz": None, "modelo": None})
+    except Exception as e:
+        logging.error("No se pudo construir el indice del manual: %s", e)
 
 
 def cargar_indice_manual():
