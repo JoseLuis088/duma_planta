@@ -6,6 +6,10 @@ El modelo agregaba los turnos a mano y aplicaba el umbral por su cuenta: en un i
 reporto 63.2% "EN RIESGO" cuando el valor real era 61.61%, que por su propia regla es
 CRITICO. Ahora ambas cosas se calculan aqui.
 """
+import io
+import os
+import re
+
 import pytest
 
 TURNOS = [
@@ -173,3 +177,49 @@ def test_acepta_el_cero_y_descarta_lo_que_no_es_numero(duma):
     assert "no hubo kilos perdidos" in duma.frase_kilos_vs_plan(0).lower()
     assert duma.frase_kilos_vs_plan(None) == ""
     assert duma.frase_kilos_vs_plan("sin dato") == ""
+
+
+# ---------- El tablero y el agente usan la MISMA escala de OEE ----------
+# Un reporte llego al cliente con la insignia "Clase Mundial ✓" sobre un OEE de 76.6%
+# mientras el texto de la pagina siguiente, para ese mismo numero, decia que la operacion
+# estaba "en zona de riesgo frente al estandar de Clase Mundial (≥85%)". El tablero
+# clasificaba con ≥65 y el agente con ≥85: dos escalas para el mismo indicador, y nada
+# que las obligara a coincidir.
+
+def _umbrales_del_tablero():
+    """Los umbrales de OEE que usa la pantalla, leidos del propio index.html."""
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "static", "index.html")
+    with io.open(ruta, encoding="utf-8") as f:
+        html = f.read()
+    # Las llamadas de OEE a paintOeeKpi, con su arreglo de tres umbrales.
+    encontrados = re.findall(
+        r'paintOeeKpi\(\s*"oee\w*KpiOee[^"]*"[^)]*?\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]',
+        html, re.DOTALL)
+    return [tuple(int(x) for x in t) for t in encontrados]
+
+
+def test_el_tablero_clasifica_el_oee_como_el_agente(duma):
+    umbrales = _umbrales_del_tablero()
+    assert umbrales, "no se encontraron los umbrales de OEE en index.html"
+    for altos in umbrales:
+        # El corte superior es el de CLASE MUNDIAL y el segundo el de EN RIESGO.
+        assert altos[0] == 85, "el tablero marca clase mundial desde %s%%" % altos[0]
+        assert altos[1] == 65, "el tablero marca en riesgo desde %s%%" % altos[1]
+
+
+@pytest.mark.parametrize("oee", [92, 85, 84.9, 76.6, 70, 65, 64.9, 55, 35])
+def test_ninguna_banda_del_tablero_contradice_al_semaforo(duma, oee):
+    """
+    Lo que de verdad importa: que el mismo numero no salga 'clase mundial' en una
+    pantalla y 'critico' en el chat.
+    """
+    umbrales = _umbrales_del_tablero()[0]
+    banda = 0 if oee >= umbrales[0] else 1 if oee >= umbrales[1] else 2
+    semaforo = duma.estado_oee(oee)
+    if banda == 0:
+        assert "CLASE MUNDIAL" in semaforo
+    elif banda == 1:
+        assert "RIESGO" in semaforo
+    else:
+        assert "CRÍTICO" in semaforo

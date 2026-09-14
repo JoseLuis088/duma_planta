@@ -4081,9 +4081,12 @@
           noDataRange: "No hay datos para ese periodo/turno.",
           selectDates: "Selecciona ambas fechas.",
           // KPI sublabels OEE RT
+          // Los textos siguen el semaforo del backend: ≥85 clase mundial, 65-84 en
+          // riesgo, <65 critico. "Aceptable — mejora posible" describia un 55% de OEE,
+          // que el agente reporta como CRITICO en el chat.
           oeeOk: "Clase Mundial ✓",
-          oeeWarn: "Aceptable — mejora posible",
-          oeeHigh: "Por debajo del estándar",
+          oeeWarn: "En riesgo — meta 85%",
+          oeeHigh: "Crítico — por debajo del estándar",
           oeeCrit: "Crítico — intervención urgente",
           availOk: "Disponibilidad óptima",
           availWarn: "Pérdida leve por paros",
@@ -4265,8 +4268,8 @@
           selectDates: "Please select both dates.",
           // KPI sublabels OEE RT
           oeeOk: "World Class ✓",
-          oeeWarn: "Acceptable — room for improvement",
-          oeeHigh: "Below standard",
+          oeeWarn: "At risk — target 85%",
+          oeeHigh: "Critical — below standard",
           oeeCrit: "Critical — urgent action required",
           availOk: "Optimal availability",
           availWarn: "Minor loss due to stops",
@@ -5174,10 +5177,10 @@
         const line = (iLine >= 0) ? String(first[iLine] ?? "") : "";
         const snap = (iSnap >= 0) ? String(first[iSnap] ?? "") : "";
 
-        // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
+        // Misma escala que el rango y que estado_oee() en el backend.
         paintOeeKpi("oeeRtKpiOeeCard", "oeeRtKpiOeeIcon", "oeeRtKpiOeeBar", "oeeRtKpiOeeSub", oeeVal,
-          [65, 50, 35],
-          ["🏆", "🏭", "⚠️", "🚨"],
+          [85, 65, 50],
+          ["🏆", "⚠️", "🔴", "🚨"],
           [(`${line} ${snap ? "— " + snap : ""}` || T("oeeOk")), T("oeeWarn"), T("oeeHigh"), T("oeeCrit")]
         );
         // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit
@@ -5216,10 +5219,16 @@
         el("kpiRangePerf").textContent  = toPct(summary.Performance);
         el("kpiRangeQual").textContent  = toPct(summary.Quality);
 
-        // OEE: ≥65 ok, ≥50 warn, ≥35 high, <35 crit
+        // OEE: la MISMA escala que estado_oee() en el backend — ≥85 Clase Mundial,
+        // 65-84 en riesgo, <65 critico. La cuarta banda solo afina dentro de critico,
+        // nunca contradice al backend.
+        //
+        // Antes era [65,50,35], asi que un OEE de 76.6% salia con la insignia "Clase
+        // Mundial ✓" mientras el texto del mismo PDF decia que estaba "en zona de riesgo
+        // frente al estandar de Clase Mundial (≥85%)". El reporte se contradecia solo.
         paintOeeKpi("oeeKpiOeeCard","oeeKpiOeeIcon","oeeKpiOeeBar","oeeKpiOeeSub", oeeVal,
-          [65,50,35],
-          ["🏆","🏭","⚠️","🚨"],
+          [85,65,50],
+          ["🏆","⚠️","🔴","🚨"],
           [T("oeeOk"),T("oeeWarn"),T("oeeHigh"),T("oeeCrit")]
         );
         // Disponibilidad: ≥90 ok, ≥75 warn, ≥60 high, <60 crit

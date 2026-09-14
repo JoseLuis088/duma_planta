@@ -694,7 +694,10 @@ def ai_oee_range_analysis(range_data: dict, lang: str = "es") -> str:
         f"DETALLE POR TURNO ({len(details)} registros):\r\n{json.dumps(details[:20], ensure_ascii=False, indent=2)}\r\n\r\n"
         "Instrucciones:\r\n"
         "- Analiza prioritariamente los MOTIVOS DE PARO para explicar la baja disponibilidad.\r\n"
-        "- OEE<50% es estado CRÍTICO. Reporta el % de cumplimiento y, para los "
+        # El semaforo es el de estado_oee(), no otro: aqui decia "<50%" y el mismo OEE
+        # salia CRITICO en el chat y aceptable en el informe.
+        "- Semáforo: OEE ≥85% CLASE MUNDIAL, 65-84% EN RIESGO, <65% CRÍTICO. "
+        "Úsalo tal cual. Reporta el % de cumplimiento y, para los "
         "kilos, copia kilos_frase TAL CUAL: es la unica cifra de kilos valida.\r\n"
         "- Si los paros no programados son altos, correlaciona con los motivos encontrados.\r\n"
         "- HIPÓTESIS DE CONTROL: Menciona explícitamente variables de control (sensores) que podrían estar fallando (IQF, Chiller, etc.) según los tipos de paros.\r\n"
