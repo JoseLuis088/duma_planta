@@ -1428,6 +1428,79 @@
       }
     }
 
+    /* -------------------------------------------------------------------------
+       Vista de telefono.
+
+       Todo lo de aqui vive dentro de @media, o sea que una pantalla de escritorio
+       ni siquiera lee estas reglas: nada de este bloque puede cambiar lo que ve
+       hoy la planta. Las medidas comentadas se tomaron en 375x812 (iPhone) con
+       datos reales cargados.
+       ------------------------------------------------------------------------- */
+    @media (max-width: 768px) {
+      /* El boton de menu flota en x=12 y mide 44px, asi que termina en x=56. El
+         titulo arrancaba en x=24 y quedaba debajo: se leia "...riables de Control"
+         en vez de "Variables de Control", en las tres vistas y siempre, porque la
+         barra superior no se va al hacer scroll. */
+      .topbar {
+        padding-left: 68px;
+      }
+
+      /* La tabla medía 589px de los 642px visibles: ocupaba el 92% de la pantalla,
+         asi que el dedo casi siempre caia dentro y uno movia la tabla creyendo que
+         movia la pagina. Recortada, siempre queda pagina alrededor donde agarrar. */
+      .table-wrap {
+        max-height: 340px;
+      }
+
+      /* Blancos de toque. Abajo de 44px el dedo no atina. Se agranda el area
+         sensible, no el dibujo: el icono se sigue viendo del mismo tamano.
+         El de expandir la grafica era el peor, 15x22, y es el unico modo de ver
+         una grafica en grande desde el telefono. */
+      .plot-expand-btn {
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #viewAgent .chat-send-btn,
+      #viewAgent .chat-mic-btn,
+      #viewAgent .chat-tts-toggle {
+        min-width: 44px;
+        min-height: 44px;
+      }
+
+      /* La casilla de Modo Ejecutivo mide 13x13; lo que se toca de verdad es la
+         etiqueta entera, que medía 70x29. */
+      #viewAgent .chat-exec-label {
+        min-height: 44px;
+      }
+
+      /* El panel del chat es flex:1, pero un hijo flex no se encoge abajo del
+         ancho natural de su contenido mientras tenga min-width:auto. La cabecera
+         pedia 370px dentro de un contenedor de 327, asi que el panel entero se
+         salia 44px por la derecha y cortaba el boton de enviar. */
+      #viewAgent .agent-chat-panel {
+        min-width: 0;
+      }
+
+    }
+
+    /* Solo telefono. La cabecera del chat se deja para este bloque y no para el de
+       768px porque en una tableta cabe en un renglon: alli flex-wrap la partiria en
+       dos sin necesidad. Abajo de 480px ya no cabe -a 375px pedia 340px sobre 326
+       disponibles- y se recortaba "Limpiar Chat". Partirla es preferible a seguir
+       apretando las letras. */
+    @media (max-width: 480px) {
+      #viewAgent .agent-chat-header {
+        height: auto;
+        min-height: 65px;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+      }
+    }
+
     /* Modal FullScreen */
     .modal-backdrop {
       position: fixed;
@@ -3681,7 +3754,7 @@
                   </div>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                  <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text); cursor: pointer; user-select: none; opacity: 0.8; font-weight: 600; margin-right: 5px;">
+                  <label class="chat-exec-label" style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text); cursor: pointer; user-select: none; opacity: 0.8; font-weight: 600; margin-right: 5px;">
                     <input type="checkbox" id="chkAudioExec" style="accent-color: #10b981; cursor: pointer;">
                     🎙️ Modo Ejecutivo
                   </label>
