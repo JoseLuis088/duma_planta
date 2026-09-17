@@ -2845,6 +2845,24 @@
       margin-bottom: 30px;
     }
 
+    /* La tarjeta del manual lleva cuatro sugerencias en 2x2, asi que ocupa el doble de
+       ancho que las de tres. Apiladas en una sola columna alargaban tanto la tarjeta que
+       empujaban el resto de la bienvenida fuera de la pantalla. */
+    .welcome-card-ancha {
+      grid-column: span 2;
+    }
+
+    .welcome-chips-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    @media (max-width: 900px) {
+      .welcome-card-ancha { grid-column: span 1; }
+      .welcome-chips-2col { grid-template-columns: 1fr; }
+    }
+
     @media (max-width: 768px) {
       .welcome-categories {
         grid-template-columns: 1fr;
@@ -4070,6 +4088,10 @@
           sugManualA: "¿Cómo funciona el alertamiento por WhatsApp: cada cuánto escala, a qué perfiles y cuándo se suspende?",
           sugManualQ2: "No veo una opción del menú",
           sugManualA2: "No veo una opción del menú que aparece en el manual, ¿qué hago?",
+          sugManualQ3: "Cómo declarar/clasificar un paro",
+          sugManualA3: "¿Cómo se clasifica un paro en Sidón Industrial y hasta cuándo se puede hacer?",
+          sugManualQ4: "Cómo dividir un paro",
+          sugManualA4: "¿Cómo se divide un paro en Sidón Industrial y en cuántas partes se puede dividir?",
           connectingStatus: "Estableciendo conexión segura con el Agente...",
           connectedStatus: "Conectado en línea",
           // Estados dinámicos
@@ -4256,6 +4278,10 @@
           sugManualA: "How does WhatsApp alerting work: how often does it escalate, to which profiles, and when is it suspended?",
           sugManualQ2: "I can't find a menu option",
           sugManualA2: "I can't find a menu option that appears in the manual, what should I do?",
+          sugManualQ3: "How to classify a stop",
+          sugManualA3: "How is a stop classified in Sidón Industrial and until when can it be done?",
+          sugManualQ4: "How to split a stop",
+          sugManualA4: "How is a stop split in Sidón Industrial and into how many parts can it be split?",
           connectingStatus: "Establishing secure connection with the Agent...",
           connectedStatus: "Connected online",
           // Estados dinámicos
@@ -6302,13 +6328,21 @@
                     ${T("sugSensorsQ2")}
                   </div>
                 </div>
-                <div class="welcome-card">
+                <div class="welcome-card welcome-card-ancha">
                   <div class="welcome-card-header">${T("catManual")}</div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA").replace(/'/g, "\\'")}')">
-                    ${T("sugManualQ")}
-                  </div>
-                  <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA2").replace(/'/g, "\\'")}')">
-                    ${T("sugManualQ2")}
+                  <div class="welcome-chips-2col">
+                    <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA").replace(/'/g, "\\'")}')">
+                      ${T("sugManualQ")}
+                    </div>
+                    <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA3").replace(/'/g, "\\'")}')">
+                      ${T("sugManualQ3")}
+                    </div>
+                    <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA2").replace(/'/g, "\\'")}')">
+                      ${T("sugManualQ2")}
+                    </div>
+                    <div class="welcome-chip" onclick="chatWidget.handleSuggestionText('${T("sugManualA4").replace(/'/g, "\\'")}')">
+                      ${T("sugManualQ4")}
+                    </div>
                   </div>
                 </div>
               </div>
