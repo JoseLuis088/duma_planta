@@ -164,6 +164,14 @@ def leer_y_resumir(cn_origen, desde, hasta):
     abierta = None
     filas = 0
 
+    # Avisar cada cien mil filas. Sin esto el proceso calla durante toda la lectura
+    # -una hora larga en el relleno historico- y no hay forma de distinguir "va
+    # lento" de "se atoro": paso en la primera corrida real y hubo que adivinarlo
+    # por el ritmo de una prueba anterior.
+    AVISO_CADA = 100000
+    siguiente_aviso = AVISO_CADA
+    arranque = time.time()
+
     cur = cn_origen.cursor()
     cur.execute(CONSULTA, desde, hasta)
     while True:
@@ -172,6 +180,12 @@ def leer_y_resumir(cn_origen, desde, hasta):
             break
         for usuario, modulo, momento, ip, estado in lote:
             filas += 1
+            if filas >= siguiente_aviso:
+                siguiente_aviso += AVISO_CADA
+                transcurrido = time.time() - arranque
+                log.info("   %s filas leidas en %d s (%d por segundo)",
+                         "{:,}".format(filas), int(transcurrido),
+                         int(filas / max(1, transcurrido)))
             usuario = (usuario or "").strip()[:200]
             modulo = (modulo or "").strip()[:200]
             fecha = local(momento).date()
