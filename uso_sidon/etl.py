@@ -177,8 +177,17 @@ def leer_y_resumir(cn_origen, desde, hasta):
     siguiente_aviso = AVISO_CADA
     arranque = time.time()
 
+    # La consulta pide ORDER BY, y SQL Server no entrega la primera fila hasta
+    # haber ordenado el resultado entero. Esa espera es la parte larga -de los 43
+    # minutos de la primera corrida, la mayoria- y durante ella no hay ni una fila
+    # que contar, asi que el aviso de cada cien mil no sirve de nada. Al menos que
+    # se vea en que fase esta: esperando al servidor, o ya procesando.
+    log.info("   esperando a que el servidor ordene el resultado...")
     cur = cn_origen.cursor()
     cur.execute(CONSULTA, desde, hasta)
+    log.info("   el servidor empezo a entregar filas tras %d s. Procesando...",
+             int(time.time() - arranque))
+
     while True:
         lote = cur.fetchmany(10000)
         if not lote:
