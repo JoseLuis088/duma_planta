@@ -64,6 +64,15 @@ def momento(h, m=0, dia=15):
 OK = '{"StatusCode":200,"ExecutionTimeMs":41}'
 NEGADO = '{"StatusCode":401,"ExecutionTimeMs":12}'
 
+_contador = [0]
+
+
+def fila(usuario, modulo, cuando, ip="10.0.0.1", estado=None):
+    """Una fila como la devuelve la consulta, con su identificador de origen."""
+    _contador[0] += 1
+    return ("00000000-0000-0000-0000-%012d" % _contador[0],
+            usuario, modulo, cuando, ip, estado)
+
 
 def resumir(filas):
     return etl.leer_y_resumir(ConexionFalsa(filas), momento(0), momento(23, 59))
@@ -72,9 +81,9 @@ def resumir(filas):
 def test_un_login_y_su_actividad_son_una_sesion():
     """Tres peticiones seguidas sin huecos largos: una sola visita."""
     _uso, logins, sesiones, _c, filas = resumir([
-        ("ana@bafar.com", "login", momento(16, 0), "10.0.0.1", OK),
-        ("ana@bafar.com", "fullData", momento(16, 5), "10.0.0.1", None),
-        ("ana@bafar.com", "fullData", momento(16, 20), "10.0.0.1", None),
+        fila("ana@bafar.com", "login", momento(16, 0), estado=OK),
+        fila("ana@bafar.com", "fullData", momento(16, 5)),
+        fila("ana@bafar.com", "fullData", momento(16, 20)),
     ])
     assert filas == 3
     assert len(sesiones) == 1
@@ -92,19 +101,18 @@ def test_un_login_y_su_actividad_son_una_sesion():
 def test_un_hueco_largo_parte_la_sesion_en_dos():
     """Treinta y un minutos sin pedir nada: la persona se fue y volvio."""
     _uso, _logins, sesiones, _c, _f = resumir([
-        ("ana@bafar.com", "fullData", momento(16, 0), "10.0.0.1", None),
-        ("ana@bafar.com", "fullData", momento(16, 31), "10.0.0.1", None),
+        fila("ana@bafar.com", "fullData", momento(16, 0)),
+        fila("ana@bafar.com", "fullData", momento(16, 31)),
     ])
     assert len(sesiones) == 2
-    # Ninguna de las dos empezo con login: venia de antes.
     assert [s[7] for s in sesiones] == [0, 0]
 
 
 def test_treinta_minutos_justos_no_parten_la_sesion():
     """El corte es a MAS de 30 minutos. Justo en el limite sigue siendo la misma."""
     _uso, _logins, sesiones, _c, _f = resumir([
-        ("ana@bafar.com", "fullData", momento(16, 0), "10.0.0.1", None),
-        ("ana@bafar.com", "fullData", momento(16, 30), "10.0.0.1", None),
+        fila("ana@bafar.com", "fullData", momento(16, 0)),
+        fila("ana@bafar.com", "fullData", momento(16, 30)),
     ])
     assert len(sesiones) == 1
 
@@ -112,9 +120,9 @@ def test_treinta_minutos_justos_no_parten_la_sesion():
 def test_dos_personas_no_se_mezclan():
     """Las filas vienen ordenadas por usuario; cada quien su sesion."""
     _uso, _logins, sesiones, cuentas, _f = resumir([
-        ("ana@bafar.com", "fullData", momento(16, 0), "10.0.0.1", None),
-        ("ana@bafar.com", "fullData", momento(16, 5), "10.0.0.1", None),
-        ("beto@bafar.com", "fullData", momento(16, 2), "10.0.0.2", None),
+        fila("ana@bafar.com", "fullData", momento(16, 0)),
+        fila("ana@bafar.com", "fullData", momento(16, 5)),
+        fila("beto@bafar.com", "fullData", momento(16, 2), ip="10.0.0.2"),
     ])
     assert len(sesiones) == 2
     assert {s[0] for s in sesiones} == {"ana@bafar.com", "beto@bafar.com"}
@@ -124,23 +132,61 @@ def test_dos_personas_no_se_mezclan():
 def test_un_login_negado_se_guarda_y_se_marca_fallido():
     """Los intentos fallidos dicen tanto del uso como los que funcionan."""
     _uso, logins, _s, _c, _f = resumir([
-        ("ana@bafar.com", "login", momento(16, 0), "10.0.0.1", OK),
-        ("beto@bafar.com", "login", momento(16, 1), "10.0.0.2", NEGADO),
+        fila("ana@bafar.com", "login", momento(16, 0), estado=OK),
+        fila("beto@bafar.com", "login", momento(16, 1), estado=NEGADO),
     ])
     assert len(logins) == 2
-    por_usuario = {l[0]: l for l in logins}
-    assert por_usuario["ana@bafar.com"][5] == 200
-    assert por_usuario["ana@bafar.com"][6] == 1
-    assert por_usuario["beto@bafar.com"][5] == 401
-    assert por_usuario["beto@bafar.com"][6] == 0
+    por_usuario = {l[1]: l for l in logins}
+    assert por_usuario["ana@bafar.com"][6] == 200
+    assert por_usuario["ana@bafar.com"][7] == 1
+    assert por_usuario["beto@bafar.com"][6] == 401
+    assert por_usuario["beto@bafar.com"][7] == 0
+
+
+def test_dos_logins_sin_correo_en_el_mismo_segundo_no_chocan():
+    """El caso que tumbo la primera corrida real.
+
+    La llave era (usuario, momento), que da por hecho que una persona no entra dos
+    veces en el mismo segundo. Con el correo vacio todas las filas anonimas se ven
+    como la misma persona, y dos del 20 de agosto a las 23:06:18 reventaron la
+    escritura entera despues de 43 minutos de lectura. Ahora la llave es el
+    identificador que ya traia cada fila del origen, que es unico por definicion.
+    """
+    _uso, logins, _s, _c, _f = resumir([
+        fila("", "login", momento(16, 0), estado=NEGADO),
+        fila("", "login", momento(16, 0), estado=NEGADO),
+    ])
+    assert len(logins) == 2
+    assert logins[0][0] != logins[1][0]          # identificadores distintos
+    assert {l[1] for l in logins} == {etl.SIN_NOMBRE}
+    assert [l[8] for l in logins] == [0, 0]      # ninguno identificado
+
+
+def test_las_filas_sin_correo_no_arman_sesiones():
+    """Una sesion es el rato que estuvo una PERSONA.
+
+    Si las filas anonimas contaran, accesos de gente distinta se juntarian en una
+    sesion inventada que nadie vivio. Como login si cuentan: ahi el dato es el
+    intento en si.
+    """
+    _uso, logins, sesiones, cuentas, _f = resumir([
+        fila("", "login", momento(16, 0), estado=NEGADO),
+        fila("", "login", momento(16, 5), estado=NEGADO),
+        fila("ana@bafar.com", "fullData", momento(16, 10)),
+    ])
+    assert len(logins) == 2
+    assert len(sesiones) == 1
+    assert sesiones[0][0] == "ana@bafar.com"
+    # En el uso diario si aparecen, bajo su nombre propio: son peticiones reales.
+    assert etl.SIN_NOMBRE in cuentas
 
 
 def test_la_hora_se_convierte_a_hora_de_planta():
     """UTC-6: las 16:00 UTC son las 10:00 en planta, el mismo dia."""
     _uso, logins, _s, _c, _f = resumir([
-        ("ana@bafar.com", "login", momento(16, 0), "10.0.0.1", OK),
+        fila("ana@bafar.com", "login", momento(16, 0), estado=OK),
     ])
-    _usuario, momento_utc, fecha, hora, _ip, _cod, _ok = logins[0]
+    _reg, _usuario, momento_utc, fecha, hora = logins[0][:5]
     assert momento_utc == momento(16, 0)      # el instante original, intacto
     assert fecha == dt.date(2026, 9, 15)
     assert hora == dt.time(10, 0)
@@ -153,20 +199,20 @@ def test_la_madrugada_utc_cae_en_el_dia_anterior_de_planta():
     gente del lunes. Si alguna vez falla, el huso dejo de aplicarse.
     """
     _uso, logins, _s, _c, _f = resumir([
-        ("ana@bafar.com", "login", momento(3, 0, dia=15), "10.0.0.1", OK),
+        fila("ana@bafar.com", "login", momento(3, 0, dia=15), estado=OK),
     ])
-    _u, _m, fecha, hora, _i, _c2, _o = logins[0]
+    fecha, hora = logins[0][3], logins[0][4]
     assert fecha == dt.date(2026, 9, 14)
     assert hora == dt.time(21, 0)
 
 
 def test_el_uso_se_agrupa_por_dia_usuario_y_modulo():
-    _uso, _l, _s, _c, _f = resumir([
-        ("ana@bafar.com", "fullData", momento(16, 0), "10.0.0.1", None),
-        ("ana@bafar.com", "fullData", momento(16, 5), "10.0.0.2", None),
-        ("ana@bafar.com", "stopages", momento(16, 6), "10.0.0.1", None),
+    uso, _l, _s, _c, _f = resumir([
+        fila("ana@bafar.com", "fullData", momento(16, 0)),
+        fila("ana@bafar.com", "fullData", momento(16, 5), ip="10.0.0.2"),
+        fila("ana@bafar.com", "stopages", momento(16, 6)),
     ])
-    por_modulo = {u[2]: u for u in _uso}
+    por_modulo = {u[2]: u for u in uso}
     assert por_modulo["fullData"][3] == 2        # peticiones
     assert por_modulo["fullData"][4] == momento(16, 0)   # primera
     assert por_modulo["fullData"][5] == momento(16, 5)   # ultima
@@ -189,7 +235,6 @@ def test_las_fechas_de_la_linea_de_comandos_son_hora_de_planta():
     """
     inicio = etl.dia_local_a_utc("2026-09-30")
     assert inicio == dt.datetime(2026, 9, 30, 6, 0)   # UTC-6
-    # Y de vuelta: ese instante es justo el arranque del dia 30 en planta.
     assert etl.local(inicio).date() == dt.date(2026, 9, 30)
     assert etl.local(inicio).time() == dt.time(0, 0)
 

@@ -114,12 +114,17 @@ def conectar_destino():
 # trae el StatusCode, que separa una entrada lograda de un intento fallido. El
 # CASE se lleva treinta caracteres de esas filas y de ninguna otra.
 CONSULTA = """
-SELECT UserMail, Module, RequestDate, RequestIp,
+SELECT RegisterId, UserMail, Module, RequestDate, RequestIp,
        CASE WHEN Module = 'login' THEN LEFT(Body, 40) END AS estado
 FROM dbo.SystemLogs
 WHERE RequestDate >= ? AND RequestDate < ?
 ORDER BY UserMail, RequestDate
 """
+
+# Hay filas de login sin correo: intentos donde no se llego a identificar a nadie.
+# Se guardan bajo este nombre en vez de como cadena vacia, para que en el informe
+# se vean como lo que son y no se confundan con una persona.
+SIN_NOMBRE = "(sin identificar)"
 
 
 class Sesion:
@@ -178,7 +183,7 @@ def leer_y_resumir(cn_origen, desde, hasta):
         lote = cur.fetchmany(10000)
         if not lote:
             break
-        for usuario, modulo, momento, ip, estado in lote:
+        for registro, usuario, modulo, momento, ip, estado in lote:
             filas += 1
             if filas >= siguiente_aviso:
                 siguiente_aviso += AVISO_CADA
@@ -187,6 +192,9 @@ def leer_y_resumir(cn_origen, desde, hasta):
                          "{:,}".format(filas), int(transcurrido),
                          int(filas / max(1, transcurrido)))
             usuario = (usuario or "").strip()[:200]
+            identificado = bool(usuario)
+            if not identificado:
+                usuario = SIN_NOMBRE
             modulo = (modulo or "").strip()[:200]
             fecha = local(momento).date()
 
@@ -218,18 +226,25 @@ def leer_y_resumir(cn_origen, desde, hasta):
                     if m:
                         codigo = int(m.group(1))
                 momento_local = local(momento)
-                logins.append((usuario, momento, momento_local.date(),
+                logins.append((registro, usuario, momento, momento_local.date(),
                                momento_local.time().replace(microsecond=0),
                                (ip or "")[:64] or None, codigo,
-                               int(codigo == 200) if codigo is not None else 0))
+                               int(codigo == 200) if codigo is not None else 0,
+                               int(identificado)))
 
-            if (abierta is None or abierta.usuario != usuario
-                    or momento - abierta.fin > HUECO):
-                if abierta is not None:
-                    sesiones.append(abierta.fila())
-                abierta = Sesion(usuario, momento, modulo)
-            else:
-                abierta.sumar(momento, modulo)
+            # Las filas sin correo no entran en las sesiones. Una sesion es el rato
+            # que una PERSONA estuvo dentro, y aqui no se sabe de quien es cada
+            # fila: tratarlas como un solo usuario juntaria accesos de gente
+            # distinta en una sesion inventada. Como login si cuentan, porque ahi
+            # el dato es el intento en si.
+            if identificado:
+                if (abierta is None or abierta.usuario != usuario
+                        or momento - abierta.fin > HUECO):
+                    if abierta is not None:
+                        sesiones.append(abierta.fila())
+                    abierta = Sesion(usuario, momento, modulo)
+                else:
+                    abierta.sumar(momento, modulo)
 
     if abierta is not None:
         sesiones.append(abierta.fila())
@@ -264,8 +279,9 @@ def escribir(cn_destino, desde_fecha, hasta_fecha, filas_uso, logins, sesiones,
             " primera_utc, ultima_utc, ips) VALUES (?,?,?,?,?,?,?)", filas_uso)
     if logins:
         cur.executemany(
-            "INSERT INTO dbo.logins (usuario, momento_utc, fecha, hora_local,"
-            " ip, codigo, exitoso) VALUES (?,?,?,?,?,?,?)", logins)
+            "INSERT INTO dbo.logins (registro_id, usuario, momento_utc, fecha,"
+            " hora_local, ip, codigo, exitoso, identificado)"
+            " VALUES (?,?,?,?,?,?,?,?,?)", logins)
     if sesiones:
         cur.executemany(
             "INSERT INTO dbo.sesiones (usuario, inicio_utc, fin_utc, fecha,"

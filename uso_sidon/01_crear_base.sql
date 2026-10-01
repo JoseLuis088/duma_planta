@@ -98,22 +98,34 @@ GO
 
    `codigo` sale del StatusCode que viene en el Body de esa fila. Un codigo
    distinto de 200 es un intento fallido, que dice tanto del uso como los que
-   funcionan y conviene poder contarlos aparte. */
+   funcionan y conviene poder contarlos aparte.
+
+   LA LLAVE ES LA DEL ORIGEN. Se intento con (usuario, momento) y se rompio en la
+   primera corrida real: hay logins sin correo -intentos donde no se identifico a
+   nadie- y dos cayeron en el mismo segundo. RegisterId ya es unico en
+   dbo.SystemLogs, asi que no hay nada que inventar, y de paso cada login queda
+   rastreable hasta la fila exacta que lo origino. */
 IF OBJECT_ID(N'dbo.logins') IS NULL
 CREATE TABLE dbo.logins (
-    usuario      NVARCHAR(200) NOT NULL,
-    momento_utc  DATETIME2(0)  NOT NULL,
-    fecha        DATE          NOT NULL,
-    hora_local   TIME(0)       NOT NULL,
-    ip           NVARCHAR(64)  NULL,
-    codigo       INT           NULL,
-    exitoso      BIT           NOT NULL,
-    CONSTRAINT PK_logins PRIMARY KEY (usuario, momento_utc)
+    registro_id  UNIQUEIDENTIFIER NOT NULL,
+    usuario      NVARCHAR(200)    NOT NULL,
+    momento_utc  DATETIME2(0)     NOT NULL,
+    fecha        DATE             NOT NULL,
+    hora_local   TIME(0)          NOT NULL,
+    ip           NVARCHAR(64)     NULL,
+    codigo       INT              NULL,
+    exitoso      BIT              NOT NULL,
+    identificado BIT              NOT NULL,
+    CONSTRAINT PK_logins PRIMARY KEY (registro_id)
 );
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_logins_fecha')
 CREATE INDEX IX_logins_fecha ON dbo.logins (fecha) INCLUDE (usuario, exitoso);
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_logins_usuario')
+CREATE INDEX IX_logins_usuario ON dbo.logins (usuario, momento_utc);
 GO
 
 /* Sesiones: tramos de actividad continua, cortados donde hay mas de 30 minutos
