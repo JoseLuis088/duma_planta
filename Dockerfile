@@ -30,6 +30,10 @@ COPY ["System prompt.txt", "."]
 # primer despliegue salio asi y solo se vio revisando los logs del contenedor.
 COPY indexar_manual.py .
 COPY manuales ./manuales
+# El ETL del uso de Sidon. Corre dentro de este contenedor porque aqui ya estan
+# el driver de ODBC y las credenciales de las dos bases; levantar otro contenedor
+# solo para esto seria mantener un entorno mas sin ganar nada.
+COPY uso_sidon ./uso_sidon
 
 EXPOSE 8000
 
