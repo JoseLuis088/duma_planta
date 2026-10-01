@@ -113,12 +113,28 @@ def conectar_destino():
 # que tiene a cualquier consulta esperando minutos- pero en las filas de login
 # trae el StatusCode, que separa una entrada lograda de un intento fallido. El
 # CASE se lleva treinta caracteres de esas filas y de ninguna otra.
+# Las tres columnas de texto del origen son nvarchar(max), y eso no es solo un
+# problema de indices: SQL Server las trata como objetos grandes, asi que ordenar
+# dos millones de filas que las arrastran es carisimo. La primera corrida tardo 43
+# minutos y la segunda paso de una hora sin devolver ni una fila.
+#
+# El CAST las acota ANTES de ordenar. Los datos no cambian -ningun correo mide 200
+# caracteres, ninguna IP mide 64- pero el servidor pasa a ordenar filas compactas
+# de ancho fijo en vez de arrastrar objetos grandes. Es la misma leccion que nos
+# dio esta tabla, aplicada a la consulta porque el diseno no lo podemos tocar.
+#
+# El ORDER BY repite el CAST a proposito: ordenar por la columna original volveria
+# a meter el objeto grande en la ordenacion y no habriamos ganado nada.
 CONSULTA = """
-SELECT RegisterId, UserMail, Module, RequestDate, RequestIp,
-       CASE WHEN Module = 'login' THEN LEFT(Body, 40) END AS estado
+SELECT RegisterId,
+       CAST(UserMail  AS NVARCHAR(200)) AS UserMail,
+       CAST(Module    AS NVARCHAR(200)) AS Module,
+       RequestDate,
+       CAST(RequestIp AS NVARCHAR(64))  AS RequestIp,
+       CASE WHEN Module = 'login' THEN CAST(LEFT(Body, 40) AS NVARCHAR(40)) END AS estado
 FROM dbo.SystemLogs
 WHERE RequestDate >= ? AND RequestDate < ?
-ORDER BY UserMail, RequestDate
+ORDER BY CAST(UserMail AS NVARCHAR(200)), RequestDate
 """
 
 # Hay filas de login sin correo: intentos donde no se llego a identificar a nadie.
