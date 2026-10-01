@@ -300,21 +300,34 @@ def marca_anterior(cn_destino):
 
 # ---------------------------------------------------------------------------
 
+def dia_local_a_utc(texto):
+    """Una fecha AAAA-MM-DD, escrita en hora de planta, como instante UTC.
+
+    Que sea local y no UTC importa: el resumen agrupa por dia local, asi que una
+    ventana expresada en UTC caeria a caballo entre dos dias de planta y los
+    escribiria los dos a medias. Con el desfase de -6, pedir '2026-09-30' en UTC
+    seria en realidad desde las seis de la tarde del 29.
+    """
+    d = dt.datetime.strptime(texto, "%Y-%m-%d").date()
+    return (dt.datetime.combine(d, dt.time.min, tzinfo=ZONA)
+            .astimezone(dt.timezone.utc).replace(tzinfo=None))
+
+
 def corte_de_hoy():
     """El inicio del dia local de hoy, en UTC.
 
     No se procesa el dia en curso: quedaria a medias y manana habria que
     reescribirlo. El informe mira hasta ayer.
     """
-    hoy = dt.datetime.now(ZONA).date()
-    inicio = dt.datetime.combine(hoy, dt.time.min, tzinfo=ZONA)
-    return inicio.astimezone(dt.timezone.utc).replace(tzinfo=None)
+    return dia_local_a_utc(dt.datetime.now(ZONA).date().isoformat())
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Resume el uso de Sidon Industrial.")
-    p.add_argument("--desde", help="AAAA-MM-DD. Obligatorio la primera vez.")
-    p.add_argument("--hasta", help="AAAA-MM-DD exclusivo. Por omision, hoy.")
+    p.add_argument("--desde", help="AAAA-MM-DD en hora de planta."
+                                   " Obligatorio la primera vez.")
+    p.add_argument("--hasta", help="AAAA-MM-DD en hora de planta, exclusivo."
+                                   " Por omision, el inicio de hoy.")
     p.add_argument("--dias", type=int, default=400,
                    help="Tamano del bloque. El relleno historico cabe en uno"
                         " solo: sin indice en el origen, dos bloques cuestan dos"
@@ -328,13 +341,14 @@ def main(argv=None):
     global ZONA
     ZONA = _zona()
 
-    hasta = (dt.datetime.strptime(a.hasta, "%Y-%m-%d") if a.hasta
-             else corte_de_hoy())
+    # Las dos fechas se escriben en hora de planta, que es como se piensan, y se
+    # convierten aqui. La marca guardada ya viene en UTC.
+    hasta = dia_local_a_utc(a.hasta) if a.hasta else corte_de_hoy()
 
     cn_destino = conectar_destino()
     desde = marca_anterior(cn_destino)
     if a.desde:
-        desde = dt.datetime.strptime(a.desde, "%Y-%m-%d")
+        desde = dia_local_a_utc(a.desde)
     if desde is None:
         log.error("Primera corrida: hay que decir desde cuando, con --desde.")
         return 2

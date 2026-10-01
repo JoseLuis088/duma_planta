@@ -178,3 +178,26 @@ def test_sin_filas_no_inventa_nada():
     uso, logins, sesiones, cuentas, filas = resumir([])
     assert (uso, logins, sesiones, filas) == ([], [], [], 0)
     assert cuentas == {}
+
+
+def test_las_fechas_de_la_linea_de_comandos_son_hora_de_planta():
+    """`--desde 2026-09-30` es la medianoche DE PLANTA, no la de UTC.
+
+    Si se tomaran como UTC, la ventana caeria a caballo entre dos dias locales y
+    una corrida real escribiria los dos a medias: el 29 le faltarian las horas
+    de la manana y el 30 las de la tarde, sin que nada avisara.
+    """
+    inicio = etl.dia_local_a_utc("2026-09-30")
+    assert inicio == dt.datetime(2026, 9, 30, 6, 0)   # UTC-6
+    # Y de vuelta: ese instante es justo el arranque del dia 30 en planta.
+    assert etl.local(inicio).date() == dt.date(2026, 9, 30)
+    assert etl.local(inicio).time() == dt.time(0, 0)
+
+
+def test_una_ventana_de_un_dia_cubre_ese_dia_local_entero():
+    """Lo que de verdad importa: que el ultimo instante siga siendo el mismo dia."""
+    inicio = etl.dia_local_a_utc("2026-09-30")
+    fin = etl.dia_local_a_utc("2026-10-01")
+    assert (fin - inicio) == dt.timedelta(days=1)
+    ultimo = fin - dt.timedelta(seconds=1)
+    assert etl.local(inicio).date() == etl.local(ultimo).date() == dt.date(2026, 9, 30)
