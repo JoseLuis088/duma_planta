@@ -4575,8 +4575,8 @@
           usoVerPocoSub: "persona o dos entraron. Conviene revisar si al resto le hace falta algo.",
           usoVerNadieTit: "Nadie entró a la plataforma",
           usoVerNadieSub: "Ninguna persona usó Sidón Industrial en las fechas elegidas.",
-          usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. No se cuentan las cuentas automáticas del sistema, que trabajan solas todo el día.",
-          usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña para entrar. Una misma persona puede entrar varias veces al día. Si alguno falló, aparece en rojo.",
+          usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. Suele ser MAYOR que los inicios de sesión: quien ya estaba dentro sigue trabajando sin volver a escribir su contraseña. No se cuentan las cuentas automáticas del sistema.",
+          usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña. Suele ser MENOR que las personas activas, porque la sesión se queda abierta y no hace falta entrar de nuevo cada día. Si algún intento falló, la tarjeta se pone en rojo.",
           usoAyudaSesiones: "Un tramo de trabajo continuo. Se corta cuando alguien pasa más de media hora sin pedir nada. Ojo: mide el tiempo con la pantalla abierta, que no siempre es el tiempo trabajando.",
           usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo.",
           usoAyudaHumano: "Del total de peticiones que recibe Sidón, qué parte viene de una persona. El resto lo generan procesos automáticos que consultan solos. Mientras más alto, más gente lo está usando de verdad.",
@@ -4590,9 +4590,9 @@
           usoPideFecha: "Elige una fecha primero",
           usoCargando: "Consultando…",
           usoError: "No se pudo leer el resumen de uso",
-          usoKpiPersonas: "Personas que entraron",
-          usoKpiPersonasPie: "sin contar cuentas de sistema",
-          usoKpiEntradas: "Accesos al sistema",
+          usoKpiPersonas: "Personas activas",
+          usoKpiPersonasPie: "usaron el sistema ese día",
+          usoKpiEntradas: "Inicios de sesión",
           usoKpiFallidas: "fallidos",
           usoKpiSinFallos: "ninguno fallido",
           usoKpiSesiones: "Sesiones",
@@ -4600,8 +4600,8 @@
           usoKpiPantallasPie: "abiertas por personas",
           usoKpiHumano: "Tráfico humano",
           usoKpiHumanoPie: "el resto lo genera el sistema",
-          usoTitLogins: "Quién entró",
-          usoSubLogins: "Cada acceso al sistema, del más reciente al más antiguo",
+          usoTitLogins: "Quién usó la plataforma",
+          usoSubLogins: "Todas las personas con actividad, hayan iniciado sesión o no",
           usoTitPersonas: "Cuánto usó cada quien",
           usoSubPersonas: "Solo personas: las cuentas de sistema van aparte",
           usoTitRutas: "Dónde pasan el tiempo",
@@ -4614,7 +4614,10 @@
           usoThDia: "Día", usoThHora: "Hora", usoThIp: "Desde", usoThAcceso: "Acceso",
           usoThPeticiones: "Peticiones", usoThDias: "Días", usoThPantallas: "Pantallas",
           usoEntro: "Entró", usoFallo: "Falló",
-          usoSinLogins: "Nadie entró en esas fechas",
+          usoSinLogins: "Nadie usó el sistema en esas fechas",
+          usoEntroA: "entró a las",
+          usoYaEstaba: "ya estaba dentro",
+          usoDiasCorto: "días",
           usoSinPersonas: "Ninguna persona usó el sistema",
           usoSinRutas: "Sin actividad",
           usoSinMaquinas: "Sin tráfico de sistema",
@@ -4833,8 +4836,8 @@
           usoVerPocoSub: "person or two signed in. Worth checking whether the rest need anything.",
           usoVerNadieTit: "Nobody signed in",
           usoVerNadieSub: "No one used Sidón Industrial on the selected dates.",
-          usoAyudaPersonas: "How many different people used Sidón Industrial on the selected dates. Automatic system accounts, which run on their own all day, are not counted.",
-          usoAyudaEntradas: "Times someone typed their username and password to get in. The same person may sign in several times a day. Failed attempts show in red.",
+          usoAyudaPersonas: "How many different people used Sidón Industrial on the selected dates. Usually HIGHER than sign-ins: whoever was already inside keeps working without typing their password again. Automatic system accounts are not counted.",
+          usoAyudaEntradas: "Times someone typed their username and password. Usually LOWER than active people, because the session stays open and there is no need to sign in again every day. If an attempt failed, the card turns red.",
           usoAyudaSesiones: "A stretch of continuous work. It ends when someone goes more than half an hour without requesting anything. Note: it measures time with the screen open, which is not always time actually working.",
           usoAyudaPantallas: "How many different Sidón Industrial screens were opened. Many screens means the system is used in depth; few means people always go to the same place.",
           usoAyudaHumano: "Of all the requests Sidón receives, how many come from a person. The rest are generated by automatic processes polling on their own. The higher it is, the more people are really using it.",
@@ -4848,9 +4851,9 @@
           usoPideFecha: "Pick a date first",
           usoCargando: "Loading…",
           usoError: "Could not read the usage summary",
-          usoKpiPersonas: "People who signed in",
-          usoKpiPersonasPie: "system accounts excluded",
-          usoKpiEntradas: "Sign-ins",
+          usoKpiPersonas: "Active people",
+          usoKpiPersonasPie: "used the system that day",
+          usoKpiEntradas: "Sign-ins typed",
           usoKpiFallidas: "failed",
           usoKpiSinFallos: "none failed",
           usoKpiSesiones: "Sessions",
@@ -4858,8 +4861,8 @@
           usoKpiPantallasPie: "opened by people",
           usoKpiHumano: "Human traffic",
           usoKpiHumanoPie: "the rest is generated by the system",
-          usoTitLogins: "Who signed in",
-          usoSubLogins: "Every sign-in, most recent first",
+          usoTitLogins: "Who used the platform",
+          usoSubLogins: "Everyone with activity, whether they signed in or not",
           usoTitPersonas: "How much each person used it",
           usoSubPersonas: "People only: system accounts are listed separately",
           usoTitRutas: "Where they spend their time",
@@ -4872,7 +4875,10 @@
           usoThDia: "Day", usoThHora: "Time", usoThIp: "From", usoThAcceso: "Access",
           usoThPeticiones: "Requests", usoThDias: "Days", usoThPantallas: "Screens",
           usoEntro: "Signed in", usoFallo: "Failed",
-          usoSinLogins: "Nobody signed in on those dates",
+          usoSinLogins: "Nobody used the system on those dates",
+          usoEntroA: "signed in at",
+          usoYaEstaba: "was already inside",
+          usoDiasCorto: "days",
           usoSinPersonas: "No person used the system",
           usoSinRutas: "No activity",
           usoSinMaquinas: "No system traffic",
@@ -6015,36 +6021,49 @@
               pctHumano >= 30 ? USO_VERDE : (pctHumano >= 10 ? USO_AMBAR : USO_ROJO),
               { t: T("usoKpiHumano"), d: T("usoAyudaHumano") });
 
-        // --- Quien entro ------------------------------------------------------
-        // Tarjetas con inicial en vez de renglones: son personas, no registros.
+        // --- Quien uso la plataforma ------------------------------------------
+        // La lista sale de quien TUVO ACTIVIDAD, no de quien inicio sesion. Antes
+        // salia de los logins y la tarjeta decia "3 personas" mientras abajo solo
+        // aparecia una: las otras dos ya estaban dentro y no volvieron a entrar,
+        // asi que no tenian login que ensenar. Ahora aparecen todas, y de cada una
+        // se dice si entro ese dia o si venia de antes.
+        const loginDe = {};
+        logins.forEach(function (l) {
+          if (!loginDe[l.usuario] || l.hora < loginDe[l.usuario].hora) {
+            loginDe[l.usuario] = l;
+          }
+        });
+        // Alguien pudo iniciar sesion y no llegar a pedir nada mas: tambien cuenta.
+        const nombres = personas.map(function (p) { return p.usuario; });
+        Object.keys(loginDe).forEach(function (u) {
+          if (nombres.indexOf(u) === -1) nombres.push(u);
+        });
         const porPersona = {};
         personas.forEach(function (p) { porPersona[p.usuario] = p; });
-        const vistos = {};
-        const gente = [];
-        logins.forEach(function (l) {
-          const clave = l.usuario + "|" + l.fecha;
-          if (vistos[clave]) { vistos[clave].veces++; return; }
-          vistos[clave] = { l: l, veces: 1 };
-          gente.push(vistos[clave]);
-        });
 
-        el("usoGente").innerHTML = gente.length === 0
+        el("usoGente").innerHTML = nombres.length === 0
           ? '<p class="muted">' + T("usoSinLogins") + "</p>"
-          : gente.map(function (g) {
-              const l = g.l;
-              const p = porPersona[l.usuario] || {};
-              const col = l.identificado ? colorDe(l.usuario) : USO_GRIS;
-              const pet = p.peticiones ? p.peticiones.toLocaleString() : "—";
+          : nombres.map(function (u) {
+              const p = porPersona[u] || {};
+              const l = loginDe[u];
+              const anonimo = (u === "(sin identificar)");
+              const col = anonimo ? USO_GRIS : colorDe(u);
+              const pet = p.peticiones ? p.peticiones.toLocaleString() : "0";
+              let sub;
+              if (l && l.exitoso) {
+                sub = "🔑 " + T("usoEntroA") + " " + String(l.hora).slice(0, 5);
+              } else if (l) {
+                sub = "⚠️ " + T("usoFallo");
+              } else {
+                sub = "↩︎ " + T("usoYaEstaba");
+              }
+              if (p.dias > 1) sub += " · " + p.dias + " " + T("usoDiasCorto");
               return '<div class="uso-persona">'
                 + '<div class="uso-avatar" style="background:' + col + '">'
-                + escapar(l.identificado ? iniciales(l.usuario) : "··") + "</div>"
+                + escapar(anonimo ? "··" : iniciales(u)) + "</div>"
                 + '<div class="uso-persona-datos">'
-                + '<div class="uso-persona-nombre">' + escapar(l.usuario) + "</div>"
-                + '<div class="uso-persona-sub">' + escapar(l.fecha) + " · "
-                + escapar(String(l.hora).slice(0, 5))
-                + (g.veces > 1 ? " · " + g.veces + " " + T("usoVeces") : "")
-                + (l.exitoso ? "" : " · ⚠️ " + T("usoFallo"))
-                + "</div></div>"
+                + '<div class="uso-persona-nombre">' + escapar(u) + "</div>"
+                + '<div class="uso-persona-sub">' + sub + "</div></div>"
                 + '<div class="uso-persona-cifra"><b>' + pet + "</b>"
                 + "<span>" + T("usoPeticionesCorto") + "</span></div></div>";
             }).join("");
