@@ -4181,6 +4181,7 @@
               <label class="small muted" for="usoDay" id="usoLabelRange">Rango de Días:</label>
               <input id="usoDay" type="text" placeholder="Seleccione Rango de Fechas" />
               <button class="btn primary" id="btnGenUso">Consultar</button>
+              <button class="btn" id="btnDlUsoPdf" style="display:none; margin-left: 10px;">📄 Descargar PDF</button>
               <span class="small muted" id="usoInfo"></span>
             </div>
           </div>
@@ -4546,7 +4547,9 @@
           usoCardSub: "Quién entra a la plataforma, cuándo y a qué pantallas",
           usoLabelRange: "Rango de Días:",
           btnGenUso: "Consultar",
+          btnDlUsoPdf: "📄 Descargar PDF",
           usoPideFecha: "Elige una fecha primero",
+          usoPidePeriodo: "Consulta primero un periodo.",
           usoCargando: "Consultando…",
           usoError: "No se pudo leer el resumen de uso",
           usoKpiPersonas: "Personas activas",
@@ -4789,6 +4792,7 @@
         // pintar aparte, porque sale de los datos y no de este diccionario.
         [
           "menuLabelUso", "usoCardTitle", "usoCardSub", "usoLabelRange", "btnGenUso",
+          "btnDlUsoPdf",
           "usoTitLogins", "usoSubLogins", "usoTitPersonas", "usoSubPersonas",
           "usoTitRutas", "usoSubRutas", "usoTitHoras", "usoSubHoras",
           "usoTitMaquinas", "usoSubMaquinas",
@@ -5199,6 +5203,12 @@
         el("btnAiCV").style.display = "none";
         el("btnDlCvPdf").style.display = "none";
         clearCVKpis();
+
+        el("usoInfo").textContent = "";
+        el("usoCuerpo").style.display = "none";
+        el("usoVacio").style.display = "none";
+        el("btnDlUsoPdf").style.display = "none";
+        lastUsoVista = null;
 
         el("oeeRtInfo").textContent = "";
         el("oeeRtKpis").style.display = "none";
@@ -5625,6 +5635,12 @@
 
       let usoGraficaDona = null, usoGraficaHoras = null;
 
+      // Lo que pintarUso() ya calculo, guardado para el PDF. El reporte no vuelve
+      // a sacar cuentas: transcribe lo que el directivo tiene enfrente. Si alguna
+      // regla del tablero cambia -el semaforo, el minimo de sesiones para dar
+      // porcentajes- el PDF la sigue sola, porque es la misma cuenta.
+      let lastUsoVista = null, lastUsoDesde = "", lastUsoHasta = "";
+
       async function consultarUso() {
         const campo = el("usoDay").value || "";
         const partes = campo.split(" to ");
@@ -5638,6 +5654,7 @@
         const btn = el("btnGenUso");
         btn.disabled = true;
         el("usoInfo").textContent = T("usoCargando");
+        el("btnDlUsoPdf").style.display = "none";
         try {
           // Sin barra inicial: el fetch envuelto de arriba le antepone la ruta
           // base, que detras del proxy de Sidon no es la raiz.
@@ -5652,6 +5669,11 @@
             return;
           }
           pintarUso(d);
+          lastUsoDesde = desde;
+          lastUsoHasta = hasta;
+          // pintarUso deja lastUsoVista en null cuando no hubo nada que pintar:
+          // sin eso el boton ofreceria descargar una hoja vacia.
+          el("btnDlUsoPdf").style.display = lastUsoVista ? "" : "none";
           el("usoInfo").textContent = "";
         } catch (e) {
           el("usoInfo").textContent = T("usoError");
@@ -5661,6 +5683,7 @@
       }
 
       function pintarUso(d) {
+        lastUsoVista = null;
         const k = d.kpis || {};
         const hayAlgo = (k.peticiones_personas || 0) > 0 || (d.logins || []).length > 0;
         el("usoCuerpo").style.display = hayAlgo ? "" : "none";
@@ -5701,24 +5724,33 @@
 
         // --- Indicadores ------------------------------------------------------
         const fallidos = k.entradas_fallidas || 0;
-        el("usoKpiRow").innerHTML =
-            tarjetaUso("👥", T("usoKpiPersonas"), personas.length,
-              T("usoKpiPersonasPie"),
-              personas.length > 2 ? USO_VERDE : (personas.length > 0 ? USO_AMBAR : USO_ROJO),
-              { t: T("usoKpiPersonas"), d: T("usoAyudaPersonas") })
-          + tarjetaUso("🔑", T("usoKpiEntradas"), k.entradas || 0,
-              fallidos > 0 ? fallidos + " " + T("usoKpiFallidas") : T("usoKpiSinFallos"),
-              fallidos > 0 ? USO_ROJO : USO_VERDE,
-              { t: T("usoKpiEntradas"), d: T("usoAyudaEntradas") })
-          + tarjetaUso("⏱️", T("usoKpiSesiones"), k.sesiones || 0, tiempo, USO_GRIS,
-              { t: T("usoKpiSesiones"), d: T("usoAyudaSesiones") })
-          + tarjetaUso("🖥️", T("usoKpiPantallas"), k.pantallas || 0,
-              T("usoKpiPantallasPie"), USO_GRIS,
-              { t: T("usoKpiPantallas"), d: T("usoAyudaPantallas") })
-          + tarjetaUso("⚖️", T("usoKpiHumano"), pctHumano + "%",
-              T("usoKpiHumanoPie"),
-              pctHumano >= 30 ? USO_VERDE : (pctHumano >= 10 ? USO_AMBAR : USO_ROJO),
-              { t: T("usoKpiHumano"), d: T("usoAyudaHumano") });
+        // Las tarjetas se declaran una vez y de ahi salen las dos cosas: el HTML
+        // de la pantalla y las cifras del PDF. Escritas dos veces bastaria tocar
+        // una para que el papel y el tablero dejaran de decir lo mismo.
+        const tarjetas = [
+          { icono: "👥", label: T("usoKpiPersonas"), value: personas.length,
+            status: T("usoKpiPersonasPie"), ayuda: T("usoAyudaPersonas"),
+            color: personas.length > 2 ? USO_VERDE
+                 : (personas.length > 0 ? USO_AMBAR : USO_ROJO) },
+          { icono: "🔑", label: T("usoKpiEntradas"), value: k.entradas || 0,
+            status: fallidos > 0 ? fallidos + " " + T("usoKpiFallidas")
+                                 : T("usoKpiSinFallos"),
+            ayuda: T("usoAyudaEntradas"),
+            color: fallidos > 0 ? USO_ROJO : USO_VERDE },
+          { icono: "⏱️", label: T("usoKpiSesiones"), value: k.sesiones || 0,
+            status: tiempo, ayuda: T("usoAyudaSesiones"), color: USO_GRIS },
+          { icono: "🖥️", label: T("usoKpiPantallas"), value: k.pantallas || 0,
+            status: T("usoKpiPantallasPie"), ayuda: T("usoAyudaPantallas"),
+            color: USO_GRIS },
+          { icono: "⚖️", label: T("usoKpiHumano"), value: pctHumano + "%",
+            status: T("usoKpiHumanoPie"), ayuda: T("usoAyudaHumano"),
+            color: pctHumano >= 30 ? USO_VERDE
+                 : (pctHumano >= 10 ? USO_AMBAR : USO_ROJO) }
+        ];
+        el("usoKpiRow").innerHTML = tarjetas.map(function (t) {
+          return tarjetaUso(t.icono, t.label, t.value, t.status, t.color,
+                            { t: t.label, d: t.ayuda });
+        }).join("");
 
         // --- Quien uso la plataforma ------------------------------------------
         // La lista sale de quien TUVO ACTIVIDAD, no de quien inicio sesion. Antes
@@ -5740,6 +5772,10 @@
         const porPersona = {};
         personas.forEach(function (p) { porPersona[p.usuario] = p; });
 
+        // Se va juntando la misma lista en texto plano, sin iconos, para el PDF:
+        // Helvetica no tiene emojis y un candado ahi sale como cuadrito negro.
+        const genteDatos = [];
+
         el("usoGente").innerHTML = nombres.length === 0
           ? '<p class="muted">' + T("usoSinLogins") + "</p>"
           : nombres.map(function (u) {
@@ -5748,14 +5784,21 @@
               const anonimo = (u === "(sin identificar)");
               const col = anonimo ? USO_GRIS : colorDe(u);
               const pet = p.peticiones ? p.peticiones.toLocaleString() : "0";
-              let sub;
+              let icono, estado;
               if (l && l.exitoso) {
-                sub = "🔑 " + T("usoEntroA") + " " + String(l.hora).slice(0, 5);
+                icono = "🔑"; estado = T("usoEntroA") + " " + String(l.hora).slice(0, 5);
               } else if (l) {
-                sub = "⚠️ " + T("usoFallo");
+                icono = "⚠️"; estado = T("usoFallo");
               } else {
-                sub = "↩︎ " + T("usoYaEstaba");
+                icono = "↩︎"; estado = T("usoYaEstaba");
               }
+              genteDatos.push({
+                nombre: u,
+                estado: estado.charAt(0).toUpperCase() + estado.slice(1),
+                peticiones: p.peticiones || 0,
+                dias: p.dias || 1
+              });
+              let sub = icono + " " + estado;
               if (p.dias > 1) sub += " · " + p.dias + " " + T("usoDiasCorto");
               return '<div class="uso-persona">'
                 + '<div class="uso-avatar" style="background:' + col + '">'
@@ -5808,8 +5851,10 @@
         // --- Areas ------------------------------------------------------------
         const areas = d.areas || [];
         const totalA = areas.reduce(function (a, b) { return a + (b.peticiones || 0); }, 0);
+        const areasDatos = [];
         el("usoAreas").innerHTML = areas.map(function (a) {
           const pct = totalA > 0 ? Math.round((a.peticiones / totalA) * 100) : 0;
+          areasDatos.push({ area: a.area, pct: pct, peticiones: a.peticiones || 0 });
           return '<div class="uso-area"><div class="uso-area-nom">'
                + escapar(a.area) + "</div>"
                + '<div class="uso-area-val">' + pct + "%</div>"
@@ -5820,10 +5865,13 @@
         // --- Pantallas --------------------------------------------------------
         const rutas = d.rutas || [];
         const topeR = rutas.length ? (rutas[0].peticiones || 1) : 1;
+        const pantallasDatos = [];
         el("usoRutas").innerHTML = rutas.length === 0
           ? '<p class="muted">' + T("usoSinRutas") + "</p>"
           : rutas.map(function (r) {
               const ancho = Math.max(2, Math.round((r.peticiones / topeR) * 100));
+              pantallasDatos.push({ nombre: r.nombre, peticiones: r.peticiones || 0,
+                                    nombrada: !!r.traducida });
               return '<div><div class="uso-pantalla-cab">'
                 + "<span>" + (r.icono || "📄") + "</span>"
                 + '<span class="uso-pantalla-nom' + (r.traducida ? "" : " uso-sin-nombre") + '">'
@@ -5901,6 +5949,7 @@
         const MINIMO_PARA_PORCENTAJE = 10;
         const bastantes = totalSes >= MINIMO_PARA_PORCENTAJE;
 
+        const turnosDatos = [];
         el("usoTurnos").innerHTML = turnos.map(function (t) {
           let n = 0;
           for (let h = 0; h < 24; h++) {
@@ -5910,6 +5959,9 @@
             if (dentro) n += ph[h] || 0;
           }
           const pct = totalSes > 0 ? Math.round((n / totalSes) * 100) : 0;
+          // pct en null cuando hay pocas sesiones: el PDF se calla el porcentaje
+          // exactamente igual que la pantalla, en vez de inventar precision.
+          turnosDatos.push({ etiqueta: t.etq, sesiones: n, pct: bastantes ? pct : null });
           return '<div class="uso-turno"><div class="uso-turno-nom">'
                + escapar(t.etq) + "</div>"
                + '<div class="uso-turno-val" style="color:'
@@ -5932,6 +5984,24 @@
           ? T("usoPieAlDia") + " "
             + String(etl.procesado_hasta_utc).slice(0, 16).replace("T", " ") + " UTC"
           : T("usoPieSinCorrer");
+
+        // --- Lo mismo, guardado para el PDF -------------------------------------
+        // Ni una cuenta nueva: todo esto ya se calculo arriba para pintarlo.
+        lastUsoVista = {
+          veredicto: { titulo: titulo, detalle: detalle },
+          tarjetas: tarjetas.map(function (t) {
+            return { label: t.label, value: String(t.value), status: t.status };
+          }),
+          gente: genteDatos,
+          areas: areasDatos,
+          pantallas: pantallasDatos,
+          turnos: turnosDatos,
+          turnos_nota: el("usoTurnosNota").textContent || "",
+          maquinas: maq.map(function (m) {
+            return { usuario: m.usuario, peticiones: m.peticiones || 0 };
+          }),
+          al_dia: el("usoPie").textContent || ""
+        };
       }
 
       // La explicacion de la cabecera de horas se pone una vez: no depende de los
@@ -5945,6 +6015,43 @@
       })();
 
       el("btnGenUso").addEventListener("click", consultarUso);
+
+      // Descarga del PDF, igual que en Variables de Control y OEE: se captura la
+      // fila de tarjetas tal como se ve -con su color y su emoji- y se manda junto
+      // con las cifras ya calculadas. Si la captura falla, el backend cae a
+      // dibujar las tarjetas el mismo y el reporte sale de todos modos.
+      el("btnDlUsoPdf")?.addEventListener("click", async () => {
+        if (!lastUsoVista) return alert(T("usoPidePeriodo"));
+        setBtnBusy("btnDlUsoPdf", true, "Capturando...");
+        try {
+          let kpiSnapshot = null;
+          const fila = el("usoKpiRow");
+          if (fila) {
+            try {
+              const canvas = await html2canvas(fila, {
+                scale: 1.2, backgroundColor: "#ffffff",
+                // Los "?" de ayuda fuera: en papel no se les puede pasar el raton,
+                // asi que solo serian circulitos sin sentido.
+                ignoreElements: function (n) {
+                  return n.classList && n.classList.contains("uso-ayuda");
+                }
+              });
+              kpiSnapshot = canvas.toDataURL("image/jpeg", 0.7);
+            } catch (e) { console.error("Error capturando tarjetas de uso:", e); }
+          }
+          const nombre = (lastUsoDesde === lastUsoHasta)
+            ? `uso_sidon_${lastUsoDesde}.pdf`
+            : `uso_sidon_${lastUsoDesde}_a_${lastUsoHasta}.pdf`;
+          await downloadFrom("api/report/uso/", nombre, {
+            desde: lastUsoDesde,
+            hasta: lastUsoHasta,
+            vista: lastUsoVista,
+            kpi_snapshot: kpiSnapshot
+          });
+        } finally {
+          setBtnBusy("btnDlUsoPdf", false);
+        }
+      });
 
       function renderOeeDayPlots(plots) {
         const grid = el("oeeDayGrid");
