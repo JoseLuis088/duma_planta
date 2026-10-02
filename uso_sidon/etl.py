@@ -127,8 +127,10 @@ def conectar_destino():
 # a meter el objeto grande en la ordenacion y no habriamos ganado nada.
 CONSULTA = """
 SELECT RegisterId,
+       UserId,
        CAST(UserMail  AS NVARCHAR(200)) AS UserMail,
        CAST(Module    AS NVARCHAR(200)) AS Module,
+       CAST(Route     AS NVARCHAR(300)) AS Route,
        RequestDate,
        CAST(RequestIp AS NVARCHAR(64))  AS RequestIp,
        CASE WHEN Module = 'login' THEN CAST(LEFT(Body, 40) AS NVARCHAR(40)) END AS estado
@@ -136,6 +138,22 @@ FROM dbo.SystemLogs
 WHERE RequestDate >= ? AND RequestDate < ?
 ORDER BY CAST(UserMail AS NVARCHAR(200)), RequestDate
 """
+
+# Las rutas traen identificadores: GET /api/productionLines/a1a5d0ea-edb4-...
+# Agrupar por la ruta cruda daria una fila por recurso -miles- en vez de una por
+# pantalla. Se sustituyen por {id} para que queden unas pocas decenas de rutas
+# legibles, que es lo que el tablero necesita ensenar.
+#
+# Hace falta porque Module no sirve: la mitad de sus valores SON los GUIDs.
+_RE_GUID = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{6,14}", re.I)
+_RE_NUMERO = re.compile(r"/\d+(?=/|$)")
+
+
+def normalizar_ruta(ruta):
+    """La ruta sin sus identificadores, para poder agrupar por pantalla."""
+    limpia = _RE_GUID.sub("{id}", (ruta or "").strip())
+    return _RE_NUMERO.sub("/{n}", limpia)[:300]
 
 # Hay filas de login sin correo: intentos donde no se llego a identificar a nadie.
 # Se guardan bajo este nombre en vez de como cadena vacia, para que en el informe
@@ -178,10 +196,16 @@ def leer_y_resumir(cn_origen, desde, hasta):
     y momento, asi que las sesiones se cierran sobre la marcha y en memoria no
     vive mas que la sesion en curso.
     """
-    uso = {}          # (fecha, usuario, modulo) -> [peticiones, primera, ultima, ips]
+    uso = {}          # (fecha, usuario, modulo, ruta) -> [peticiones, 1a, ultima, ips]
     logins = []
     sesiones = []
     cuentas = {}      # usuario -> [primer dia visto, ultimo dia visto]
+    # UserId -> correo, armado con las filas que traen los dos. Sirve para poner
+    # nombre a los logins, que casi nunca lo traen: en el momento del POST de
+    # login el sistema todavia no sabe quien eres -se lo estas preguntando- asi
+    # que escribe la fila sin correo. El mismo UserId si aparece con correo en
+    # las miles de peticiones ya autenticadas de esa persona.
+    correo_de = {}
     abierta = None
     filas = 0
 
@@ -208,7 +232,8 @@ def leer_y_resumir(cn_origen, desde, hasta):
         lote = cur.fetchmany(10000)
         if not lote:
             break
-        for registro, usuario, modulo, momento, ip, estado in lote:
+        for (registro, usuario_id, usuario, modulo, ruta,
+             momento, ip, estado) in lote:
             filas += 1
             if filas >= siguiente_aviso:
                 siguiente_aviso += AVISO_CADA
@@ -220,10 +245,13 @@ def leer_y_resumir(cn_origen, desde, hasta):
             identificado = bool(usuario)
             if not identificado:
                 usuario = SIN_NOMBRE
+            elif usuario_id is not None:
+                correo_de.setdefault(usuario_id, usuario)
             modulo = (modulo or "").strip()[:200]
+            ruta = normalizar_ruta(ruta)
             fecha = local(momento).date()
 
-            clave = (fecha, usuario, modulo)
+            clave = (fecha, usuario, modulo, ruta)
             fila = uso.get(clave)
             if fila is None:
                 uso[clave] = [1, momento, momento, {ip}]
@@ -251,11 +279,15 @@ def leer_y_resumir(cn_origen, desde, hasta):
                     if m:
                         codigo = int(m.group(1))
                 momento_local = local(momento)
-                logins.append((registro, usuario, momento, momento_local.date(),
+                # Lista y no tupla: al terminar la pasada se les pone nombre a los
+                # que no lo traian, usando el mapa de UserId que para entonces ya
+                # esta completo.
+                logins.append([registro, usuario_id, usuario, momento,
+                               momento_local.date(),
                                momento_local.time().replace(microsecond=0),
                                (ip or "")[:64] or None, codigo,
                                int(codigo == 200) if codigo is not None else 0,
-                               int(identificado)))
+                               int(identificado)])
 
             # Las filas sin correo no entran en las sesiones. Una sesion es el rato
             # que una PERSONA estuvo dentro, y aqui no se sabe de quien es cada
@@ -274,9 +306,24 @@ def leer_y_resumir(cn_origen, desde, hasta):
     if abierta is not None:
         sesiones.append(abierta.fila())
 
-    filas_uso = [(f, u, m, v[0], v[1], v[2], len(v[3]))
-                 for (f, u, m), v in uso.items()]
-    return filas_uso, logins, sesiones, cuentas, filas
+    # Ponerle nombre a los logins anonimos. Solo ahora se puede: el mapa se llena
+    # con las peticiones autenticadas, que en el orden por correo llegan DESPUES
+    # de las filas sin correo. Hacerlo al vuelo no funcionaria.
+    puestos = 0
+    for entrada in logins:
+        if not entrada[9] and entrada[1] is not None:
+            correo = correo_de.get(entrada[1])
+            if correo:
+                entrada[2] = correo
+                entrada[9] = 1
+                puestos += 1
+    if logins:
+        log.info("   logins: %d de %d quedaron con nombre (%d por el UserId)",
+                 sum(1 for e in logins if e[9]), len(logins), puestos)
+
+    filas_uso = [(f, u, m, r, v[0], v[1], v[2], len(v[3]))
+                 for (f, u, m, r), v in uso.items()]
+    return filas_uso, [tuple(e) for e in logins], sesiones, cuentas, filas
 
 
 # ---------------------------------------------------------------------------
@@ -300,13 +347,14 @@ def escribir(cn_destino, desde_fecha, hasta_fecha, filas_uso, logins, sesiones,
 
     if filas_uso:
         cur.executemany(
-            "INSERT INTO dbo.uso_diario (fecha, usuario, modulo, peticiones,"
-            " primera_utc, ultima_utc, ips) VALUES (?,?,?,?,?,?,?)", filas_uso)
+            "INSERT INTO dbo.uso_diario (fecha, usuario, modulo, ruta,"
+            " peticiones, primera_utc, ultima_utc, ips)"
+            " VALUES (?,?,?,?,?,?,?,?)", filas_uso)
     if logins:
         cur.executemany(
-            "INSERT INTO dbo.logins (registro_id, usuario, momento_utc, fecha,"
-            " hora_local, ip, codigo, exitoso, identificado)"
-            " VALUES (?,?,?,?,?,?,?,?,?)", logins)
+            "INSERT INTO dbo.logins (registro_id, usuario_id, usuario,"
+            " momento_utc, fecha, hora_local, ip, codigo, exitoso, identificado)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)", logins)
     if sesiones:
         cur.executemany(
             "INSERT INTO dbo.sesiones (usuario, inicio_utc, fin_utc, fecha,"
