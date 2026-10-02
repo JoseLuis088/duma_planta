@@ -61,6 +61,19 @@ def main(argv=None):
 
     fecha = dt.datetime.strptime(a.dia, "%Y-%m-%d").date()
 
+    # Un dia que todavia no termina no se puede comparar: el sistema sigue
+    # escribiendo entre que el ETL lee y esta consulta cuenta, asi que el origen
+    # siempre tendra algunas filas de mas. Se midio: con tres minutos de diferencia
+    # sobraban 7, con segundos sobraba 1. No es un defecto, es que el dia esta vivo.
+    hoy = dt.datetime.now(etl.ZONA).date()
+    if fecha >= hoy:
+        print("")
+        print("AVISO: el %s todavia no termina en planta (hoy es %s)."
+              % (fecha, hoy))
+        print("El origen va a tener filas de mas, las que se escriban mientras")
+        print("comparamos. Para una comprobacion limpia, usa un dia ya cerrado.")
+        print("")
+
     # La ventana en UTC que corresponde a ese dia LOCAL. Calcularla igual que el
     # ETL es la mitad del valor de la prueba: si el huso estuviera mal en los dos
     # sitios, cuadrarian igual y no nos enterariamos. Por eso abajo se imprime
