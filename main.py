@@ -6494,6 +6494,217 @@ async def api_control_variables_day(payload: dict):
 
 
 
+# ---------------------------------------------------------------------------
+# Usabilidad de Sidon Industrial
+#
+# Lee Sidon_Uso, que llena el ETL de uso_sidon/ cada madrugada. NO lee la tabla
+# de origen: alli una sola consulta tardaba cincuenta minutos, y de eso trata
+# todo este modulo. Aqui las tablas son chicas y estan indexadas, asi que el
+# tablero responde al instante.
+# ---------------------------------------------------------------------------
+
+USO_SERVER = os.getenv("USO_SQL_SERVER", HISTORY_SERVER)
+USO_DB     = os.getenv("USO_SQL_DB", "Sidon_Uso")
+USO_USER   = os.getenv("USO_SQL_USER", "")
+USO_PASS   = os.getenv("USO_SQL_PASS", "")
+
+USO_CONN_STR = (
+    f"DRIVER={{{SQL_DRIVER}}};"
+    f"SERVER={USO_SERVER};"
+    f"DATABASE={USO_DB};"
+    f"UID={USO_USER};"
+    f"PWD={USO_PASS};"
+    "Encrypt=no;"
+    "TrustServerCertificate=yes;"
+    "Connect Timeout=15;"
+)
+
+
+def run_uso_sql(sql: str, params=()):
+    """Un SELECT contra Sidon_Uso. Devuelve una lista de diccionarios."""
+    with pyodbc.connect(USO_CONN_STR, timeout=15) as cn:
+        cur = cn.cursor()
+        cur.execute(sql, *params)
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, f)) for f in cur.fetchall()]
+
+
+@app.post("/api/uso/resumen/")
+async def api_uso_resumen(payload: dict):
+    """
+    Todo lo que el tablero de usabilidad ensena, para un dia o un rango.
+
+    Va en una sola llamada y no en cinco porque las cinco consultas juntas tardan
+    menos que una vuelta de red: las tablas tienen cientos de filas, no millones.
+
+    Las cuentas de sistema se separan SIEMPRE. Sin eso las cifras no dicen nada
+    del uso humano: `monitor@` y `sidon@` generaron el 86% del trafico del dia que
+    medimos, pegandole a la misma ruta en bucle.
+    """
+    desde = normalize_day_str(payload.get("desde") or payload.get("day") or "")
+    hasta = normalize_day_str(payload.get("hasta") or "") or desde
+    if not desde:
+        return JSONResponse({"error": "falta la fecha"}, status_code=400)
+    if hasta < desde:
+        desde, hasta = hasta, desde
+
+    rango = (desde, hasta)
+    try:
+        # Quien entro, a que hora y desde donde. El dato que pidieron.
+        logins = run_uso_sql("""
+            SELECT l.usuario, l.fecha, CONVERT(VARCHAR(8), l.hora_local) AS hora,
+                   l.ip, l.exitoso, l.identificado, l.codigo,
+                   ISNULL(c.es_persona, 1) AS es_persona
+            FROM dbo.logins l
+            LEFT JOIN dbo.cuentas c ON c.usuario = l.usuario
+            WHERE l.fecha >= ? AND l.fecha <= ?
+            ORDER BY l.fecha DESC, l.hora_local DESC""", rango)
+
+        # Una fila por persona: cuanto uso, cuando empezo y acabo, y donde estuvo.
+        personas = run_uso_sql("""
+            SELECT u.usuario,
+                   SUM(u.peticiones) AS peticiones,
+                   COUNT(DISTINCT u.fecha) AS dias,
+                   COUNT(DISTINCT u.ruta) AS rutas,
+                   MIN(u.primera_utc) AS primera_utc,
+                   MAX(u.ultima_utc) AS ultima_utc
+            FROM dbo.uso_diario u
+            JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
+            WHERE u.fecha >= ? AND u.fecha <= ?
+            GROUP BY u.usuario
+            ORDER BY peticiones DESC""", rango)
+
+        # Que pantallas se usan. Por ruta y no por modulo: la mitad de los valores
+        # de Module son GUIDs, asi que como nombre de pantalla no sirven.
+        #
+        # El nombre sale de dbo.pantallas, que traduce el endpoint a como se llama
+        # la pantalla en el menu de Sidon. Lo que no este traducido se ensena con
+        # su ruta cruda: feo, pero mejor que inventarle un nombre. Se agrupa por
+        # NOMBRE y no por ruta, porque varias rutas son la misma pantalla.
+        rutas = run_uso_sql("""
+            SELECT TOP 20
+                   ISNULL(p.nombre, u.ruta) AS nombre,
+                   ISNULL(p.area, '') AS area,
+                   ISNULL(p.icono, '') AS icono,
+                   CAST(CASE WHEN p.ruta IS NULL THEN 0 ELSE 1 END AS BIT) AS traducida,
+                   ISNULL(p.confirmado, 0) AS confirmado,
+                   SUM(u.peticiones) AS peticiones,
+                   COUNT(DISTINCT u.usuario) AS personas
+            FROM dbo.uso_diario u
+            JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
+            LEFT JOIN dbo.pantallas p ON p.ruta = u.ruta
+            WHERE u.fecha >= ? AND u.fecha <= ?
+            GROUP BY ISNULL(p.nombre, u.ruta), ISNULL(p.area, ''),
+                     ISNULL(p.icono, ''),
+                     CASE WHEN p.ruta IS NULL THEN 0 ELSE 1 END,
+                     ISNULL(p.confirmado, 0)
+            ORDER BY peticiones DESC""", rango)
+
+        sesiones = run_uso_sql("""
+            SELECT s.usuario, s.fecha, s.inicio_utc, s.minutos, s.peticiones,
+                   s.modulos, s.abrio_sesion
+            FROM dbo.sesiones s
+            JOIN dbo.cuentas c ON c.usuario = s.usuario AND c.es_persona = 1
+            WHERE s.fecha >= ? AND s.fecha <= ?
+            ORDER BY s.inicio_utc DESC""", rango)
+
+        maquinas = run_uso_sql("""
+            SELECT u.usuario, SUM(u.peticiones) AS peticiones
+            FROM dbo.uso_diario u
+            JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 0
+            WHERE u.fecha >= ? AND u.fecha <= ?
+            GROUP BY u.usuario
+            ORDER BY peticiones DESC""", rango)
+
+        # En que parte del sistema pasa la gente su tiempo. Es la lectura de alto
+        # nivel: a un director le dice mas "el 70% en Seguimiento, nada en Costos"
+        # que una lista de veinte pantallas.
+        areas = run_uso_sql("""
+            SELECT ISNULL(p.area, 'Sin clasificar') AS area,
+                   SUM(u.peticiones) AS peticiones,
+                   COUNT(DISTINCT u.usuario) AS personas
+            FROM dbo.uso_diario u
+            JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
+            LEFT JOIN dbo.pantallas p ON p.ruta = u.ruta
+            WHERE u.fecha >= ? AND u.fecha <= ?
+            GROUP BY ISNULL(p.area, 'Sin clasificar')
+            ORDER BY peticiones DESC""", rango)
+
+        # Rutas que la gente usa y nadie ha nombrado todavia. Se cuentan para
+        # poder decirlo en el tablero en vez de que pasen desapercibidas.
+        sin_nombre = run_uso_sql("""
+            SELECT COUNT(DISTINCT u.ruta) AS cuantas
+            FROM dbo.uso_diario u
+            JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
+            LEFT JOIN dbo.pantallas p ON p.ruta = u.ruta
+            WHERE u.fecha >= ? AND u.fecha <= ? AND p.ruta IS NULL""", rango)
+
+        control = run_uso_sql("""
+            SELECT procesado_hasta_utc, corrida_utc, filas_leidas, segundos
+            FROM dbo.etl_control WHERE proceso = 'uso_sidon'""")
+    except Exception as e:
+        logging.exception("Error consultando Sidon_Uso")
+        return JSONResponse(
+            {"error": "No se pudo leer el resumen de uso.",
+             "detalle": str(e)[:200]}, status_code=500)
+
+    # A que hora del dia empieza la gente. Sale del arranque de cada sesion y no
+    # de las peticiones sueltas, porque el resumen se guarda por dia: la hora
+    # exacta de cada peticion no esta. Para un mapa de horas de verdad habria que
+    # agregar tambien por hora en el ETL.
+    por_hora = [0] * 24
+    for s in sesiones:
+        inicio = s.get("inicio_utc")
+        if inicio:
+            por_hora[hora_local_de(inicio)] += 1
+
+    personas_con_login = {l["usuario"] for l in logins
+                          if l.get("es_persona") and l.get("identificado")}
+
+    return {
+        "desde": desde, "hasta": hasta,
+        "kpis": {
+            "personas": len(personas),
+            "entradas": sum(1 for l in logins if l.get("es_persona")),
+            "entradas_fallidas": sum(1 for l in logins
+                                     if l.get("es_persona") and not l.get("exitoso")),
+            "sesiones": len(sesiones),
+            "minutos": sum(s.get("minutos") or 0 for s in sesiones),
+            "pantallas": len(rutas),
+            "peticiones_personas": sum(p.get("peticiones") or 0 for p in personas),
+            "peticiones_maquinas": sum(m.get("peticiones") or 0 for m in maquinas),
+            "con_login": len(personas_con_login),
+            "pantallas_sin_nombre": (sin_nombre[0].get("cuantas") if sin_nombre else 0),
+        },
+        "areas": areas,
+        "logins": [{k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                    for k, v in l.items()} for l in logins],
+        "personas": [{k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                      for k, v in p.items()} for p in personas],
+        "rutas": rutas,
+        "sesiones": [{k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                      for k, v in s.items()} for s in sesiones],
+        "maquinas": maquinas,
+        "por_hora": por_hora,
+        "etl": [{k: (v.isoformat() if hasattr(v, "isoformat") else v)
+                 for k, v in c.items()} for c in control],
+    }
+
+
+def hora_local_de(momento_utc):
+    """La hora de planta de un instante UTC. Devuelve 0-23.
+
+    `datetime` aqui es la clase, no el modulo -main.py hace `from datetime import
+    datetime`-, asi que los husos salen de `dt`.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        zona = ZoneInfo(os.getenv("LOCAL_TZ", "America/Mexico_City"))
+    except Exception:
+        zona = dt.timezone(dt.timedelta(hours=-6))
+    return momento_utc.replace(tzinfo=dt.timezone.utc).astimezone(zona).hour
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     return FileResponse("static/index.html")
