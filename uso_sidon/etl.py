@@ -128,15 +128,15 @@ def conectar_destino():
 CONSULTA = """
 SELECT RegisterId,
        UserId,
-       CAST(UserMail  AS NVARCHAR(200)) AS UserMail,
-       CAST(Module    AS NVARCHAR(200)) AS Module,
-       CAST(Route     AS NVARCHAR(300)) AS Route,
+       CAST(UserMail  AS NVARCHAR(100)) AS UserMail,
+       CAST(Module    AS NVARCHAR(100)) AS Module,
+       CAST(Route     AS NVARCHAR(200)) AS Route,
        RequestDate,
        CAST(RequestIp AS NVARCHAR(64))  AS RequestIp,
        CASE WHEN Module = 'login' THEN CAST(LEFT(Body, 40) AS NVARCHAR(40)) END AS estado
 FROM dbo.SystemLogs
 WHERE RequestDate >= ? AND RequestDate < ?
-ORDER BY CAST(UserMail AS NVARCHAR(200)), RequestDate
+ORDER BY CAST(UserMail AS NVARCHAR(100)), RequestDate
 """
 
 # Las rutas traen identificadores: GET /api/productionLines/a1a5d0ea-edb4-...
@@ -153,7 +153,7 @@ _RE_NUMERO = re.compile(r"/\d+(?=/|$)")
 def normalizar_ruta(ruta):
     """La ruta sin sus identificadores, para poder agrupar por pantalla."""
     limpia = _RE_GUID.sub("{id}", (ruta or "").strip())
-    return _RE_NUMERO.sub("/{n}", limpia)[:300]
+    return _RE_NUMERO.sub("/{n}", limpia)[:200]
 
 # Hay filas de login sin correo: intentos donde no se llego a identificar a nadie.
 # Se guardan bajo este nombre en vez de como cadena vacia, para que en el informe
@@ -241,13 +241,13 @@ def leer_y_resumir(cn_origen, desde, hasta):
                 log.info("   %s filas leidas en %d s (%d por segundo)",
                          "{:,}".format(filas), int(transcurrido),
                          int(filas / max(1, transcurrido)))
-            usuario = (usuario or "").strip()[:200]
+            usuario = (usuario or "").strip()[:100]
             identificado = bool(usuario)
             if not identificado:
                 usuario = SIN_NOMBRE
             elif usuario_id is not None:
                 correo_de.setdefault(usuario_id, usuario)
-            modulo = (modulo or "").strip()[:200]
+            modulo = (modulo or "").strip()[:100]
             ruta = normalizar_ruta(ruta)
             fecha = local(momento).date()
 
