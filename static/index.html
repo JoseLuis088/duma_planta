@@ -1554,6 +1554,29 @@
       transform: translateX(-50%) translateY(0);
     }
 
+    /* En la cabecera de un panel el "?" esta pegado al borde de arriba, y .card
+       lleva overflow:hidden -que usa toda la plataforma, no se toca-, asi que un
+       globo hacia arriba se queda fuera: de sus 187px se recortaban 169 y solo
+       asomaba una rebanada negra. Ahi se abre hacia abajo, que es donde si hay
+       sitio, y la puntita se voltea para seguir apuntando a su icono. */
+    .uso-card-head .uso-ayuda-globo {
+      bottom: auto;
+      top: calc(100% + 11px);
+      transform: translateX(-50%) translateY(-4px);
+    }
+
+    .uso-card-head .uso-ayuda-globo::after {
+      top: auto;
+      bottom: 100%;
+      border-top-color: transparent;
+      border-bottom-color: #0f172a;
+    }
+
+    .uso-card-head .uso-ayuda:hover .uso-ayuda-globo,
+    .uso-card-head .uso-ayuda:focus-visible .uso-ayuda-globo {
+      transform: translateX(-50%) translateY(0);
+    }
+
     /* Pegado al borde derecho se saldria de la pantalla: las ultimas tarjetas lo
        anclan por la derecha en vez de centrarlo. */
     .uso-kpi:nth-last-child(-n+2) .uso-ayuda-globo {
