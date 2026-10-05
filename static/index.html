@@ -1751,21 +1751,6 @@
     .uso-dona-centro b { font-size: 30px; font-weight: 800; line-height: 1; }
     .uso-dona-centro span { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
-    .uso-maquinas { display: flex; flex-direction: column; gap: 7px; }
-    .uso-maquina {
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: 12px; padding: 7px 11px;
-      border-radius: 9px; background: var(--panel);
-      border: 1px solid var(--border);
-    }
-
-    /* La unidad, en gris y mas chica: acompana al numero sin competir con el. */
-    .uso-maquina-uni {
-      font-weight: 500;
-      color: var(--text-muted);
-      font-size: 11px;
-    }
-
     .uso-areas {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
@@ -4249,8 +4234,6 @@
                   <canvas id="usoDona"></canvas>
                   <div class="uso-dona-centro" id="usoDonaCentro"></div>
                 </div>
-                <p class="small muted" id="usoCapMaquinas" style="margin:14px 0 6px; display:none"></p>
-                <div id="usoMaquinas" class="uso-maquinas"></div>
               </div>
             </div>
 
@@ -4612,7 +4595,6 @@
           usoKpiPantallasPieRango: "abiertas en el periodo",
           usoKpiHumano: "Visitas por persona",
           usoKpiHumanoPie: "en promedio, cada quien",
-          usoCapMaquinas: "Aparte, estos procesos automáticos consultan solos. No son gente y no cuentan en nada de lo de arriba:",
           usoTitLogins: "Quién usó la plataforma",
           usoSubLogins: "Cuántas veces vino cada quien en el periodo. Una visita se cierra tras media hora sin actividad",
           usoTitPersonas: "Cuánto usó cada quien",
@@ -5709,6 +5691,40 @@
         return (base[0] + (base[1] || "")).toUpperCase();
       }
 
+      // Escribe el numero dentro de cada porcion de la dona. Chart.js no trae
+      // etiquetas de datos y la solucion habitual es otra libreria; son veinte
+      // lineas, asi que mejor eso que una dependencia mas que vendorizar y
+      // mantener. Se registra solo en esta grafica, no global: la de horas no
+      // las quiere.
+      const etiquetasEnDona = {
+        id: "etiquetasEnDona",
+        afterDatasetsDraw: function (chart) {
+          const ctx = chart.ctx;
+          const datos = chart.data.datasets[0].data;
+          chart.getDatasetMeta(0).data.forEach(function (arco, i) {
+            const valor = datos[i];
+            if (!valor) return;
+            // Una porcion muy estrecha no tiene donde poner el numero: antes de
+            // dibujarlo encima de su vecina, se deja fuera. El tooltip y la
+            // leyenda siguen diciendo el valor.
+            const angulo = Math.abs(arco.endAngle - arco.startAngle);
+            if (angulo < 0.28) return;
+            const p = arco.tooltipPosition();
+            ctx.save();
+            ctx.font = '700 12px ui-sans-serif, system-ui, sans-serif';
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            // Un borde oscuro detras del blanco, por si algun tono queda claro.
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = "rgba(15,23,42,.35)";
+            ctx.strokeText(String(valor), p.x, p.y);
+            ctx.fillStyle = "#fff";
+            ctx.fillText(String(valor), p.x, p.y);
+            ctx.restore();
+          });
+        }
+      };
+
       let usoGraficaDona = null, usoGraficaHoras = null;
 
       // Lo que pintarUso() ya calculo, guardado para el PDF. El reporte no vuelve
@@ -5975,8 +5991,11 @@
                 borderWidth: 0
               }]
             },
+            plugins: [etiquetasEnDona],
             options: {
-              responsive: true, maintainAspectRatio: false, cutout: "72%",
+              // Anillo mas grueso que antes (62% en vez de 72%): las etiquetas
+              // necesitan sitio donde caber.
+              responsive: true, maintainAspectRatio: false, cutout: "62%",
               plugins: {
                 legend: { position: "bottom",
                           labels: { boxWidth: 11, boxHeight: 11, padding: 14,
@@ -5991,23 +6010,13 @@
         el("usoDonaCentro").innerHTML =
           "<b>" + visitas + "</b><span>" + T("usoLblHumano") + "</span>";
 
-        const maq = d.maquinas || [];
-        // Las cuentas de sistema no desaparecen: se dicen aparte y con su aviso,
-        // para que nadie se pregunte a donde fueron a parar 41 mil peticiones.
-        el("usoCapMaquinas").textContent = maq.length ? T("usoCapMaquinas") : "";
-        el("usoCapMaquinas").style.display = maq.length ? "" : "none";
-        el("usoMaquinas").innerHTML = maq.length === 0
-          ? ""
-          : maq.map(function (m) {
-              // Con su unidad: son PETICIONES, no visitas. Para un robot una
-              // visita no significa nada -nunca se va-, lo que hace son consultas.
-              // El numero pelado hacia dudar si se comparaba con las visitas de
-              // arriba, que es justo lo que no hay que comparar.
-              return '<div class="uso-maquina"><span>🤖 ' + escapar(m.usuario) + "</span>"
-                   + "<strong>" + (m.peticiones || 0).toLocaleString()
-                   + ' <span class="uso-maquina-uni">' + T("usoPeticionesCorto")
-                   + "</span></strong></div>";
-            }).join("");
+        // Las cuentas de sistema (monitor, sidon) ya no se ensenan. Este tablero
+        // es sobre accesos de PERSONAS, y esos dos numeros -29,261 y 11,815
+        // peticiones- solo invitaban a compararse con las 21 visitas de arriba,
+        // que es justo lo que no hay que comparar. Ninguna cifra del tablero
+        // depende ya de ellas: la unica que las usaba era "Trafico humano", que
+        // tambien se fue. El backend las sigue devolviendo por si alguna vez
+        // hacen falta.
 
         // --- Areas ------------------------------------------------------------
         const areas = d.areas || [];
@@ -6160,9 +6169,6 @@
           pantallas: pantallasDatos,
           turnos: turnosDatos,
           turnos_nota: el("usoTurnosNota").textContent || "",
-          maquinas: maq.map(function (m) {
-            return { usuario: m.usuario, peticiones: m.peticiones || 0 };
-          }),
           al_dia: el("usoPie").textContent || ""
         };
       }

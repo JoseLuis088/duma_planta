@@ -6850,15 +6850,9 @@ async def report_uso(payload: dict):
             texto += "\n\n" + _sin_emoji(vista.get("turnos_nota"))
         sections.append({"title": "A qué hora trabajan", "text": texto})
 
-    maquinas = vista.get("maquinas") or []
-    if maquinas:
-        sections.append({
-            "title": "Actividad automática (no es gente)",
-            "text": _tabla_md(
-                ["Cuenta", "Peticiones"],
-                [(m.get("usuario"), f"{int(m.get('peticiones') or 0):,}")
-                 for m in maquinas]),
-        })
+    # Las cuentas automaticas ya no salen, ni aqui ni en pantalla: el reporte es
+    # sobre accesos de personas, y ese bloque solo invitaba a comparar peticiones
+    # de robot con visitas de gente.
 
     if vista.get("al_dia"):
         sections.append({"title": "Procedencia de los datos",
