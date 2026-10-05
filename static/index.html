@@ -1759,6 +1759,13 @@
       border: 1px solid var(--border);
     }
 
+    /* La unidad, en gris y mas chica: acompana al numero sin competir con el. */
+    .uso-maquina-uni {
+      font-weight: 500;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
     .uso-areas {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
@@ -5670,14 +5677,30 @@
              + '<div class="uso-kpi-pie">' + escapar(pie) + "</div></div>";
       }
 
-      // Un color estable por persona: el mismo nombre da siempre el mismo tono,
-      // asi que la gente se reconoce de un vistazo entre consultas.
+      // Diez tonos separados a proposito por tono, no por gusto: el orden alterna
+      // familias -azul, rosa, verde, ambar, violeta...- para que dos porciones
+      // vecinas de la dona nunca sean parientes.
+      const USO_PALETA = ["#2563eb", "#e11d48", "#059669", "#d97706", "#7c3aed",
+                          "#0891b2", "#ea580c", "#c026d3", "#65a30d", "#475569"];
+
+      // Un color por persona, repartido por ORDEN ALFABETICO y no por un hash del
+      // nombre. El hash elegia entre ocho tonos, y con siete personas repetir era
+      // casi seguro: aaramirez y ameraz salian los dos morados y la dona no se
+      // podia leer. Por posicion quedan distintos por construccion, y alfabetico
+      // en vez de por numero de visitas para que a nadie le cambie el color solo
+      // porque esta semana entro menos.
+      function mapaDeColores(personas) {
+        const nombres = personas.map(function (p) { return p.usuario; }).sort();
+        const mapa = {};
+        nombres.forEach(function (u, i) { mapa[u] = USO_PALETA[i % USO_PALETA.length]; });
+        return mapa;
+      }
+
+      // Reserva para cuando no hay mapa: mismo nombre, mismo tono.
       function colorDe(nombre) {
-        const tonos = ["#0ea5e9", "#8b5cf6", "#ec4899", "#f59e0b",
-                       "#10b981", "#6366f1", "#14b8a6", "#f43f5e"];
         let s = 0;
         for (let i = 0; i < nombre.length; i++) s = (s * 31 + nombre.charCodeAt(i)) % 997;
-        return tonos[s % tonos.length];
+        return USO_PALETA[s % USO_PALETA.length];
       }
 
       function iniciales(correo) {
@@ -5757,6 +5780,10 @@
         const visitas = personasReales.reduce(function (a, p) {
           return a + (p.veces || 0);
         }, 0);
+        // El mismo mapa lo usan el avatar y la dona: si el color de alguien no
+        // coincidiera en los dos sitios, dejarian de leerse como una sola cosa.
+        const tonos = mapaDeColores(personasReales);
+        const tonoDe = function (u) { return tonos[u] || colorDe(u); };
         // Sin decimal cuando sale redondo: "3" lee mejor que "3.0". El nombre no
         // puede ser porPersona: mas abajo ya existe ese mapa.
         const mediaVisitas = personasReales.length
@@ -5868,7 +5895,7 @@
               const p = porPersona[u] || {};
               const l = loginDe[u];
               const anonimo = (u === "(sin identificar)");
-              const col = anonimo ? USO_GRIS : colorDe(u);
+              const col = anonimo ? USO_GRIS : tonoDe(u);
               // La cifra grande son las VECES QUE VINO, no las peticiones. Una
               // peticion no mide a la persona: Monitoreo de linea se refresca
               // solo cada 60 s, asi que quien deja esa pantalla abierta acumula
@@ -5944,7 +5971,7 @@
               labels: repParte.map(function (p) { return p.usuario.split("@")[0]; }),
               datasets: [{
                 data: repParte.map(function (p) { return p.veces || 0; }),
-                backgroundColor: repParte.map(function (p) { return colorDe(p.usuario); }),
+                backgroundColor: repParte.map(function (p) { return tonoDe(p.usuario); }),
                 borderWidth: 0
               }]
             },
@@ -5972,8 +5999,14 @@
         el("usoMaquinas").innerHTML = maq.length === 0
           ? ""
           : maq.map(function (m) {
+              // Con su unidad: son PETICIONES, no visitas. Para un robot una
+              // visita no significa nada -nunca se va-, lo que hace son consultas.
+              // El numero pelado hacia dudar si se comparaba con las visitas de
+              // arriba, que es justo lo que no hay que comparar.
               return '<div class="uso-maquina"><span>🤖 ' + escapar(m.usuario) + "</span>"
-                   + "<strong>" + (m.peticiones || 0).toLocaleString() + "</strong></div>";
+                   + "<strong>" + (m.peticiones || 0).toLocaleString()
+                   + ' <span class="uso-maquina-uni">' + T("usoPeticionesCorto")
+                   + "</span></strong></div>";
             }).join("");
 
         // --- Areas ------------------------------------------------------------
