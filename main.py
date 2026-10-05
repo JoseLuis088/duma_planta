@@ -6676,7 +6676,10 @@ async def api_uso_resumen(payload: dict):
     return {
         "desde": desde, "hasta": hasta,
         "kpis": {
-            "personas": len(personas),
+            # Sin el monton anonimo: no es una persona, y detras puede haber una
+            # o cinco. Contarlo como uno inflaba la cifra en uno.
+            "personas": len([p for p in personas
+                             if p.get("usuario") != "(sin identificar)"]),
             "entradas": sum(1 for l in logins if l.get("es_persona")),
             "entradas_fallidas": sum(1 for l in logins
                                      if l.get("es_persona") and not l.get("exitoso")),

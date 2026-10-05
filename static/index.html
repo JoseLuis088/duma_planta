@@ -4551,21 +4551,23 @@
           usoVecesCorto: "veces que entró",
           usoVezCorto: "vez que entró",
           usoAccesosSinNombre: "accesos sin identificar",
-          usoSesionesCorto: "sesiones",
+          usoSesionesCorto: "visitas",
           usoVeces: "veces",
           usoAvisoSinNombre: "pantallas todavía sin nombre. Aparecen con su dirección técnica hasta que alguien las nombre.",
           usoVerBienTit: "La plataforma se está usando",
-          usoVerBienSub: "personas entraron y trabajaron un total de",
+          usoVerBienSub: "personas usaron la plataforma",
+          usoVisitas: "visitas en total",
+          usoVisitaUna: "visita en total",
           usoVerPocoTit: "Uso bajo en estas fechas",
           usoVerPocoSub: "persona o dos entraron. Conviene revisar si al resto le hace falta algo.",
           usoVerNadieTit: "Nadie entró a la plataforma",
           usoVerNadieSub: "Ninguna persona usó Sidón Industrial en las fechas elegidas.",
           usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. Suele ser MAYOR que los inicios de sesión: quien ya estaba dentro sigue trabajando sin volver a escribir su contraseña. No se cuentan las cuentas automáticas del sistema.",
           usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña. Suele ser MENOR que las personas activas, porque la sesión se queda abierta y no hace falta entrar de nuevo cada día. Si algún intento falló, la tarjeta se pone en rojo.",
-          usoAyudaSesiones: "Un tramo de trabajo continuo. Se corta cuando alguien pasa más de media hora sin pedir nada. Ojo: mide el tiempo con la pantalla abierta, que no siempre es el tiempo trabajando.",
+          usoAyudaSesiones: "Cada vez que alguien se puso a usar la plataforma. Una visita se da por terminada cuando la persona pasa más de media hora sin pedir nada. El tiempo de abajo es con la pantalla abierta, que no siempre es tiempo trabajando: una pestaña olvidada sigue sumando.",
           usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo.",
           usoAyudaHumano: "Del total de peticiones que recibe Sidón, qué parte viene de una persona. El resto lo generan procesos automáticos que consultan solos. Mientras más alto, más gente lo está usando de verdad.",
-          usoTurnosPocas: "Con {n} sesiones todavía no tiene sentido repartirlo en porcentajes: una sesión más cambiaría el reparto por completo. Se enseña la cuenta hasta que haya suficientes.",
+          usoTurnosPocas: "Con {n} visitas todavía no tiene sentido repartirlo en porcentajes: una visita más cambiaría el reparto por completo. Se enseña la cuenta hasta que haya suficientes.",
           usoAyudaHorasTxt: "Cada barra cuenta las sesiones que EMPEZARON en esa hora. Una sesión larga cuenta solo en la hora en que arrancó, no en todas las que duró. El reparto por turno sirve para ver si el sistema se usa en los tres turnos o solo en el de día.",
           titleUso: "Usabilidad",
           subtitleUso: "Quién usa Sidón Industrial, cuándo y para qué",
@@ -4584,7 +4586,7 @@
           usoKpiEntradas: "Inicios de sesión",
           usoKpiFallidas: "fallidos",
           usoKpiSinFallos: "ninguno fallido",
-          usoKpiSesiones: "Sesiones",
+          usoKpiSesiones: "Visitas",
           usoKpiPantallas: "Pantallas distintas",
           usoKpiPantallasPie: "abiertas por personas",
           usoKpiHumano: "Tráfico humano",
@@ -4596,7 +4598,7 @@
           usoTitRutas: "Dónde pasan el tiempo",
           usoSubRutas: "Las pantallas que la gente abre, de más a menos",
           usoTitHoras: "A qué hora trabajan",
-          usoSubHoras: "Sesiones que arrancan en cada hora del día",
+          usoSubHoras: "Visitas que arrancan en cada hora del día",
           usoTitMaquinas: "Tráfico que no es de personas",
           usoSubMaquinas: "Cuentas de sistema. Se separan porque si no, inflan todo lo demás",
           usoThPersona: "Persona", usoThPersona2: "Persona",
@@ -5727,6 +5729,18 @@
 
         const personas = d.personas || [];
         const logins = (d.logins || []).filter(function (l) { return l.es_persona; });
+
+        // "(sin identificar)" no es una persona: es el monton de accesos que no se
+        // pudieron ligar a nadie, y detras puede haber uno o cinco. Contarlo como
+        // uno inflaba "Personas activas" en uno. Sigue saliendo en la lista -esa
+        // actividad existe- pero no cuenta como alguien.
+        const SIN_NOMBRE = "(sin identificar)";
+        const personasReales = personas.filter(function (p) {
+          return p.usuario !== SIN_NOMBRE;
+        });
+        const visitas = personasReales.reduce(function (a, p) {
+          return a + (p.veces || 0);
+        }, 0);
         const totalPet = (k.peticiones_personas || 0) + (k.peticiones_maquinas || 0);
         const pctHumano = totalPet > 0
           ? Math.round((k.peticiones_personas / totalPet) * 100) : 0;
@@ -5739,17 +5753,22 @@
         // cortes son deliberadamente generosos: con once personas en total, que
         // entren tres en un dia ya es uso real.
         let luz, fondo, titulo, detalle;
-        if (personas.length === 0) {
+        if (personasReales.length === 0) {
           luz = "🔴"; fondo = USO_ROJO;
           titulo = T("usoVerNadieTit"); detalle = T("usoVerNadieSub");
-        } else if (personas.length <= 2) {
+        } else if (personasReales.length <= 2) {
           luz = "🟡"; fondo = USO_AMBAR;
           titulo = T("usoVerPocoTit");
-          detalle = personas.length + " " + T("usoVerPocoSub");
+          detalle = personasReales.length + " " + T("usoVerPocoSub");
         } else {
           luz = "🟢"; fondo = USO_VERDE;
           titulo = T("usoVerBienTit");
-          detalle = personas.length + " " + T("usoVerBienSub") + " " + tiempo + ".";
+          // Aqui iba el tiempo total, y era la cifra mas endeble del tablero: suma
+          // la pantalla abierta, no el trabajo. Una pestana olvidada en Monitoreo
+          // sumaba 16 horas. El titular lleva ahora visitas, que no necesitan nota
+          // al pie; el tiempo se queda en su tarjeta, donde el tooltip lo explica.
+          detalle = personasReales.length + " " + T("usoVerBienSub") + ", "
+                  + visitas + " " + T(visitas === 1 ? "usoVisitaUna" : "usoVisitas") + ".";
         }
         el("usoVeredicto").innerHTML =
             '<div class="uso-veredicto-luz" style="background:' + fondo + '22">'
@@ -5763,10 +5782,10 @@
         // de la pantalla y las cifras del PDF. Escritas dos veces bastaria tocar
         // una para que el papel y el tablero dejaran de decir lo mismo.
         const tarjetas = [
-          { icono: "👥", label: T("usoKpiPersonas"), value: personas.length,
+          { icono: "👥", label: T("usoKpiPersonas"), value: personasReales.length,
             status: T("usoKpiPersonasPie"), ayuda: T("usoAyudaPersonas"),
-            color: personas.length > 2 ? USO_VERDE
-                 : (personas.length > 0 ? USO_AMBAR : USO_ROJO) },
+            color: personasReales.length > 2 ? USO_VERDE
+                 : (personasReales.length > 0 ? USO_AMBAR : USO_ROJO) },
           { icono: "🔑", label: T("usoKpiEntradas"), value: k.entradas || 0,
             status: fallidos > 0 ? fallidos + " " + T("usoKpiFallidas")
                                  : T("usoKpiSinFallos"),
