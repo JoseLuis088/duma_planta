@@ -4568,8 +4568,8 @@
           usoVerPocoSub: "persona o dos entraron. Conviene revisar si al resto le hace falta algo.",
           usoVerNadieTit: "Nadie entró a la plataforma",
           usoVerNadieSub: "Ninguna persona usó Sidón Industrial en las fechas elegidas.",
-          usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. Suele ser MAYOR que los inicios de sesión: quien ya estaba dentro sigue trabajando sin volver a escribir su contraseña. No se cuentan las cuentas automáticas del sistema.",
-          usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña. Suele ser MENOR que las personas activas, porque la sesión se queda abierta y no hace falta entrar de nuevo cada día. Si algún intento falló, la tarjeta se pone en rojo.",
+          usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. Cuenta a cada quien una sola vez, entre una y veinte veces que haya entrado. No se cuentan las cuentas automáticas del sistema ni los accesos que no se pudieron ligar a una persona.",
+          usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña, incluidos los intentos fallidos. No se puede repartir por persona: la mayoría de esos accesos no quedan ligados a nadie.",
           usoAyudaSesiones: "Cada vez que alguien se puso a usar la plataforma. Una visita se da por terminada cuando la persona pasa más de media hora sin pedir nada. El tiempo de abajo es con la pantalla abierta, que no siempre es tiempo trabajando: una pestaña olvidada sigue sumando.",
           usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo.",
           usoAyudaHumano: "Cuántas veces entra cada persona, en promedio, durante el periodo elegido. Un número alto quiere decir que quien usa Sidón vuelve varias veces, no que entró una vez y lo dejó.",
@@ -4588,9 +4588,11 @@
           usoCargando: "Consultando…",
           usoError: "No se pudo leer el resumen de uso",
           usoKpiPersonas: "Personas activas",
-          usoKpiPersonasPie: "usaron el sistema ese día",
+          usoKpiPersonasPie: "usaron Sidón ese día",
+          usoKpiPersonasPieRango: "usaron Sidón en el periodo",
           usoKpiEntradas: "Inicios de sesión",
           usoKpiFallidas: "fallidos",
+          usoNotaFallidos: "intentos de entrada fallaron en el periodo, así que puede que alguien no esté pudiendo entrar.",
           usoKpiSinFallos: "ninguno fallido",
           usoKpiSesiones: "Visitas",
           usoKpiPantallas: "Pantallas distintas",
@@ -5755,9 +5757,9 @@
           ? Math.round((visitas / personasReales.length) * 10) / 10 : 0;
         const porPersona1 = mediaVisitas % 1 === 0
           ? String(mediaVisitas) : mediaVisitas.toFixed(1);
-        const minutos = k.minutos || 0;
-        const horas = Math.floor(minutos / 60), mins = minutos % 60;
-        const tiempo = horas > 0 ? horas + " h " + mins + " min" : mins + " min";
+        // "ese dia" solo vale si se pidio un dia. Con un rango elegido la frase
+        // no cuadraba con lo que el usuario acababa de seleccionar.
+        const unSoloDia = !d.hasta || d.desde === d.hasta;
 
         // --- El veredicto -----------------------------------------------------
         // Un director quiere saber si esto va bien antes que cualquier cifra. Los
@@ -5793,17 +5795,18 @@
         // de la pantalla y las cifras del PDF. Escritas dos veces bastaria tocar
         // una para que el papel y el tablero dejaran de decir lo mismo.
         const tarjetas = [
+          // Una sola tarjeta de gente, no tres. Personas / Inicios de sesion /
+          // Visitas eran 7, 32 y 21: tres numeros que suenan a lo mismo y que
+          // obligan a leer tres tooltips para saber en que se diferencian. Un
+          // directivo quiere una cifra. Las otras dos no se pierden: las visitas
+          // salen persona por persona en la lista de abajo y promediadas en la
+          // ultima tarjeta, y los inicios de sesion no se podian repartir por
+          // persona de todos modos.
           { icono: "👥", label: T("usoKpiPersonas"), value: personasReales.length,
-            status: T("usoKpiPersonasPie"), ayuda: T("usoAyudaPersonas"),
+            status: T(unSoloDia ? "usoKpiPersonasPie" : "usoKpiPersonasPieRango"),
+            ayuda: T("usoAyudaPersonas"),
             color: personasReales.length > 2 ? USO_VERDE
                  : (personasReales.length > 0 ? USO_AMBAR : USO_ROJO) },
-          { icono: "🔑", label: T("usoKpiEntradas"), value: k.entradas || 0,
-            status: fallidos > 0 ? fallidos + " " + T("usoKpiFallidas")
-                                 : T("usoKpiSinFallos"),
-            ayuda: T("usoAyudaEntradas"),
-            color: fallidos > 0 ? USO_ROJO : USO_VERDE },
-          { icono: "⏱️", label: T("usoKpiSesiones"), value: k.sesiones || 0,
-            status: tiempo, ayuda: T("usoAyudaSesiones"), color: USO_GRIS },
           { icono: "🖥️", label: T("usoKpiPantallas"), value: k.pantallas || 0,
             status: T("usoKpiPantallasPie"), ayuda: T("usoAyudaPantallas"),
             color: USO_GRIS },
@@ -5901,9 +5904,16 @@
 
         // La nota sale solo si de verdad falta alguna hora de entrada. Si todas
         // estan, sobra: no se le explica al directivo un problema que no tiene.
+        // Aqui tambien caen los intentos fallidos, que antes vivian en la tarjeta
+        // de "Inicios de sesion". Esa tarjeta se quito por confusa, pero el dato
+        // no sobra: que fallen entradas puede querer decir que alguien lleva dias
+        // sin poder entrar, y eso si le interesa a un directivo.
+        const partes = [];
+        if (sinEntrada > 0) partes.push(T("usoNotaSinEntrada"));
+        if (fallidos > 0) partes.push(fallidos + " " + T("usoNotaFallidos"));
         const notaEnt = el("usoNotaEntradas");
-        notaEnt.textContent = sinEntrada > 0 ? T("usoNotaSinEntrada") : "";
-        notaEnt.style.display = sinEntrada > 0 ? "" : "none";
+        notaEnt.textContent = partes.join(" ");
+        notaEnt.style.display = partes.length ? "" : "none";
 
         // --- Dona: personas contra sistema ------------------------------------
         if (usoGraficaDona) { usoGraficaDona.destroy(); usoGraficaDona = null; }
