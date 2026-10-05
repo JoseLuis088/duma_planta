@@ -18,6 +18,7 @@ LOS COLORES LOS MANDA LA PANTALLA, no se eligen aqui. Si este archivo tuviera su
 propia paleta, el dia que cambiara la del tablero el papel diria otra cosa.
 """
 import io
+import re
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -51,10 +52,22 @@ def _c(valor, porDefecto=C_GRIS):
     return porDefecto
 
 
+# Helvetica no tiene emojis: un candado o un triangulo de aviso salen como
+# cuadritos negros. Se quitan en el unico sitio por el que pasa TODO el texto del
+# documento, para que no haya forma de que uno se cuele por un camino nuevo.
+_EMOJI = re.compile(
+    "[‍←-⇿⌀-⏿①-➿⬀-⯿"
+    "︀-️\U0001f000-\U0001faff]+")
+
+
+def _limpio(s):
+    return _EMOJI.sub("", str(s if s is not None else "")).strip()
+
+
 def _texto(c, x, y, s, fuente="Helvetica", tam=9, color=C_TEXTO, al="i"):
     c.setFont(fuente, tam)
     c.setFillColor(color)
-    s = str(s)
+    s = _limpio(s)
     if al == "c":
         c.drawCentredString(x, y, s)
     elif al == "d":
@@ -65,8 +78,8 @@ def _texto(c, x, y, s, fuente="Helvetica", tam=9, color=C_TEXTO, al="i"):
 
 def _recorta(s, fuente, tam, ancho):
     """Corta con puntos suspensivos lo que no quepa, en vez de dejar que se monte
-    encima de lo de al lado."""
-    s = str(s)
+    encima de lo de al lado. Mide ya sin emojis, porque es lo que se va a pintar."""
+    s = _limpio(s)
     if stringWidth(s, fuente, tam) <= ancho:
         return s
     while s and stringWidth(s + "…", fuente, tam) > ancho:
@@ -500,9 +513,11 @@ def construir(vista, periodo, logo=None, etiquetas=None):
         hist.append(pantallas(pant[i:i + 12], tope, primera=(i == 0 and not vista.get("areas")),
                               titulo=e["pant_tit"], sub=e["pant_sub"]))
 
-    if vista.get("al_dia"):
-        hist.append(Spacer(1, 12))
-        hist.append(aviso(vista["al_dia"]))
+    # El aviso de "hasta donde llega el resumen" NO va al papel. En pantalla sirve
+    # porque ahi se puede cambiar el rango y ver el efecto; en un PDF ya impreso
+    # solo es una advertencia que nadie puede atender, al pie de un documento que
+    # va a reenviarse. El periodo sale en la cabecera de cada pagina, que es lo
+    # que importa.
 
     doc.build(hist, onFirstPage=pagina, onLaterPages=pagina)
     return buf.getvalue()
