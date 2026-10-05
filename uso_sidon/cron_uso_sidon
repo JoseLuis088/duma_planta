@@ -1,0 +1,23 @@
+# Resumen diario del uso de Sidon Industrial.
+#
+# COPIA VERSIONADA de /etc/cron.d/uso_sidon en la VM. Se guarda aqui porque el
+# archivo vive fuera del repo: si la maquina se reconstruye desde cero, sin esto
+# volveria a montarse a mano y con la hora mala. Para instalarlo:
+#
+#   scp uso_sidon/cron_uso_sidon warehouseai@172.168.10.106:/tmp/uso_sidon
+#   ssh warehouseai@172.168.10.106 \
+#     "sudo install -o root -g root -m 644 /tmp/uso_sidon /etc/cron.d/uso_sidon"
+#
+# LA HORA ES UTC, NO LA DE PLANTA. El reloj de esta VM corre en UTC, asi que
+# "0 10" son las 4:00 de la manana en planta (UTC-6). Estuvo puesto en "0 4",
+# que eran las 22:00 locales: a esa hora el dia local todavia no cierra, asi que
+# el ETL solo alcanzaba a procesar hasta el cierre de ANTEAYER y el tablero iba
+# siempre un dia entero mas atras de lo necesario. Ademas las 22:00 son plena
+# segunda jornada, no "fuera de turno de oficina" como decia antes este archivo.
+#
+# Sin argumentos toma la marca de dbo.etl_control y procesa desde donde se quedo
+# hasta el final de ayer, asi que si una noche falla, la siguiente se pone al
+# corriente sola. Con el indice sobre RequestDate tarda segundos.
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 10 * * * root /usr/bin/docker exec duma_planta python /usr/local/app/uso_sidon/etl.py >> /var/log/uso_sidon.log 2>&1
