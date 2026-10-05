@@ -4251,8 +4251,11 @@
               <div class="uso-card-head">
                 <span class="uso-card-icono">🖥️</span>
                 <div>
-                  <h3 id="usoTitRutas">Dónde pasan el tiempo</h3>
-                  <p class="sub" id="usoSubRutas">Las pantallas que la gente abre, de más a menos</p>
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <h3 id="usoTitRutas">Qué pantallas usan</h3>
+                    <button type="button" class="uso-ayuda" id="usoAyudaRutas">?</button>
+                  </div>
+                  <p class="sub" id="usoSubRutas">Las pantallas que la gente abre, de más a menos usada</p>
                 </div>
               </div>
               <div id="usoAreas" class="uso-areas"></div>
@@ -4549,6 +4552,8 @@
           usoLblSistema: "Sistema",
           usoLblHumano: "visitas",
           usoPeticionesCorto: "peticiones",
+          usoUsosCorto: "usos",
+          usoUsoCorto: "uso",
           usoVecesCorto: "veces que entró",
           usoVezCorto: "vez que entró",
           usoAccesosSinNombre: "accesos sin identificar",
@@ -4597,8 +4602,9 @@
           usoSubLogins: "Cuántas veces vino cada quien en el periodo. Una visita se cierra tras media hora sin actividad",
           usoTitPersonas: "Cuánto usó cada quien",
           usoSubPersonas: "Solo personas: las cuentas de sistema van aparte",
-          usoTitRutas: "Dónde pasan el tiempo",
-          usoSubRutas: "Las pantallas que la gente abre, de más a menos",
+          usoTitRutas: "Qué pantallas usan",
+          usoAyudaUsos: "Un uso es una persona abriendo esa pantalla un día. Si la deja abierta y se refresca sola, sigue contando como uno. Se mide así y no por número de consultas porque Monitoreo de línea se actualiza cada minuto por su cuenta: contando consultas se llevaba el 80% del tablero por el temporizador de una sola persona.",
+          usoSubRutas: "Las pantallas que la gente abre, de más a menos usada",
           usoTitHoras: "A qué hora trabajan",
           usoSubHoras: "Visitas que arrancan en cada hora del día",
           usoTitMaquinas: "Tráfico que no es de personas",
@@ -5951,33 +5957,34 @@
 
         // --- Areas ------------------------------------------------------------
         const areas = d.areas || [];
-        const totalA = areas.reduce(function (a, b) { return a + (b.peticiones || 0); }, 0);
+        const totalA = areas.reduce(function (a, b) { return a + (b.usos || 0); }, 0);
         const areasDatos = [];
         el("usoAreas").innerHTML = areas.map(function (a) {
-          const pct = totalA > 0 ? Math.round((a.peticiones / totalA) * 100) : 0;
-          areasDatos.push({ area: a.area, pct: pct, peticiones: a.peticiones || 0 });
+          const pct = totalA > 0 ? Math.round((a.usos / totalA) * 100) : 0;
+          areasDatos.push({ area: a.area, pct: pct, usos: a.usos || 0 });
           return '<div class="uso-area"><div class="uso-area-nom">'
                + escapar(a.area) + "</div>"
                + '<div class="uso-area-val">' + pct + "%</div>"
-               + '<div class="uso-area-pct">' + (a.peticiones || 0).toLocaleString()
-               + " " + T("usoPeticionesCorto") + "</div></div>";
+               + '<div class="uso-area-pct">' + (a.usos || 0).toLocaleString()
+               + " " + T((a.usos === 1) ? "usoUsoCorto" : "usoUsosCorto")
+               + "</div></div>";
         }).join("");
 
         // --- Pantallas --------------------------------------------------------
         const rutas = d.rutas || [];
-        const topeR = rutas.length ? (rutas[0].peticiones || 1) : 1;
+        const topeR = rutas.length ? (rutas[0].usos || 1) : 1;
         const pantallasDatos = [];
         el("usoRutas").innerHTML = rutas.length === 0
           ? '<p class="muted">' + T("usoSinRutas") + "</p>"
           : rutas.map(function (r) {
-              const ancho = Math.max(2, Math.round((r.peticiones / topeR) * 100));
-              pantallasDatos.push({ nombre: r.nombre, peticiones: r.peticiones || 0,
+              const ancho = Math.max(2, Math.round((r.usos / topeR) * 100));
+              pantallasDatos.push({ nombre: r.nombre, usos: r.usos || 0,
                                     nombrada: !!r.traducida });
               return '<div><div class="uso-pantalla-cab">'
                 + "<span>" + (r.icono || "📄") + "</span>"
                 + '<span class="uso-pantalla-nom' + (r.traducida ? "" : " uso-sin-nombre") + '">'
                 + escapar(r.nombre) + "</span>"
-                + '<span class="uso-pantalla-num">' + (r.peticiones || 0).toLocaleString()
+                + '<span class="uso-pantalla-num">' + (r.usos || 0).toLocaleString()
                 + "</span></div>"
                 + '<div class="uso-barra-fondo"><div class="uso-barra-fill" style="width:'
                 + ancho + "%;background:" + (r.traducida ? "var(--brand)" : USO_GRIS)
@@ -6109,11 +6116,14 @@
       // La explicacion de la cabecera de horas se pone una vez: no depende de los
       // datos, a diferencia de las de las tarjetas.
       (function () {
-        const b = el("usoAyudaHoras");
-        if (!b) return;
-        b.setAttribute("aria-label", T("usoTitHoras"));
-        b.innerHTML = '?<span class="uso-ayuda-globo" role="tooltip"><strong>'
-          + T("usoTitHoras") + "</strong>" + T("usoAyudaHorasTxt") + "</span>";
+        [["usoAyudaHoras", "usoTitHoras", "usoAyudaHorasTxt"],
+         ["usoAyudaRutas", "usoTitRutas", "usoAyudaUsos"]].forEach(function (x) {
+          const b = el(x[0]);
+          if (!b) return;
+          b.setAttribute("aria-label", T(x[1]));
+          b.innerHTML = '?<span class="uso-ayuda-globo" role="tooltip"><strong>'
+            + T(x[1]) + "</strong>" + T(x[2]) + "</span>";
+        });
       })();
 
       el("btnGenUso").addEventListener("click", consultarUso);

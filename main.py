@@ -6600,17 +6600,20 @@ async def api_uso_resumen(payload: dict):
                    ISNULL(p.icono, '') AS icono,
                    CAST(CASE WHEN p.ruta IS NULL THEN 0 ELSE 1 END AS BIT) AS traducida,
                    ISNULL(p.confirmado, 0) AS confirmado,
+                   COUNT(DISTINCT CONCAT(CONVERT(varchar(10), u.fecha, 120),
+                                         '|', u.usuario)) AS usos,
                    SUM(u.peticiones) AS peticiones,
                    COUNT(DISTINCT u.usuario) AS personas
             FROM dbo.uso_diario u
             JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
             LEFT JOIN dbo.pantallas p ON p.ruta = u.ruta
             WHERE u.fecha >= ? AND u.fecha <= ?
+              AND u.usuario <> '(sin identificar)'
             GROUP BY ISNULL(p.nombre, u.ruta), ISNULL(p.area, ''),
                      ISNULL(p.icono, ''),
                      CASE WHEN p.ruta IS NULL THEN 0 ELSE 1 END,
                      ISNULL(p.confirmado, 0)
-            ORDER BY peticiones DESC""", rango)
+            ORDER BY usos DESC, personas DESC""", rango)
 
         sesiones = run_uso_sql("""
             SELECT s.usuario, s.fecha, s.inicio_utc, s.minutos, s.peticiones,
@@ -6631,16 +6634,24 @@ async def api_uso_resumen(payload: dict):
         # En que parte del sistema pasa la gente su tiempo. Es la lectura de alto
         # nivel: a un director le dice mas "el 70% en Seguimiento, nada en Costos"
         # que una lista de veinte pantallas.
+        # Se reparte por USOS y no por peticiones. Una peticion no mide el uso:
+        # Monitoreo de linea se refresca sola cada 60 s, asi que Seguimiento se
+        # llevaba el 80% por el temporizador de una sola persona. Un uso es una
+        # persona abriendo algo de esa area en un dia; si lo deja abierto y se
+        # refresca, sigue contando uno.
         areas = run_uso_sql("""
             SELECT ISNULL(p.area, 'Sin clasificar') AS area,
+                   COUNT(DISTINCT CONCAT(CONVERT(varchar(10), u.fecha, 120),
+                                         '|', u.usuario)) AS usos,
                    SUM(u.peticiones) AS peticiones,
                    COUNT(DISTINCT u.usuario) AS personas
             FROM dbo.uso_diario u
             JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
             LEFT JOIN dbo.pantallas p ON p.ruta = u.ruta
             WHERE u.fecha >= ? AND u.fecha <= ?
+              AND u.usuario <> '(sin identificar)'
             GROUP BY ISNULL(p.area, 'Sin clasificar')
-            ORDER BY peticiones DESC""", rango)
+            ORDER BY usos DESC""", rango)
 
         # Rutas que la gente usa y nadie ha nombrado todavia. Se cuentan para
         # poder decirlo en el tablero en vez de que pasen desapercibidas.
@@ -6799,17 +6810,20 @@ async def report_uso(payload: dict):
     if areas:
         sections.append({
             "title": "En qué parte de la planta trabajaron",
+            # "Usos" y no "Peticiones": una peticion no mide el uso -Monitoreo se
+            # refresca sola cada minuto-. Un uso es una persona abriendo algo de
+            # esa area en un dia.
             "text": _tabla_md(
-                ["Área", "Participación", "Peticiones"],
+                ["Área", "Participación", "Usos"],
                 [(a.get("area"), f"{a.get('pct', 0)}%",
-                  f"{int(a.get('peticiones') or 0):,}") for a in areas]),
+                  f"{int(a.get('usos') or 0):,}") for a in areas]),
         })
 
     pantallas = vista.get("pantallas") or []
     if pantallas:
         texto = _tabla_md(
-            ["Pantalla", "Peticiones"],
-            [(p.get("nombre"), f"{int(p.get('peticiones') or 0):,}")
+            ["Pantalla", "Usos"],
+            [(p.get("nombre"), f"{int(p.get('usos') or 0):,}")
              for p in pantallas])
         sin_nombre = len([p for p in pantallas if not p.get("nombrada")])
         if sin_nombre:
