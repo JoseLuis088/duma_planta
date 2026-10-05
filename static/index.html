@@ -6010,7 +6010,9 @@
               const dias = p.dias || 1;
               let sub = T(dias === 1 ? "usoEnUnDia" : "usoEnDias").replace("{n}", dias);
               if (l && !l.exitoso) sub = "⚠️ " + T("usoFallo") + " · " + sub;
-              genteDatos.push({ nombre: u, veces: anonimo ? "" : veces, dias: dias });
+              genteDatos.push({ nombre: u, veces: anonimo ? "" : veces, dias: dias,
+                                accesos: anonimo ? (p.peticiones || 0) : null,
+                                color: col, iniciales: anonimo ? "" : iniciales(u) });
               return '<div class="uso-persona">'
                 + '<div class="uso-avatar" style="background:' + col + '">'
                 + escapar(anonimo ? "··" : iniciales(u)) + "</div>"
@@ -6199,7 +6201,8 @@
           const pct = totalSes > 0 ? Math.round((n / totalSes) * 100) : 0;
           // pct en null cuando hay pocas sesiones: el PDF se calla el porcentaje
           // exactamente igual que la pantalla, en vez de inventar precision.
-          turnosDatos.push({ etiqueta: t.etq, sesiones: n, pct: bastantes ? pct : null });
+          turnosDatos.push({ etiqueta: t.etq, sesiones: n, pct: bastantes ? pct : null,
+                             color: t.c, desde: t.desde, hasta: t.hasta });
           return '<div class="uso-turno"><div class="uso-turno-nom">'
                + escapar(t.etq) + "</div>"
                + '<div class="uso-turno-val" style="color:'
@@ -6242,11 +6245,16 @@
         pie.style.display = avisoPie ? "" : "none";
 
         // --- Lo mismo, guardado para el PDF -------------------------------------
-        // Ni una cuenta nueva: todo esto ya se calculo arriba para pintarlo.
+        // Ni una cuenta nueva: todo esto ya se calculo arriba para pintarlo. Van
+        // tambien los COLORES, porque el PDF se dibuja entero en el servidor y
+        // tiene que salir con los mismos tonos que la pantalla: si los eligiera
+        // por su cuenta, el papel y el tablero dejarian de parecerse en cuanto
+        // cambiara uno de los dos.
         lastUsoVista = {
-          veredicto: { titulo: titulo, detalle: detalle },
+          veredicto: { titulo: titulo, detalle: detalle, tono: fondo },
           tarjetas: tarjetas.map(function (t) {
-            return { label: t.label, value: String(t.value), status: t.status };
+            return { label: t.label, value: String(t.value), status: t.status,
+                     color: t.color };
           }),
           gente: genteDatos,
           gente_nota: el("usoNotaEntradas").textContent || "",
@@ -6254,6 +6262,8 @@
           pantallas: pantallasDatos,
           turnos: turnosDatos,
           turnos_nota: el("usoTurnosNota").textContent || "",
+          // Las 24 horas en crudo, para redibujar las barras en el PDF.
+          por_hora: Array.from({ length: 24 }, function (_, h) { return ph[h] || 0; }),
           al_dia: el("usoPie").textContent || ""
         };
       }

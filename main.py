@@ -6765,11 +6765,14 @@ async def report_uso(payload: dict):
     El navegador manda lo que YA pinto en pantalla, no los datos crudos, y es a
     proposito. Varias cifras del tablero salen de reglas que viven en el front:
     el semaforo del veredicto, y el reparto por turno que esconde los
-    porcentajes cuando hay menos de diez sesiones porque sobre dos sesiones un
-    porcentaje no significa nada. Recalcular todo eso aqui seria escribir esas
-    reglas dos veces, y el dia que una de las dos copias cambiara, el PDF diria
-    una cosa y la pantalla otra. Asi el PDF es la transcripcion de lo que el
-    directivo tenia enfrente, que es justo lo que va a reenviar por correo.
+    porcentajes cuando hay menos de diez visitas porque sobre dos un porcentaje
+    no significa nada. Recalcular todo eso aqui seria escribir esas reglas dos
+    veces, y el dia que una de las dos copias cambiara, el PDF diria una cosa y
+    la pantalla otra. Asi el PDF es la transcripcion de lo que el directivo
+    tenia enfrente, que es justo lo que va a reenviar por correo.
+
+    El documento se dibuja en uso_pdf.py, con los mismos bloques y en el mismo
+    orden que el tablero.
     """
     vista = payload.get("vista") or {}
     if not vista:
@@ -6783,117 +6786,13 @@ async def report_uso(payload: dict):
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", valor or ""):
             raise HTTPException(
                 status_code=400,
-                detail=f"Formato de '{etiqueta}' inválido ({valor or 'vacío'}). Usa YYYY-MM-DD.")
+                detail=f"Formato de '{etiqueta}' invalido ({valor or 'vacio'}). Usa YYYY-MM-DD.")
     if hasta < desde:
         desde, hasta = hasta, desde
     periodo = desde if desde == hasta else f"{desde} a {hasta}"
 
-    title = "Reporte — Uso de Sidón Industrial"
-    subtitle = f"Periodo: {periodo}"
-
-    kpis = [{"label":  _sin_emoji(t.get("label")),
-             "value":  _sin_emoji(t.get("value")),
-             "status": _sin_emoji(t.get("status"))}
-            for t in (vista.get("tarjetas") or [])]
-
-    sections = []
-
-    ver = vista.get("veredicto") or {}
-    if ver.get("titulo"):
-        sections.append({
-            "title": "Cómo va el uso",
-            "text": "**" + _sin_emoji(ver.get("titulo")) + "**\n\n"
-                    + _sin_emoji(ver.get("detalle")),
-        })
-
-    areas = vista.get("areas") or []
-    if areas:
-        sections.append({
-            "title": "En qué parte de la planta trabajaron",
-            # "Usos" y no "Peticiones": una peticion no mide el uso -Monitoreo se
-            # refresca sola cada minuto-. Un uso es una persona abriendo algo de
-            # esa area en un dia.
-            "text": _tabla_md(
-                ["Área", "Participación", "Usos"],
-                [(a.get("area"), f"{a.get('pct', 0)}%",
-                  f"{int(a.get('usos') or 0):,}") for a in areas]),
-        })
-
-    pantallas = vista.get("pantallas") or []
-    if pantallas:
-        texto = _tabla_md(
-            ["Pantalla", "Usos"],
-            [(p.get("nombre"), f"{int(p.get('usos') or 0):,}")
-             for p in pantallas])
-        sin_nombre = len([p for p in pantallas if not p.get("nombrada")])
-        if sin_nombre:
-            texto += (f"\n\nHay {sin_nombre} pantalla(s) que aparecen con su "
-                      "dirección técnica porque todavía nadie de Sidón confirmó "
-                      "cómo se llaman.")
-        sections.append({"title": "Pantallas más usadas", "text": texto})
-
-    turnos = vista.get("turnos") or []
-    if turnos:
-        # Si la pantalla se callo los porcentajes por pocas sesiones, el PDF se
-        # los calla igual. No se inventa precision que el tablero no dio.
-        con_pct = all(t.get("pct") is not None for t in turnos)
-        if con_pct:
-            texto = _tabla_md(
-                ["Turno", "Participación", "Sesiones"],
-                [(t.get("etiqueta"), f"{t.get('pct')}%",
-                  str(t.get("sesiones") or 0)) for t in turnos])
-        else:
-            texto = _tabla_md(
-                ["Turno", "Sesiones"],
-                [(t.get("etiqueta"), str(t.get("sesiones") or 0)) for t in turnos])
-        if vista.get("turnos_nota"):
-            texto += "\n\n" + _sin_emoji(vista.get("turnos_nota"))
-        sections.append({"title": "A qué hora trabajan", "text": texto})
-
-    # Las cuentas automaticas ya no salen, ni aqui ni en pantalla: el reporte es
-    # sobre accesos de personas, y ese bloque solo invitaba a comparar peticiones
-    # de robot con visitas de gente.
-
-    if vista.get("al_dia"):
-        sections.append({"title": "Procedencia de los datos",
-                         "text": _sin_emoji(vista.get("al_dia"))})
-
-    # Sin columna de "Como entro": decia "sin hora de entrada" en siete de cada
-    # ocho renglones, porque el acceso casi nunca queda ligado a una persona.
-    tabla = [{"Persona":            _sin_emoji(g.get("nombre")),
-              # Vacio, no cero, para el monton sin identificar: no vino cero veces,
-              # es que de esos accesos no se sabe quien los hizo.
-              "Veces que entró":    ("" if g.get("veces") == "" else str(g.get("veces") or 0)),
-              "Días con actividad": str(g.get("dias") or 1)}
-             for g in (vista.get("gente") or [])]
-
-    # El aviso de intentos fallidos, si los hubo: en papel importa mas todavia,
-    # porque quien lo lea no tiene a quien preguntarle.
-    if vista.get("gente_nota"):
-        sections.append({"title": "Intentos de entrada fallidos",
-                         "text": _sin_emoji(vista.get("gente_nota"))})
-
-    # La captura de las tarjetas, tal cual se ven, con su color y su emoji.
-    kpi_snap_path = None
-    b64 = payload.get("kpi_snapshot")
-    if b64 and "," in b64:
-        try:
-            import base64, uuid
-            snap_dir = os.path.join("static", "temp_snaps")
-            os.makedirs(snap_dir, exist_ok=True)
-            kpi_snap_path = os.path.join(snap_dir, f"uso_kpi_{uuid.uuid4().hex[:8]}.png")
-            with open(kpi_snap_path, "wb") as f:
-                f.write(base64.b64decode(b64.split(",", 1)[1]))
-        except Exception as e:
-            print(f"Error kpi_snap uso: {e}")
-            kpi_snap_path = None
-
-    # Se mandan las dos: _build_pdf_bytes usa la captura si existe y cae a las
-    # tarjetas dibujadas si html2canvas fallo. El PDF nunca sale sin cifras.
-    content = _build_pdf_bytes(title, subtitle, sections,
-                               "Quién usó la plataforma", tabla,
-                               logo_path=_LOGO_PATH, kpi_cards=kpis,
-                               kpi_snapshot_path=kpi_snap_path)
+    import uso_pdf
+    content = uso_pdf.construir(vista, periodo, logo=_LOGO_PATH)
     filename = _report_filename(f"uso_sidon_{periodo}", "pdf")
     return Response(content=content, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
