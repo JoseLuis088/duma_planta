@@ -4587,7 +4587,12 @@
           usoPidePeriodo: "Consulta primero un periodo.",
           usoCargando: "Consultando…",
           usoError: "No se pudo leer el resumen de uso",
-          usoKpiPersonas: "Personas activas",
+          // "Activas" se lee como "conectadas en este momento", y esta tarjeta
+          // cuenta a quien uso Sidon en el rango elegido. "Distintas" dice lo que
+          // importa -a nadie se le cuenta dos veces- y hace juego con la tarjeta
+          // de al lado. Con su pie forma una frase: "Personas distintas / 7 /
+          // usaron Sidon en el periodo".
+          usoKpiPersonas: "Personas distintas",
           usoKpiPersonasPie: "usaron Sidón ese día",
           usoKpiPersonasPieRango: "usaron Sidón en el periodo",
           usoKpiEntradas: "Inicios de sesión",
