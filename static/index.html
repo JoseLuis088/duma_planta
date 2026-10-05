@@ -1750,7 +1750,12 @@
       position: relative;
       flex: 1 1 auto;
       min-height: 240px;
-      margin-bottom: 4px;
+      /* Con tope. Dejandola crecer sin limite llenaba la tarjeta entera y la dona
+         quedaba desproporcionada: anillo grueso y un hueco enorme en el centro.
+         Los margenes automaticos reparten lo que sobra arriba y abajo, asi que el
+         aire se ve centrado en vez de amontonado al pie. */
+      max-height: 400px;
+      margin: auto 0 4px;
     }
     .uso-dona-centro {
       position: absolute; inset: 0;
