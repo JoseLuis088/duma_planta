@@ -4239,22 +4239,6 @@
 
             <div class="card uso-card">
               <div class="uso-card-head">
-                <span class="uso-card-icono">🖥️</span>
-                <div>
-                  <div style="display:flex; align-items:center; gap:8px">
-                    <h3 id="usoTitRutas">Qué pantallas usan</h3>
-                    <button type="button" class="uso-ayuda" id="usoAyudaRutas">?</button>
-                  </div>
-                  <p class="sub" id="usoSubRutas">Las pantallas que la gente abre, de más a menos usada</p>
-                </div>
-              </div>
-              <div id="usoAreas" class="uso-areas"></div>
-              <div id="usoRutas" class="uso-pantallas"></div>
-              <p class="small muted" id="usoAvisoNombres" style="margin-top:12px; display:none"></p>
-            </div>
-
-            <div class="card uso-card">
-              <div class="uso-card-head">
                 <span class="uso-card-icono">🕐</span>
                 <div>
                   <div style="display:flex; align-items:center; gap:8px">
@@ -4267,6 +4251,25 @@
               <div style="height: 180px; margin-top: 8px"><canvas id="usoHorasChart"></canvas></div>
               <div id="usoTurnos" class="uso-turnos"></div>
               <p class="small muted" id="usoTurnosNota" style="margin-top:12px; display:none"></p>
+            </div>
+
+            <!-- El detalle de pantallas va al final: es la lista mas larga del
+                 tablero y la mas de consulta. Lo que un directivo mira primero son
+                 las personas y las horas. -->
+            <div class="card uso-card">
+              <div class="uso-card-head">
+                <span class="uso-card-icono">🖥️</span>
+                <div>
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <h3 id="usoTitRutas">Qué pantallas usan</h3>
+                    <button type="button" class="uso-ayuda" id="usoAyudaRutas">?</button>
+                  </div>
+                  <p class="sub" id="usoSubRutas">Las pantallas que la gente abre, de más a menos usada</p>
+                </div>
+              </div>
+              <div id="usoAreas" class="uso-areas"></div>
+              <div id="usoRutas" class="uso-pantallas"></div>
+              <p class="small muted" id="usoAvisoNombres" style="margin-top:12px; display:none"></p>
             </div>
 
             <p class="small muted" id="usoPie" style="margin-top: 14px; text-align:center"></p>
@@ -4564,7 +4567,7 @@
           usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron entre todas las personas, no cada una por separado. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo. No se cuentan las que abren las cuentas automáticas del sistema.",
           usoAyudaHumano: "Cuántas veces entra cada persona, en promedio, durante el periodo elegido. Un número alto quiere decir que quien usa Sidón vuelve varias veces, no que entró una vez y lo dejó.",
           usoTurnosPocas: "Con {n} visitas todavía no tiene sentido repartirlo en porcentajes: una visita más cambiaría el reparto por completo. Se enseña la cuenta hasta que haya suficientes.",
-          usoAyudaHorasTxt: "Cada barra cuenta las sesiones que EMPEZARON en esa hora. Una sesión larga cuenta solo en la hora en que arrancó, no en todas las que duró. El reparto por turno sirve para ver si el sistema se usa en los tres turnos o solo en el de día.",
+          usoAyudaHorasTxt: "Cada barra cuenta las visitas que EMPEZARON a esa hora. Una visita larga cuenta solo donde arrancó, no en todas las horas que duró. El color dice a qué turno pertenece cada hora -sol, tarde y madrugada-, no si va bien o mal. Las tres tarjetas de abajo resumen lo mismo por turno: sirven para ver si Sidón se usa en los tres o solo en el de día.",
           titleUso: "Usabilidad",
           subtitleUso: "Quién usa Sidón Industrial, cuándo y para qué",
           menuLabelUso: "Usabilidad",
@@ -4600,7 +4603,7 @@
           usoTitPersonas: "Cuánto usó cada quien",
           usoSubPersonas: "Solo personas: las cuentas de sistema van aparte",
           usoTitRutas: "Qué pantallas usan",
-          usoAyudaUsos: "Un uso es una persona abriendo esa pantalla un día. Si la deja abierta y se refresca sola, sigue contando como uno. Se mide así y no por número de consultas porque Monitoreo de línea se actualiza cada minuto por su cuenta: contando consultas se llevaba el 80% del tablero por el temporizador de una sola persona.",
+          usoAyudaUsos: "Un uso es una persona abriendo esa pantalla en un día. Si la deja abierta y la pantalla se refresca sola, sigue contando como uno: así una pantalla que se actualiza por su cuenta no aparenta más uso del que tiene. Arriba, el reparto agrupa las pantallas por el área de la planta que atienden.",
           usoSubRutas: "Las pantallas que la gente abre, de más a menos usada",
           usoTitHoras: "A qué hora trabajan",
           usoSubHoras: "Visitas que arrancan en cada hora del día",
@@ -5725,6 +5728,35 @@
         }
       };
 
+      // Lo mismo para las barras, pero encima de cada una. Las horas en cero se
+      // quedan sin etiqueta: un "0" repetido catorce veces solo es ruido.
+      const etiquetasEnBarras = {
+        id: "etiquetasEnBarras",
+        afterDatasetsDraw: function (chart) {
+          const ctx = chart.ctx;
+          const datos = chart.data.datasets[0].data;
+          chart.getDatasetMeta(0).data.forEach(function (barra, i) {
+            if (!datos[i]) return;
+            ctx.save();
+            ctx.font = '700 11px ui-sans-serif, system-ui, sans-serif';
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.fillStyle = "var(--text)";
+            ctx.fillStyle = getComputedStyle(document.body).color;
+            ctx.fillText(String(datos[i]), barra.x, barra.y - 4);
+            ctx.restore();
+          });
+        }
+      };
+
+      // Los tres turnos. NO es un semaforo: verde/ambar/rojo decian "turno 1, 2 y
+      // 3", pero se leian como "bien, regular, mal" -el turno de noche salia en
+      // rojo por el solo hecho de ser de noche-. Estos tres siguen la luz del dia:
+      // sol, atardecer y madrugada. Distinguen igual y no juzgan a nadie.
+      const USO_TURNO1 = "#f59e0b";   // 07-15, pleno dia
+      const USO_TURNO2 = "#7c3aed";   // 15-23, tarde y noche
+      const USO_TURNO3 = "#1e40af";   // 23-07, madrugada
+
       let usoGraficaDona = null, usoGraficaHoras = null;
 
       // Lo que pintarUso() ya calculo, guardado para el PDF. El reporte no vuelve
@@ -6069,11 +6101,12 @@
           // Cada barra con el color de su turno: el reparto se ve sin leer nada.
           const colores = [];
           for (let h = 0; h < 24; h++) {
-            colores.push(h >= 7 && h < 15 ? USO_VERDE
-                       : (h >= 15 && h < 23 ? USO_AMBAR : USO_ROJO));
+            colores.push(h >= 7 && h < 15 ? USO_TURNO1
+                       : (h >= 15 && h < 23 ? USO_TURNO2 : USO_TURNO3));
           }
           usoGraficaHoras = new Chart(ctxH, {
             type: "bar",
+            plugins: [etiquetasEnBarras],
             data: {
               labels: Array.from({ length: 24 }, function (_, h) {
                 return String(h).padStart(2, "0");
@@ -6090,7 +6123,9 @@
               scales: {
                 x: { grid: { display: false },
                      ticks: { font: { size: 10 }, maxRotation: 0, autoSkipPadding: 14 } },
-                y: { beginAtZero: true, border: { display: false },
+                // `grace` deja aire arriba: sin el, la etiqueta de la barra mas
+                // alta queda cortada contra el borde de la grafica.
+                y: { beginAtZero: true, border: { display: false }, grace: "18%",
                      ticks: { precision: 0, font: { size: 10 } },
                      grid: { color: "rgba(100,116,139,.14)" } }
               },
@@ -6106,9 +6141,9 @@
         }
 
         const turnos = [
-          { etq: T("usoTurno1"), desde: 7, hasta: 15, c: USO_VERDE },
-          { etq: T("usoTurno2"), desde: 15, hasta: 23, c: USO_AMBAR },
-          { etq: T("usoTurno3"), desde: 23, hasta: 7, c: USO_ROJO }
+          { etq: T("usoTurno1"), desde: 7, hasta: 15, c: USO_TURNO1 },
+          { etq: T("usoTurno2"), desde: 15, hasta: 23, c: USO_TURNO2 },
+          { etq: T("usoTurno3"), desde: 23, hasta: 7, c: USO_TURNO3 }
         ];
         const totalSes = ph.reduce(function (a, b) { return a + b; }, 0);
 
