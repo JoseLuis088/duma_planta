@@ -1741,15 +1741,25 @@
     .uso-persona-cifra b { font-size: 16px; font-weight: 800; }
     .uso-persona-cifra span { display: block; font-size: 10.5px; color: var(--text-muted); }
 
-    .uso-dona-wrap { position: relative; height: 185px; margin-bottom: 14px; }
+    /* Las dos tarjetas de esta fila comparten alto -lo manda la mas larga, que es
+       la lista de personas-, asi que la de la dona sobraba por abajo: media
+       tarjeta vacia. En columna flexible, la grafica se queda con todo lo que
+       sobre y la dona crece con ella. */
+    .uso-fila-2 > .uso-card { display: flex; flex-direction: column; }
+    .uso-dona-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 240px;
+      margin-bottom: 4px;
+    }
     .uso-dona-centro {
       position: absolute; inset: 0;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       pointer-events: none;
     }
-    .uso-dona-centro b { font-size: 30px; font-weight: 800; line-height: 1; }
-    .uso-dona-centro span { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+    .uso-dona-centro b { font-size: 38px; font-weight: 800; line-height: 1; }
+    .uso-dona-centro span { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
     .uso-areas {
       display: grid;
