@@ -4214,7 +4214,10 @@
                 <div class="uso-card-head">
                   <span class="uso-card-icono">👥</span>
                   <div>
-                    <h3 id="usoTitLogins">Quién entró</h3>
+                    <div style="display:flex; align-items:center; gap:8px">
+                      <h3 id="usoTitLogins">Quién entró</h3>
+                      <button type="button" class="uso-ayuda" id="usoAyudaQuien">?</button>
+                    </div>
                     <p class="sub" id="usoSubLogins">Cada acceso al sistema, del más reciente al más antiguo</p>
                   </div>
                 </div>
@@ -4632,7 +4635,8 @@
           usoKpiHumano: "Visitas por persona",
           usoKpiHumanoPie: "en promedio, cada quien",
           usoTitLogins: "Quién usó la plataforma",
-          usoSubLogins: "Cuántas veces vino cada quien en el periodo. Una visita se cierra tras media hora sin actividad",
+          usoSubLogins: "Cuántas veces entró cada persona en las fechas elegidas",
+          usoAyudaQuienTxt: "Cada renglón es una persona, con las veces que entró en el periodo. Una visita se da por terminada cuando pasa más de media hora sin pedir nada: si alguien trabaja toda la mañana y vuelve por la tarde, cuentan dos.",
           usoTitPersonas: "Cuánto usó cada quien",
           usoSubPersonas: "Solo personas: las cuentas de sistema van aparte",
           usoTitRutas: "Qué pantallas usan",
@@ -4647,17 +4651,9 @@
           usoThPeticiones: "Peticiones", usoThDias: "Días", usoThPantallas: "Pantallas",
           usoEntro: "Entró", usoFallo: "Falló",
           usoSinLogins: "Nadie usó el sistema en esas fechas",
-          usoEntroA: "entró a las",
-          // Antes decia "ya estaba dentro", que afirmaba algo que no sabemos: casi
-          // siempre la persona si entro ese dia, pero su login quedo sin nombre.
-          usoYaEstaba: "sin hora de entrada",
-          // OJO AL REDACTAR ESTO. Esta nota la lee el cliente. Lo medido es que en
-          // la bitacora 37 de 41 accesos llegan sin el nombre de quien entra; de
-          // ahi NO se sigue que Sidon no sepa quien entro -autentica a la gente, y
-          // 4 de esos accesos si traen nombre-. La nota dice lo que esta vista
-          // puede ensenar, no diagnostica el sistema de nadie.
-          usoNotaSinEntrada: "La hora de entrada solo se muestra cuando el acceso quedó ligado a una persona. Quiénes trabajaron y cuánto hizo cada uno sí es exacto.",
           usoDiasCorto: "días",
+          usoEnDias: "en {n} días",
+          usoEnUnDia: "en 1 día",
           usoSinPersonas: "Ninguna persona usó el sistema",
           usoSinRutas: "Sin actividad",
           usoSinMaquinas: "Sin tráfico de sistema",
@@ -5983,7 +5979,6 @@
         // Se va juntando la misma lista en texto plano, sin iconos, para el PDF:
         // Helvetica no tiene emojis y un candado ahi sale como cuadrito negro.
         const genteDatos = [];
-        let sinEntrada = 0;
 
         el("usoGente").innerHTML = nombres.length === 0
           ? '<p class="muted">' + T("usoSinLogins") + "</p>"
@@ -6006,26 +6001,16 @@
               const etiqueta = anonimo
                 ? T("usoAccesosSinNombre")
                 : T(veces === 1 ? "usoVezCorto" : "usoVecesCorto");
-              let icono, estado;
-              if (l && l.exitoso) {
-                icono = "🔑"; estado = T("usoEntroA") + " " + String(l.hora).slice(0, 5);
-              } else if (l) {
-                icono = "⚠️"; estado = T("usoFallo");
-              } else {
-                // Sin icono a proposito: los otros dos estados afirman algo -entro,
-                // fallo- y este es justamente el de no saber. Una flechita de
-                // "volvio" sugeriria que si lo sabemos.
-                icono = ""; estado = T("usoYaEstaba");
-                sinEntrada++;
-              }
-              genteDatos.push({
-                nombre: u,
-                estado: estado.charAt(0).toUpperCase() + estado.slice(1),
-                veces: anonimo ? "" : veces,
-                dias: p.dias || 1
-              });
-              let sub = (icono ? icono + " " : "") + estado;
-              if (p.dias > 1) sub += " · " + p.dias + " " + T("usoDiasCorto");
+              // La hora de entrada se quito. En 7 de cada 8 renglones decia "sin
+              // hora de entrada", porque el acceso casi nunca queda ligado a una
+              // persona: una columna que acierta una vez de ocho confunde mas de
+              // lo que informa. En su lugar va el dato que si esta siempre -en
+              // cuantos dias trabajo- y se conserva el intento fallido, que es
+              // raro y accionable: alguien que no esta pudiendo entrar.
+              const dias = p.dias || 1;
+              let sub = T(dias === 1 ? "usoEnUnDia" : "usoEnDias").replace("{n}", dias);
+              if (l && !l.exitoso) sub = "⚠️ " + T("usoFallo") + " · " + sub;
+              genteDatos.push({ nombre: u, veces: anonimo ? "" : veces, dias: dias });
               return '<div class="uso-persona">'
                 + '<div class="uso-avatar" style="background:' + col + '">'
                 + escapar(anonimo ? "··" : iniciales(u)) + "</div>"
@@ -6038,16 +6023,13 @@
 
         // La nota sale solo si de verdad falta alguna hora de entrada. Si todas
         // estan, sobra: no se le explica al directivo un problema que no tiene.
-        // Aqui tambien caen los intentos fallidos, que antes vivian en la tarjeta
-        // de "Inicios de sesion". Esa tarjeta se quito por confusa, pero el dato
-        // no sobra: que fallen entradas puede querer decir que alguien lleva dias
-        // sin poder entrar, y eso si le interesa a un directivo.
-        const partes = [];
-        if (sinEntrada > 0) partes.push(T("usoNotaSinEntrada"));
-        if (fallidos > 0) partes.push(fallidos + " " + T("usoNotaFallidos"));
+        // Solo los intentos fallidos. La nota sobre la hora de entrada se fue con
+        // la columna que explicaba. Esta se queda porque que fallen entradas puede
+        // querer decir que alguien lleva dias sin poder entrar.
         const notaEnt = el("usoNotaEntradas");
-        notaEnt.textContent = partes.join(" ");
-        notaEnt.style.display = partes.length ? "" : "none";
+        notaEnt.textContent = fallidos > 0
+          ? fallidos + " " + T("usoNotaFallidos") : "";
+        notaEnt.style.display = fallidos > 0 ? "" : "none";
 
         // --- Dona: personas contra sistema ------------------------------------
         if (usoGraficaDona) { usoGraficaDona.destroy(); usoGraficaDona = null; }
@@ -6280,7 +6262,8 @@
       // datos, a diferencia de las de las tarjetas.
       (function () {
         [["usoAyudaHoras", "usoTitHoras", "usoAyudaHorasTxt"],
-         ["usoAyudaRutas", "usoTitRutas", "usoAyudaUsos"]].forEach(function (x) {
+         ["usoAyudaRutas", "usoTitRutas", "usoAyudaUsos"],
+         ["usoAyudaQuien", "usoTitLogins", "usoAyudaQuienTxt"]].forEach(function (x) {
           const b = el(x[0]);
           if (!b) return;
           b.setAttribute("aria-label", T(x[1]));

@@ -6858,19 +6858,19 @@ async def report_uso(payload: dict):
         sections.append({"title": "Procedencia de los datos",
                          "text": _sin_emoji(vista.get("al_dia"))})
 
+    # Sin columna de "Como entro": decia "sin hora de entrada" en siete de cada
+    # ocho renglones, porque el acceso casi nunca queda ligado a una persona.
     tabla = [{"Persona":            _sin_emoji(g.get("nombre")),
               # Vacio, no cero, para el monton sin identificar: no vino cero veces,
               # es que de esos accesos no se sabe quien los hizo.
               "Veces que entró":    ("" if g.get("veces") == "" else str(g.get("veces") or 0)),
-              "Días con actividad": str(g.get("dias") or 1),
-              "Cómo entró":         _sin_emoji(g.get("estado"))}
+              "Días con actividad": str(g.get("dias") or 1)}
              for g in (vista.get("gente") or [])]
 
-    # La misma advertencia que lleva la pantalla cuando falta alguna hora de
-    # entrada. En papel importa mas todavia: quien lo lea no tiene a quien
-    # preguntarle por que la columna viene medio vacia.
+    # El aviso de intentos fallidos, si los hubo: en papel importa mas todavia,
+    # porque quien lo lea no tiene a quien preguntarle.
     if vista.get("gente_nota"):
-        sections.append({"title": "Sobre la hora de entrada",
+        sections.append({"title": "Intentos de entrada fallidos",
                          "text": _sin_emoji(vista.get("gente_nota"))})
 
     # La captura de las tarjetas, tal cual se ven, con su color y su emoji.
