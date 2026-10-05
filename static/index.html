@@ -6284,37 +6284,22 @@
 
       el("btnGenUso").addEventListener("click", consultarUso);
 
-      // Descarga del PDF, igual que en Variables de Control y OEE: se captura la
-      // fila de tarjetas tal como se ve -con su color y su emoji- y se manda junto
-      // con las cifras ya calculadas. Si la captura falla, el backend cae a
-      // dibujar las tarjetas el mismo y el reporte sale de todos modos.
+      // Descarga del PDF. A diferencia de Variables de Control y OEE, aqui no se
+      // captura nada de la pantalla: el documento se dibuja entero en el servidor
+      // a partir de estas mismas cifras. Se intento la captura y no funciona
+      // -html2canvas devuelve en blanco cualquier `.card`, por su backdrop-filter-
+      // y de todos modos un PDF de fotos no deja seleccionar el texto.
       el("btnDlUsoPdf")?.addEventListener("click", async () => {
         if (!lastUsoVista) return alert(T("usoPidePeriodo"));
-        setBtnBusy("btnDlUsoPdf", true, "Capturando...");
+        setBtnBusy("btnDlUsoPdf", true, "Generando...");
         try {
-          let kpiSnapshot = null;
-          const fila = el("usoKpiRow");
-          if (fila) {
-            try {
-              const canvas = await html2canvas(fila, {
-                scale: 1.2, backgroundColor: "#ffffff",
-                // Los "?" de ayuda fuera: en papel no se les puede pasar el raton,
-                // asi que solo serian circulitos sin sentido.
-                ignoreElements: function (n) {
-                  return n.classList && n.classList.contains("uso-ayuda");
-                }
-              });
-              kpiSnapshot = canvas.toDataURL("image/jpeg", 0.7);
-            } catch (e) { console.error("Error capturando tarjetas de uso:", e); }
-          }
           const nombre = (lastUsoDesde === lastUsoHasta)
             ? `uso_sidon_${lastUsoDesde}.pdf`
             : `uso_sidon_${lastUsoDesde}_a_${lastUsoHasta}.pdf`;
           await downloadFrom("api/report/uso/", nombre, {
             desde: lastUsoDesde,
             hasta: lastUsoHasta,
-            vista: lastUsoVista,
-            kpi_snapshot: kpiSnapshot
+            vista: lastUsoVista
           });
         } finally {
           setBtnBusy("btnDlUsoPdf", false);
