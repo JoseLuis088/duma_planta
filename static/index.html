@@ -4372,6 +4372,38 @@
         document.documentElement.setAttribute('data-theme', newTheme);
         safeStorage.setItem('duma-theme', newTheme);
         updateThemeIcon(newTheme);
+        // Las graficas no se enteran solas: ver mas abajo.
+        retintarGraficasUso();
+      }
+
+      // Chart.js no entiende variables CSS. Hay que resolverlas al construir la
+      // grafica Y volver a aplicarlas cuando se cambia de tema, o las leyendas y
+      // los numeros de los ejes se quedan del color del tema anterior: en modo
+      // oscuro salian en gris sobre fondo verde oscuro y no se leian.
+      function tintaGrafica() {
+        const cs = getComputedStyle(document.documentElement);
+        const oscuro = document.documentElement.getAttribute("data-theme") === "dark";
+        return {
+          texto: (cs.getPropertyValue("--text") || "#0f172a").trim(),
+          reja: oscuro ? "rgba(226,232,240,.18)" : "rgba(100,116,139,.14)"
+        };
+      }
+
+      function retintarGraficasUso() {
+        const t = tintaGrafica();
+        [usoGraficaDona, usoGraficaHoras].forEach(function (g) {
+          if (!g) return;
+          const o = g.options;
+          if (o.plugins && o.plugins.legend && o.plugins.legend.labels) {
+            o.plugins.legend.labels.color = t.texto;
+          }
+          if (o.scales) {
+            if (o.scales.x && o.scales.x.ticks) o.scales.x.ticks.color = t.texto;
+            if (o.scales.y && o.scales.y.ticks) o.scales.y.ticks.color = t.texto;
+            if (o.scales.y && o.scales.y.grid) o.scales.y.grid.color = t.reja;
+          }
+          g.update("none");
+        });
       }
 
       function updateThemeIcon(theme) {
@@ -4554,11 +4586,12 @@
           usoVeces: "veces",
           usoAvisoSinNombre: "pantallas todavía sin nombre. Aparecen con su dirección técnica hasta que alguien las nombre.",
           usoVerBienTit: "La plataforma se está usando",
-          usoVerBienSub: "personas usaron la plataforma",
-          usoVisitas: "visitas en total",
-          usoVisitaUna: "visita en total",
+          usoVerBienSub: "{n} personas distintas usaron Sidón en estas fechas. Entre todas entraron {v}.",
+          usoVerVeces: "veces",
+          usoVerUnaVez: "una vez",
           usoVerPocoTit: "Uso bajo en estas fechas",
-          usoVerPocoSub: "persona o dos entraron. Conviene revisar si al resto le hace falta algo.",
+          usoVerPocoSub: "Solo {n} personas usaron Sidón en estas fechas. Conviene revisar si al resto le hace falta algo.",
+          usoVerPocoSub1: "Solo 1 persona usó Sidón en estas fechas. Conviene revisar si al resto le hace falta algo.",
           usoVerNadieTit: "Nadie entró a la plataforma",
           usoVerNadieSub: "Ninguna persona usó Sidón Industrial en las fechas elegidas.",
           usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. Cuenta a cada quien una sola vez, entre una y veinte veces que haya entrado. No se cuentan las cuentas automáticas del sistema ni los accesos que no se pudieron ligar a una persona.",
@@ -4631,7 +4664,7 @@
           usoTurno1: "Turno 1 · 07-15",
           usoTurno2: "Turno 2 · 15-23",
           usoTurno3: "Turno 3 · 23-07",
-          usoPieAlDia: "El resumen está al día hasta:",
+          usoPieIncompleto: "⚠️ Las fechas elegidas llegan más allá del {d}, que es hasta donde el resumen está armado. Los días posteriores salen vacíos aunque sí se haya usado la plataforma.",
           usoPieSinCorrer: "El resumen todavía no se ha construido ninguna vez",
           usoVacioTit: "Todavía no hay nada que enseñar de esas fechas",
           usoVacioSub: "El resumen se construye cada madrugada a las 4:00. Los días anteriores al 2 de octubre de 2026 no se alcanzaron a archivar antes de que se limpiara la bitácora de origen.",
@@ -5688,6 +5721,15 @@
         return USO_PALETA[s % USO_PALETA.length];
       }
 
+      // El dia anterior a una fecha AAAA-MM-DD, sin arrastrar husos: se construye
+      // en UTC a proposito, porque aqui solo interesa restarle un dia al numero.
+      function diaAnterior(iso) {
+        const p = String(iso).split("-");
+        const f = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+        f.setUTCDate(f.getUTCDate() - 1);
+        return f.toISOString().slice(0, 10);
+      }
+
       function iniciales(correo) {
         const base = String(correo || "").split("@")[0].replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ]/g, "");
         if (!base) return "··";
@@ -5741,8 +5783,7 @@
             ctx.font = '700 11px ui-sans-serif, system-ui, sans-serif';
             ctx.textAlign = "center";
             ctx.textBaseline = "bottom";
-            ctx.fillStyle = "var(--text)";
-            ctx.fillStyle = getComputedStyle(document.body).color;
+            ctx.fillStyle = tintaGrafica().texto;
             ctx.fillText(String(datos[i]), barra.x, barra.y - 4);
             ctx.restore();
           });
@@ -5853,7 +5894,11 @@
         } else if (personasReales.length <= 2) {
           luz = "🟡"; fondo = USO_AMBAR;
           titulo = T("usoVerPocoTit");
-          detalle = personasReales.length + " " + T("usoVerPocoSub");
+          // Antes era `n + " " + texto` con el texto empezando en "persona o dos
+          // entraron", asi que con dos personas salia "2 persona o dos entraron".
+          // Ahora la frase se arma entera y concuerda.
+          detalle = T(personasReales.length === 1 ? "usoVerPocoSub1" : "usoVerPocoSub")
+                      .replace("{n}", personasReales.length);
         } else {
           luz = "🟢"; fondo = USO_VERDE;
           titulo = T("usoVerBienTit");
@@ -5861,8 +5906,11 @@
           // la pantalla abierta, no el trabajo. Una pestana olvidada en Monitoreo
           // sumaba 16 horas. El titular lleva ahora visitas, que no necesitan nota
           // al pie; el tiempo se queda en su tarjeta, donde el tooltip lo explica.
-          detalle = personasReales.length + " " + T("usoVerBienSub") + ", "
-                  + visitas + " " + T(visitas === 1 ? "usoVisitaUna" : "usoVisitas") + ".";
+          const vecesTxt = visitas === 1
+            ? T("usoVerUnaVez") : visitas + " " + T("usoVerVeces");
+          detalle = T("usoVerBienSub")
+                      .replace("{n}", personasReales.length)
+                      .replace("{v}", vecesTxt);
         }
         el("usoVeredicto").innerHTML =
             '<div class="uso-veredicto-luz" style="background:' + fondo + '22">'
@@ -6031,7 +6079,7 @@
               plugins: {
                 legend: { position: "bottom",
                           labels: { boxWidth: 11, boxHeight: 11, padding: 14,
-                                    font: { size: 12 } } },
+                                    font: { size: 12 }, color: tintaGrafica().texto } },
                 tooltip: { callbacks: { label: function (c) {
                   return " " + c.label + ": " + c.parsed.toLocaleString();
                 } } }
@@ -6122,12 +6170,14 @@
               responsive: true, maintainAspectRatio: false,
               scales: {
                 x: { grid: { display: false },
-                     ticks: { font: { size: 10 }, maxRotation: 0, autoSkipPadding: 14 } },
+                     ticks: { font: { size: 10 }, maxRotation: 0, autoSkipPadding: 14,
+                              color: tintaGrafica().texto } },
                 // `grace` deja aire arriba: sin el, la etiqueta de la barra mas
                 // alta queda cortada contra el borde de la grafica.
                 y: { beginAtZero: true, border: { display: false }, grace: "18%",
-                     ticks: { precision: 0, font: { size: 10 } },
-                     grid: { color: "rgba(100,116,139,.14)" } }
+                     ticks: { precision: 0, font: { size: 10 },
+                              color: tintaGrafica().texto },
+                     grid: { color: tintaGrafica().reja } }
               },
               plugins: {
                 legend: { display: false },
@@ -6185,11 +6235,29 @@
         el("usoTurnosNota").style.display = bastantes ? "none" : "";
 
         // --- Pie ---------------------------------------------------------------
+        // El pie decia siempre hasta cuando esta armado el resumen, y casi siempre
+        // sobraba: si las fechas pedidas caben dentro, no hay nada que avisar.
+        // Pero no es redundante con el filtro de fechas, que es lo que parecia:
+        // si alguien pide hasta el dia 10 y el resumen solo llega al 4, los dias
+        // 5 al 10 salen vacios como si nadie hubiera entrado. Por eso el aviso se
+        // queda, pero solo aparece cuando de verdad falta algo.
+        //
+        // La marca del ETL es el arranque de un dia local expresado en UTC, asi
+        // que su parte de fecha ES ese dia y el ultimo dia completo es el
+        // anterior.
         const etl = (d.etl || [])[0];
-        el("usoPie").textContent = etl
-          ? T("usoPieAlDia") + " "
-            + String(etl.procesado_hasta_utc).slice(0, 16).replace("T", " ") + " UTC"
-          : T("usoPieSinCorrer");
+        const pie = el("usoPie");
+        let avisoPie = "";
+        if (!etl) {
+          avisoPie = T("usoPieSinCorrer");
+        } else {
+          const ultimo = diaAnterior(String(etl.procesado_hasta_utc).slice(0, 10));
+          if (String(d.hasta || "") > ultimo) {
+            avisoPie = T("usoPieIncompleto").replace("{d}", ultimo);
+          }
+        }
+        pie.textContent = avisoPie;
+        pie.style.display = avisoPie ? "" : "none";
 
         // --- Lo mismo, guardado para el PDF -------------------------------------
         // Ni una cuenta nueva: todo esto ya se calculo arriba para pintarlo.
