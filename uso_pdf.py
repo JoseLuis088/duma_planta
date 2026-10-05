@@ -24,7 +24,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.platypus import Flowable, SimpleDocTemplate, Spacer
+from reportlab.platypus import Flowable, PageBreak, SimpleDocTemplate, Spacer
 
 # Lo unico que se define aqui es lo que no depende de los datos.
 C_MARCA = colors.HexColor("#0f766e")
@@ -488,21 +488,25 @@ def construir(vista, periodo, logo=None, etiquetas=None):
     if vista.get("gente_nota"):
         hist.append(Spacer(1, 8))
         hist.append(aviso(vista["gente_nota"]))
-    hist.append(Spacer(1, 18))
 
+    # Un apartado por hoja. Dejandolos correr seguidos, el titulo de uno acababa
+    # pegado al pie del anterior -la dona y las horas se empalmaban- y de un
+    # vistazo parecian el mismo panel. En pantalla los separa el aire entre
+    # tarjetas; en papel los separa la hoja.
     partes = [{"nombre": str(x.get("nombre") or "").split("@")[0],
                "valor": x.get("veces") or 0, "color": x.get("color")}
               for x in g if x.get("veces") not in ("", None)]
     total = sum(p["valor"] for p in partes)
     if total:
+        hist.append(PageBreak())
         hist.append(dona(partes, total, e["visitas"], e["dona_tit"], e["dona_sub"]))
-        hist.append(Spacer(1, 14))
 
+    hist.append(PageBreak())
     hist.append(horas(vista.get("por_hora"), vista.get("turnos"),
                       vista.get("turnos_nota"), e["horas_tit"], e["horas_sub"],
                       e["visitas"]))
-    hist.append(Spacer(1, 14))
 
+    hist.append(PageBreak())
     if vista.get("areas"):
         hist.append(areas(vista["areas"], e["pant_tit"], e["pant_sub"],
                           e["usos"], e["uso"]))
