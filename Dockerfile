@@ -19,6 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 3) Código y estáticos
 COPY main.py .
+# El PDF del modulo Usabilidad. Va aparte de main.py, asi que necesita su propia
+# linea: sin ella la imagen se construye, el contenedor arranca sano y solo falla
+# al pulsar "Descargar PDF", con un 500 que nadie ve hasta que un directivo lo
+# intenta. Es el mismo descuido que ya costo el indice del manual, mas abajo.
+COPY uso_pdf.py .
 COPY Sidon_logo.png .
 COPY static ./static
 COPY DUMA_EXECUTIVE_PROMPT.txt .
