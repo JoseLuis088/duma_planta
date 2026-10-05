@@ -4571,7 +4571,7 @@
           usoAyudaPersonas: "Cuántas personas distintas usaron Sidón Industrial en las fechas elegidas. Cuenta a cada quien una sola vez, entre una y veinte veces que haya entrado. No se cuentan las cuentas automáticas del sistema ni los accesos que no se pudieron ligar a una persona.",
           usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña, incluidos los intentos fallidos. No se puede repartir por persona: la mayoría de esos accesos no quedan ligados a nadie.",
           usoAyudaSesiones: "Cada vez que alguien se puso a usar la plataforma. Una visita se da por terminada cuando la persona pasa más de media hora sin pedir nada. El tiempo de abajo es con la pantalla abierta, que no siempre es tiempo trabajando: una pestaña olvidada sigue sumando.",
-          usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo.",
+          usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron entre todas las personas, no cada una por separado. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo. No se cuentan las que abren las cuentas automáticas del sistema.",
           usoAyudaHumano: "Cuántas veces entra cada persona, en promedio, durante el periodo elegido. Un número alto quiere decir que quien usa Sidón vuelve varias veces, no que entró una vez y lo dejó.",
           usoTurnosPocas: "Con {n} visitas todavía no tiene sentido repartirlo en porcentajes: una visita más cambiaría el reparto por completo. Se enseña la cuenta hasta que haya suficientes.",
           usoAyudaHorasTxt: "Cada barra cuenta las sesiones que EMPEZARON en esa hora. Una sesión larga cuenta solo en la hora en que arrancó, no en todas las que duró. El reparto por turno sirve para ver si el sistema se usa en los tres turnos o solo en el de día.",
@@ -4601,7 +4601,8 @@
           usoKpiSinFallos: "ninguno fallido",
           usoKpiSesiones: "Visitas",
           usoKpiPantallas: "Pantallas distintas",
-          usoKpiPantallasPie: "abiertas por personas",
+          usoKpiPantallasPie: "abiertas ese día",
+          usoKpiPantallasPieRango: "abiertas en el periodo",
           usoKpiHumano: "Visitas por persona",
           usoKpiHumanoPie: "en promedio, cada quien",
           usoCapMaquinas: "Aparte, estos procesos automáticos consultan solos. No son gente y no cuentan en nada de lo de arriba:",
@@ -5812,8 +5813,13 @@
             ayuda: T("usoAyudaPersonas"),
             color: personasReales.length > 2 ? USO_VERDE
                  : (personasReales.length > 0 ? USO_AMBAR : USO_ROJO) },
+          // El pie decia "abiertas por personas" y se leia como que CADA persona
+          // abrio 12 pantallas. El 12 es el total entre todas. Lo que ese "por
+          // personas" queria decir -que las cuentas automaticas no cuentan- se
+          // mudo al tooltip, que es donde cabe sin ambiguedad.
           { icono: "🖥️", label: T("usoKpiPantallas"), value: k.pantallas || 0,
-            status: T("usoKpiPantallasPie"), ayuda: T("usoAyudaPantallas"),
+            status: T(unSoloDia ? "usoKpiPantallasPie" : "usoKpiPantallasPieRango"),
+            ayuda: T("usoAyudaPantallas"),
             color: USO_GRIS },
           // Aqui estaba "Trafico humano": el % de peticiones hechas por gente. Se
           // quito porque no medía el uso sino cuantos procesos automaticos corren.
