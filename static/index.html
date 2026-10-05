@@ -4232,16 +4232,17 @@
 
               <div class="card uso-card">
                 <div class="uso-card-head">
-                  <span class="uso-card-icono">⚖️</span>
+                  <span class="uso-card-icono">📊</span>
                   <div>
-                    <h3 id="usoTitReparto">Personas contra sistema</h3>
-                    <p class="sub" id="usoSubReparto">De cada 100 peticiones, cuántas las hace una persona</p>
+                    <h3 id="usoTitReparto">Quién entra más</h3>
+                    <p class="sub" id="usoSubReparto">Cómo se reparten las visitas entre las personas</p>
                   </div>
                 </div>
                 <div class="uso-dona-wrap">
                   <canvas id="usoDona"></canvas>
                   <div class="uso-dona-centro" id="usoDonaCentro"></div>
                 </div>
+                <p class="small muted" id="usoCapMaquinas" style="margin:14px 0 6px; display:none"></p>
                 <div id="usoMaquinas" class="uso-maquinas"></div>
               </div>
             </div>
@@ -4542,11 +4543,11 @@
           subtitleOEE: "Desempeño global y por turno",
           titleAgent: "Duma AI Agent",
           subtitleAgent: "Asistente Operativo con Inteligencia Artificial",
-          usoTitReparto: "Personas contra sistema",
-          usoSubReparto: "De cada 100 peticiones, cuántas las hace una persona",
+          usoTitReparto: "Quién entra más",
+          usoSubReparto: "Cómo se reparten las visitas entre las personas",
           usoLblPersonas: "Personas",
           usoLblSistema: "Sistema",
-          usoLblHumano: "lo hacen personas",
+          usoLblHumano: "visitas",
           usoPeticionesCorto: "peticiones",
           usoVecesCorto: "veces que entró",
           usoVezCorto: "vez que entró",
@@ -4566,7 +4567,7 @@
           usoAyudaEntradas: "Veces que alguien escribió su usuario y contraseña. Suele ser MENOR que las personas activas, porque la sesión se queda abierta y no hace falta entrar de nuevo cada día. Si algún intento falló, la tarjeta se pone en rojo.",
           usoAyudaSesiones: "Cada vez que alguien se puso a usar la plataforma. Una visita se da por terminada cuando la persona pasa más de media hora sin pedir nada. El tiempo de abajo es con la pantalla abierta, que no siempre es tiempo trabajando: una pestaña olvidada sigue sumando.",
           usoAyudaPantallas: "Cuántas pantallas distintas de Sidón Industrial se abrieron. Muchas pantallas significa que se usa a fondo; pocas, que se entra siempre a lo mismo.",
-          usoAyudaHumano: "Del total de peticiones que recibe Sidón, qué parte viene de una persona. El resto lo generan procesos automáticos que consultan solos. Mientras más alto, más gente lo está usando de verdad.",
+          usoAyudaHumano: "Cuántas veces entra cada persona, en promedio, durante el periodo elegido. Un número alto quiere decir que quien usa Sidón vuelve varias veces, no que entró una vez y lo dejó.",
           usoTurnosPocas: "Con {n} visitas todavía no tiene sentido repartirlo en porcentajes: una visita más cambiaría el reparto por completo. Se enseña la cuenta hasta que haya suficientes.",
           usoAyudaHorasTxt: "Cada barra cuenta las sesiones que EMPEZARON en esa hora. Una sesión larga cuenta solo en la hora en que arrancó, no en todas las que duró. El reparto por turno sirve para ver si el sistema se usa en los tres turnos o solo en el de día.",
           titleUso: "Usabilidad",
@@ -4589,8 +4590,9 @@
           usoKpiSesiones: "Visitas",
           usoKpiPantallas: "Pantallas distintas",
           usoKpiPantallasPie: "abiertas por personas",
-          usoKpiHumano: "Tráfico humano",
-          usoKpiHumanoPie: "el resto lo genera el sistema",
+          usoKpiHumano: "Visitas por persona",
+          usoKpiHumanoPie: "en promedio, cada quien",
+          usoCapMaquinas: "Aparte, estos procesos automáticos consultan solos. No son gente y no cuentan en nada de lo de arriba:",
           usoTitLogins: "Quién usó la plataforma",
           usoSubLogins: "Cuántas veces vino cada quien en el periodo. Una visita se cierra tras media hora sin actividad",
           usoTitPersonas: "Cuánto usó cada quien",
@@ -5741,9 +5743,12 @@
         const visitas = personasReales.reduce(function (a, p) {
           return a + (p.veces || 0);
         }, 0);
-        const totalPet = (k.peticiones_personas || 0) + (k.peticiones_maquinas || 0);
-        const pctHumano = totalPet > 0
-          ? Math.round((k.peticiones_personas / totalPet) * 100) : 0;
+        // Sin decimal cuando sale redondo: "3" lee mejor que "3.0". El nombre no
+        // puede ser porPersona: mas abajo ya existe ese mapa.
+        const mediaVisitas = personasReales.length
+          ? Math.round((visitas / personasReales.length) * 10) / 10 : 0;
+        const porPersona1 = mediaVisitas % 1 === 0
+          ? String(mediaVisitas) : mediaVisitas.toFixed(1);
         const minutos = k.minutos || 0;
         const horas = Math.floor(minutos / 60), mins = minutos % 60;
         const tiempo = horas > 0 ? horas + " h " + mins + " min" : mins + " min";
@@ -5796,10 +5801,16 @@
           { icono: "🖥️", label: T("usoKpiPantallas"), value: k.pantallas || 0,
             status: T("usoKpiPantallasPie"), ayuda: T("usoAyudaPantallas"),
             color: USO_GRIS },
-          { icono: "⚖️", label: T("usoKpiHumano"), value: pctHumano + "%",
+          // Aqui estaba "Trafico humano": el % de peticiones hechas por gente. Se
+          // quito porque no medía el uso sino cuantos procesos automaticos corren.
+          // De 42,751 peticiones, 41,076 eran dos cuentas de sistema; si IT levanta
+          // otro monitor, el indicador cae de 3.9% a 2.2% sin que cambie una sola
+          // persona. Y un directivo lo lee como "nadie usa esto". En su lugar va
+          // algo que solo depende de la gente, y en gris: cuantas visitas por
+          // persona es bueno o malo no lo sabemos todavia, asi que no se juzga.
+          { icono: "🔁", label: T("usoKpiHumano"), value: porPersona1,
             status: T("usoKpiHumanoPie"), ayuda: T("usoAyudaHumano"),
-            color: pctHumano >= 30 ? USO_VERDE
-                 : (pctHumano >= 10 ? USO_AMBAR : USO_ROJO) }
+            color: USO_GRIS }
         ];
         el("usoKpiRow").innerHTML = tarjetas.map(function (t) {
           return tarjetaUso(t.icono, t.label, t.value, t.status, t.color,
@@ -5891,14 +5902,22 @@
         // --- Dona: personas contra sistema ------------------------------------
         if (usoGraficaDona) { usoGraficaDona.destroy(); usoGraficaDona = null; }
         const ctxD = el("usoDona");
-        if (ctxD && window.Chart) {
+        // Reparto de las VISITAS entre las personas. Antes era personas contra
+        // sistema, que dibujaba un 96% gris y hacia leer "nadie usa esto" cuando
+        // lo unico que decia es que hay dos procesos automaticos trabajando.
+        // Cada porcion lleva el color del avatar de su persona, para que la dona
+        // y la lista de al lado se lean como una sola cosa.
+        const repParte = personasReales.filter(function (p) {
+          return (p.veces || 0) > 0;
+        });
+        if (ctxD && window.Chart && repParte.length) {
           usoGraficaDona = new Chart(ctxD, {
             type: "doughnut",
             data: {
-              labels: [T("usoLblPersonas"), T("usoLblSistema")],
+              labels: repParte.map(function (p) { return p.usuario.split("@")[0]; }),
               datasets: [{
-                data: [k.peticiones_personas || 0, k.peticiones_maquinas || 0],
-                backgroundColor: [USO_VERDE, "rgba(148,163,184,.45)"],
+                data: repParte.map(function (p) { return p.veces || 0; }),
+                backgroundColor: repParte.map(function (p) { return colorDe(p.usuario); }),
                 borderWidth: 0
               }]
             },
@@ -5916,9 +5935,13 @@
           });
         }
         el("usoDonaCentro").innerHTML =
-          "<b>" + pctHumano + "%</b><span>" + T("usoLblHumano") + "</span>";
+          "<b>" + visitas + "</b><span>" + T("usoLblHumano") + "</span>";
 
         const maq = d.maquinas || [];
+        // Las cuentas de sistema no desaparecen: se dicen aparte y con su aviso,
+        // para que nadie se pregunte a donde fueron a parar 41 mil peticiones.
+        el("usoCapMaquinas").textContent = maq.length ? T("usoCapMaquinas") : "";
+        el("usoCapMaquinas").style.display = maq.length ? "" : "none";
         el("usoMaquinas").innerHTML = maq.length === 0
           ? ""
           : maq.map(function (m) {
