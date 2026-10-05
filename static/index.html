@@ -4227,6 +4227,7 @@
                   </div>
                 </div>
                 <div id="usoGente" class="uso-gente"></div>
+                <p class="small muted" id="usoNotaEntradas" style="margin-top:12px; display:none"></p>
               </div>
 
               <div class="card uso-card">
@@ -4601,7 +4602,15 @@
           usoEntro: "Entró", usoFallo: "Falló",
           usoSinLogins: "Nadie usó el sistema en esas fechas",
           usoEntroA: "entró a las",
-          usoYaEstaba: "ya estaba dentro",
+          // Antes decia "ya estaba dentro", que afirmaba algo que no sabemos: casi
+          // siempre la persona si entro ese dia, pero su login quedo sin nombre.
+          usoYaEstaba: "sin hora de entrada",
+          // OJO AL REDACTAR ESTO. Esta nota la lee el cliente. Lo medido es que en
+          // la bitacora 37 de 41 accesos llegan sin el nombre de quien entra; de
+          // ahi NO se sigue que Sidon no sepa quien entro -autentica a la gente, y
+          // 4 de esos accesos si traen nombre-. La nota dice lo que esta vista
+          // puede ensenar, no diagnostica el sistema de nadie.
+          usoNotaSinEntrada: "No todos los accesos quedan registrados con el nombre de quien entra, así que la hora de entrada no siempre se puede mostrar. Quiénes trabajaron y cuánto hizo cada uno sí es exacto.",
           usoDiasCorto: "días",
           usoSinPersonas: "Ninguna persona usó el sistema",
           usoSinRutas: "Sin actividad",
@@ -5798,6 +5807,7 @@
         // Se va juntando la misma lista en texto plano, sin iconos, para el PDF:
         // Helvetica no tiene emojis y un candado ahi sale como cuadrito negro.
         const genteDatos = [];
+        let sinEntrada = 0;
 
         el("usoGente").innerHTML = nombres.length === 0
           ? '<p class="muted">' + T("usoSinLogins") + "</p>"
@@ -5813,7 +5823,11 @@
               } else if (l) {
                 icono = "⚠️"; estado = T("usoFallo");
               } else {
-                icono = "↩︎"; estado = T("usoYaEstaba");
+                // Sin icono a proposito: los otros dos estados afirman algo -entro,
+                // fallo- y este es justamente el de no saber. Una flechita de
+                // "volvio" sugeriria que si lo sabemos.
+                icono = ""; estado = T("usoYaEstaba");
+                sinEntrada++;
               }
               genteDatos.push({
                 nombre: u,
@@ -5821,7 +5835,7 @@
                 peticiones: p.peticiones || 0,
                 dias: p.dias || 1
               });
-              let sub = icono + " " + estado;
+              let sub = (icono ? icono + " " : "") + estado;
               if (p.dias > 1) sub += " · " + p.dias + " " + T("usoDiasCorto");
               return '<div class="uso-persona">'
                 + '<div class="uso-avatar" style="background:' + col + '">'
@@ -5832,6 +5846,12 @@
                 + '<div class="uso-persona-cifra"><b>' + pet + "</b>"
                 + "<span>" + T("usoPeticionesCorto") + "</span></div></div>";
             }).join("");
+
+        // La nota sale solo si de verdad falta alguna hora de entrada. Si todas
+        // estan, sobra: no se le explica al directivo un problema que no tiene.
+        const notaEnt = el("usoNotaEntradas");
+        notaEnt.textContent = sinEntrada > 0 ? T("usoNotaSinEntrada") : "";
+        notaEnt.style.display = sinEntrada > 0 ? "" : "none";
 
         // --- Dona: personas contra sistema ------------------------------------
         if (usoGraficaDona) { usoGraficaDona.destroy(); usoGraficaDona = null; }
@@ -6016,6 +6036,7 @@
             return { label: t.label, value: String(t.value), status: t.status };
           }),
           gente: genteDatos,
+          gente_nota: el("usoNotaEntradas").textContent || "",
           areas: areasDatos,
           pantallas: pantallasDatos,
           turnos: turnosDatos,

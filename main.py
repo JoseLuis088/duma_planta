@@ -6841,6 +6841,13 @@ async def report_uso(payload: dict):
               "Días con actividad": str(g.get("dias") or 1)}
              for g in (vista.get("gente") or [])]
 
+    # La misma advertencia que lleva la pantalla cuando falta alguna hora de
+    # entrada. En papel importa mas todavia: quien lo lea no tiene a quien
+    # preguntarle por que la columna viene medio vacia.
+    if vista.get("gente_nota"):
+        sections.append({"title": "Sobre la hora de entrada",
+                         "text": _sin_emoji(vista.get("gente_nota"))})
+
     # La captura de las tarjetas, tal cual se ven, con su color y su emoji.
     kpi_snap_path = None
     b64 = payload.get("kpi_snapshot")
