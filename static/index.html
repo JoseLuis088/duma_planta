@@ -4548,6 +4548,9 @@
           usoLblSistema: "Sistema",
           usoLblHumano: "lo hacen personas",
           usoPeticionesCorto: "peticiones",
+          usoVecesCorto: "veces que entró",
+          usoVezCorto: "vez que entró",
+          usoAccesosSinNombre: "accesos sin identificar",
           usoSesionesCorto: "sesiones",
           usoVeces: "veces",
           usoAvisoSinNombre: "pantallas todavía sin nombre. Aparecen con su dirección técnica hasta que alguien las nombre.",
@@ -4587,7 +4590,7 @@
           usoKpiHumano: "Tráfico humano",
           usoKpiHumanoPie: "el resto lo genera el sistema",
           usoTitLogins: "Quién usó la plataforma",
-          usoSubLogins: "Todas las personas con actividad, hayan iniciado sesión o no",
+          usoSubLogins: "Cuántas veces vino cada quien en el periodo. Una visita se cierra tras media hora sin actividad",
           usoTitPersonas: "Cuánto usó cada quien",
           usoSubPersonas: "Solo personas: las cuentas de sistema van aparte",
           usoTitRutas: "Dónde pasan el tiempo",
@@ -5816,7 +5819,20 @@
               const l = loginDe[u];
               const anonimo = (u === "(sin identificar)");
               const col = anonimo ? USO_GRIS : colorDe(u);
-              const pet = p.peticiones ? p.peticiones.toLocaleString() : "0";
+              // La cifra grande son las VECES QUE VINO, no las peticiones. Una
+              // peticion no mide a la persona: Monitoreo de linea se refresca
+              // solo cada 60 s, asi que quien deja esa pantalla abierta acumula
+              // cientos sin tocar nada y encabezaba la lista.
+              const veces = p.veces || 0;
+
+              // El monton de "(sin identificar)" no es una persona que vino N
+              // veces: son accesos que no se pudieron ligar a nadie, y no tienen
+              // sesiones. Ensenarle "0 veces que entro" al lado de "3 dias" seria
+              // una contradiccion, asi que esa fila cuenta accesos y lo dice.
+              const cifra = anonimo ? (p.peticiones || 0) : veces;
+              const etiqueta = anonimo
+                ? T("usoAccesosSinNombre")
+                : T(veces === 1 ? "usoVezCorto" : "usoVecesCorto");
               let icono, estado;
               if (l && l.exitoso) {
                 icono = "🔑"; estado = T("usoEntroA") + " " + String(l.hora).slice(0, 5);
@@ -5832,7 +5848,7 @@
               genteDatos.push({
                 nombre: u,
                 estado: estado.charAt(0).toUpperCase() + estado.slice(1),
-                peticiones: p.peticiones || 0,
+                veces: anonimo ? "" : veces,
                 dias: p.dias || 1
               });
               let sub = (icono ? icono + " " : "") + estado;
@@ -5843,8 +5859,8 @@
                 + '<div class="uso-persona-datos">'
                 + '<div class="uso-persona-nombre">' + escapar(u) + "</div>"
                 + '<div class="uso-persona-sub">' + sub + "</div></div>"
-                + '<div class="uso-persona-cifra"><b>' + pet + "</b>"
-                + "<span>" + T("usoPeticionesCorto") + "</span></div></div>";
+                + '<div class="uso-persona-cifra"><b>' + cifra + "</b>"
+                + "<span>" + etiqueta + "</span></div></div>";
             }).join("");
 
         // La nota sale solo si de verdad falta alguna hora de entrada. Si todas

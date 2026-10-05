@@ -6560,19 +6560,31 @@ async def api_uso_resumen(payload: dict):
             WHERE l.fecha >= ? AND l.fecha <= ?
             ORDER BY l.fecha DESC, l.hora_local DESC""", rango)
 
-        # Una fila por persona: cuanto uso, cuando empezo y acabo, y donde estuvo.
+        # Una fila por persona: cuantas veces vino, cuanto uso y donde estuvo.
+        #
+        # `veces` son las sesiones: tramos de actividad cortados por media hora de
+        # silencio. Es lo que el tablero ensena, y no las peticiones, porque una
+        # peticion no mide a la persona: la pantalla de Monitoreo se refresca sola
+        # cada 60 segundos, asi que 834 de las 850 peticiones del usuario mas
+        # "activo" eran un temporizador. Ordenado por peticiones, el tablero
+        # coronaba justo a quien menos la usa.
         personas = run_uso_sql("""
             SELECT u.usuario,
                    SUM(u.peticiones) AS peticiones,
                    COUNT(DISTINCT u.fecha) AS dias,
                    COUNT(DISTINCT u.ruta) AS rutas,
                    MIN(u.primera_utc) AS primera_utc,
-                   MAX(u.ultima_utc) AS ultima_utc
+                   MAX(u.ultima_utc) AS ultima_utc,
+                   ISNULL(MAX(v.veces), 0) AS veces
             FROM dbo.uso_diario u
             JOIN dbo.cuentas c ON c.usuario = u.usuario AND c.es_persona = 1
+            LEFT JOIN (SELECT usuario, COUNT(*) AS veces
+                       FROM dbo.sesiones
+                       WHERE fecha >= ? AND fecha <= ?
+                       GROUP BY usuario) v ON v.usuario = u.usuario
             WHERE u.fecha >= ? AND u.fecha <= ?
             GROUP BY u.usuario
-            ORDER BY peticiones DESC""", rango)
+            ORDER BY veces DESC, peticiones DESC""", rango + rango)
 
         # Que pantallas se usan. Por ruta y no por modulo: la mitad de los valores
         # de Module son GUIDs, asi que como nombre de pantalla no sirven.
@@ -6836,9 +6848,11 @@ async def report_uso(payload: dict):
                          "text": _sin_emoji(vista.get("al_dia"))})
 
     tabla = [{"Persona":            _sin_emoji(g.get("nombre")),
-              "Cómo entró":         _sin_emoji(g.get("estado")),
-              "Peticiones":         f"{int(g.get('peticiones') or 0):,}",
-              "Días con actividad": str(g.get("dias") or 1)}
+              # Vacio, no cero, para el monton sin identificar: no vino cero veces,
+              # es que de esos accesos no se sabe quien los hizo.
+              "Veces que entró":    ("" if g.get("veces") == "" else str(g.get("veces") or 0)),
+              "Días con actividad": str(g.get("dias") or 1),
+              "Cómo entró":         _sin_emoji(g.get("estado"))}
              for g in (vista.get("gente") or [])]
 
     # La misma advertencia que lleva la pantalla cuando falta alguna hora de
