@@ -6959,6 +6959,17 @@ async def chat_stream(request: Request):
                             "Vuelve a intentarlo en unos segundos."),
             })
 
+    def _tarea_sin_oyente(tarea: asyncio.Task):
+        """La tarea termino cuando el cliente ya se habia ido. Deja constancia."""
+        if tarea.cancelled():
+            logging.warning("Turno de %s cancelado sin guardar en /chat/stream", username)
+            return
+        err = tarea.exception()
+        if err:
+            logging.error("Turno de %s fallo tras irse el cliente: %s", username, err)
+        else:
+            logging.info("Turno de %s guardado aunque el cliente ya no escuchaba", username)
+
     async def generar():
         tarea = asyncio.create_task(trabajar())
         try:
@@ -6968,8 +6979,26 @@ async def chat_stream(request: Request):
                 if evento.get("type") in ("done", "error"):
                     break
         finally:
+            # NO se cancela la tarea si el cliente se va.
+            #
+            # Aqui habia un tarea.cancel(). Cuando alguien recargaba, cambiaba de
+            # modulo o reenviaba antes de que llegara la respuesta, Starlette
+            # cerraba este generador, el cancel mataba la tarea a media ejecucion,
+            # y guardar_conversacion -- que corre DESPUES del modelo -- no llegaba
+            # a correr nunca: la pregunta y la respuesta se perdian las dos. Y en
+            # silencio, porque CancelledError es BaseException y el `except
+            # Exception` de trabajar() no lo ve: ni un renglon en el log.
+            #
+            # Asi se perdio un turno de Adrian el 6-oct 17:22 (200 OK, cero SQL,
+            # cero errores, cero filas en duma_messages). Para el usuario eso es
+            # exactamente "no se me guardan las conversaciones".
+            #
+            # Dejarla correr cuesta unos segundos de trabajo que nadie lee, y el
+            # ciclo ya esta acotado por dentro (MAX_WAIT_SECONDS). A cambio, el
+            # turno queda guardado y el historial deja de depender de que el
+            # navegador aguante hasta el final.
             if not tarea.done():
-                tarea.cancel()
+                tarea.add_done_callback(_tarea_sin_oyente)
 
     return StreamingResponse(
         generar(),
